@@ -1,0 +1,79 @@
+"""Cost guardrail — reject a request before it ever reaches the LLM if its
+estimated cost exceeds budget.
+
+Token counting uses tiktoken against the actual prompt text, not a rough
+character estimate, so the guardrail is trustworthy rather than
+advisory. Pricing is a static table (USD per 1K tokens); unlisted models
+fall back to a conservative rate so an unrecognized model name fails
+safe (rejected) rather than silently bypassing the guardrail.
+"""
+
+import tiktoken
+from pydantic import BaseModel, ConfigDict
+
+from shared.errors import CostGuardrailExceededError
+
+# USD per 1K tokens: (prompt_price, completion_price)
+DEFAULT_PRICING: dict[str, tuple[float, float]] = {
+    "gpt-4o-mini": (0.15, 0.60),
+    "gpt-4o": (2.50, 10.00),
+    "gpt-3.5-turbo": (0.50, 1.50),
+}
+FALLBACK_PRICING: tuple[float, float] = (1.0, 2.0)
+
+
+class CostEstimate(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    model: str
+    prompt_tokens: int
+    assumed_completion_tokens: int
+    estimated_cost_usd: float
+
+
+class CostEstimator:
+    def __init__(self, pricing: dict[str, tuple[float, float]] | None = None) -> None:
+        self._pricing = pricing or DEFAULT_PRICING
+
+    def count_tokens(self, text: str, model: str) -> int:
+        try:
+            encoding = tiktoken.encoding_for_model(model)
+        except KeyError:
+            encoding = tiktoken.get_encoding("cl100k_base")
+        return len(encoding.encode(text))
+
+    def _prices_for(self, model: str) -> tuple[float, float]:
+        return self._pricing.get(model, FALLBACK_PRICING)
+
+    def estimate(
+        self, prompt: str, model: str, assumed_completion_tokens: int = 1024
+    ) -> CostEstimate:
+        prompt_tokens = self.count_tokens(prompt, model)
+        prompt_price, completion_price = self._prices_for(model)
+        cost = (prompt_tokens / 1000) * prompt_price + (
+            assumed_completion_tokens / 1000
+        ) * completion_price
+        return CostEstimate(
+            model=model,
+            prompt_tokens=prompt_tokens,
+            assumed_completion_tokens=assumed_completion_tokens,
+            estimated_cost_usd=cost,
+        )
+
+    def actual_cost(self, prompt_tokens: int, completion_tokens: int, model: str) -> float:
+        prompt_price, completion_price = self._prices_for(model)
+        return (prompt_tokens / 1000) * prompt_price + (completion_tokens / 1000) * completion_price
+
+
+class CostGuardrail:
+    def __init__(self, estimator: CostEstimator, max_cost_usd: float) -> None:
+        self.estimator = estimator
+        self._max_cost_usd = max_cost_usd
+
+    def check(
+        self, prompt: str, model: str, assumed_completion_tokens: int = 1024
+    ) -> CostEstimate:
+        estimate = self.estimator.estimate(prompt, model, assumed_completion_tokens)
+        if estimate.estimated_cost_usd > self._max_cost_usd:
+            raise CostGuardrailExceededError(estimate.estimated_cost_usd, self._max_cost_usd)
+        return estimate
