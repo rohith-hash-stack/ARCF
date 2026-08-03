@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>ARCF Benchmark</title>
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <header>
+    <h1>ARCF Benchmark</h1>
+    <p>Is ARCF better than a direct LLM call for real software engineering tasks?</p>
+  </header>
+
+  <div id="error-banner" class="error-banner hidden"></div>
+
+  <main class="layout">
+    <section class="panel" id="repo-panel">
+      <h2>Repository</h2>
+
+      <label for="repo-source">Source</label>
+      <select id="repo-source">
+        <option value="local">Open local repository</option>
+        <option value="clone">Clone Git repository</option>
+      </select>
+
+      <div id="local-fields">
+        <label for="repo-path">Local path</label>
+        <input type="text" id="repo-path" placeholder="C:\path\to\repo" />
+      </div>
+
+      <div id="clone-fields" class="hidden">
+        <label for="repo-url">Git URL</label>
+        <input type="text" id="repo-url" placeholder="https://github.com/org/repo.git" />
+        <label for="repo-ref">Branch (optional)</label>
+        <input type="text" id="repo-ref" placeholder="main" />
+      </div>
+
+      <button id="load-repo-btn">Load Repository</button>
+      <div id="repo-status" class="status-line"></div>
+      <div id="repo-meta" class="repo-meta hidden"></div>
+    </section>
+
+    <section class="panel" id="task-panel">
+      <h2>Task</h2>
+      <label for="task-input">What should be done?</label>
+      <textarea id="task-input" placeholder="e.g. Fix the failing authentication test"></textarea>
+      <div class="example-tasks" id="example-tasks">
+        <button type="button" class="secondary" data-task="Write Playwright login tests">Write Playwright login tests</button>
+        <button type="button" class="secondary" data-task="Add Robot Framework API tests">Add Robot Framework API tests</button>
+        <button type="button" class="secondary" data-task="Fix failing authentication test">Fix failing authentication test</button>
+        <button type="button" class="secondary" data-task="Generate negative test cases">Generate negative test cases</button>
+        <button type="button" class="secondary" data-task="Refactor login page object">Refactor login page object</button>
+      </div>
+    </section>
+
+    <section class="panel" id="run-panel">
+      <h2>Benchmark Mode</h2>
+      <div class="radio-row">
+        <label><input type="radio" name="mode" value="direct" /> Direct LLM</label>
+        <label><input type="radio" name="mode" value="arcf" /> ARCF (Remote SLM)</label>
+        <label><input type="radio" name="mode" value="arcf_local" /> ARCF (Local SLM)</label>
+        <label><input type="radio" name="mode" value="both" checked /> Direct + ARCF Remote</label>
+        <label><input type="radio" name="mode" value="all" /> Run All Three</label>
+      </div>
+      <div id="local-slm-warning" class="status-line hidden"></div>
+
+      <label for="model-input">Model</label>
+      <input type="text" id="model-input" placeholder="gpt-4o-mini" />
+
+      <button id="run-btn" disabled>Run Benchmark</button>
+      <div id="run-status" class="status-line"></div>
+    </section>
+  </main>
+
+  <section class="results hidden" id="results">
+    <h2>Results</h2>
+    <div class="comparison" id="comparison"></div>
+    <div class="result-summary hidden" id="summary"></div>
+  </section>
+
+  <script src="/app.js"></script>
+</body>
+</html>

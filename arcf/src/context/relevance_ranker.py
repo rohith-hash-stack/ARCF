@@ -1,0 +1,67 @@
+"""RelevanceRanker (Phase 6 deliverable) — deterministic scoring of
+ContextResolutionResult.candidate_files.
+
+Selection is never made by an SLM: this is a fixed, reproducible
+function of signals already present in the contract (reason type,
+whether the file contains an entry point, how many impacted symbols it
+holds) — the same "software governs, SLM only assists" posture as
+Phase 3's ConfidenceEngine.
+"""
+
+from collections import Counter
+from dataclasses import dataclass
+
+from domain.context_resolution import ContextResolutionResult
+
+_REASON_WEIGHTS: dict[str, float] = {
+    "defines": 1.0,
+    "calls": 0.7,
+    "extends": 0.6,
+}
+_DEFAULT_REASON_WEIGHT = 0.3
+_ENTRY_POINT_BONUS = 0.2
+_IMPACT_BONUS_MAX = 0.1
+_IMPACT_BONUS_CAP = 5
+
+
+@dataclass(frozen=True)
+class RankedFile:
+    file_path: str
+    relevance_score: float
+    reason: str
+    language: str
+    token_count: int
+
+
+class RelevanceRanker:
+    def rank(self, result: ContextResolutionResult) -> list[RankedFile]:
+        entry_point_files = {symbol.file_path for symbol in result.entry_points}
+        impacted_counts = Counter(symbol.file_path for symbol in result.impacted_symbols)
+
+        ranked = [
+            RankedFile(
+                file_path=file_ref.file_path,
+                relevance_score=self._score(
+                    file_ref.reason, file_ref.file_path, entry_point_files, impacted_counts
+                ),
+                reason=file_ref.reason,
+                language=file_ref.language,
+                token_count=file_ref.token_count,
+            )
+            for file_ref in result.candidate_files
+        ]
+        return sorted(ranked, key=lambda ranked_file: ranked_file.relevance_score, reverse=True)
+
+    @staticmethod
+    def _score(
+        reason: str,
+        file_path: str,
+        entry_point_files: set[str],
+        impacted_counts: Counter[str],
+    ) -> float:
+        verb = reason.split(" ", 1)[0]
+        base = _REASON_WEIGHTS.get(verb, _DEFAULT_REASON_WEIGHT)
+        entry_bonus = _ENTRY_POINT_BONUS if file_path in entry_point_files else 0.0
+        impact_count = min(impacted_counts.get(file_path, 0), _IMPACT_BONUS_CAP)
+        impact_bonus = impact_count / _IMPACT_BONUS_CAP * _IMPACT_BONUS_MAX
+        return round(min(base + entry_bonus + impact_bonus, 1.0), 4)
