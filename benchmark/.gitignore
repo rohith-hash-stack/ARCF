@@ -10,4 +10,7 @@ dist/
 build/
 *.egg-info/
 *.db
+.benchmark_repos/
+.suite_repos/
+reports/
 .env

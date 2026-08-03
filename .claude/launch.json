@@ -1,0 +1,17 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "arcf-benchmark",
+      "runtimeExecutable": "C:\\Users\\VasiganiRohitBabu\\Desktop\\Claude\\benchmark\\.venv\\Scripts\\uvicorn.exe",
+      "runtimeArgs": [
+        "benchmark.api.app:app",
+        "--app-dir",
+        "C:\\Users\\VasiganiRohitBabu\\Desktop\\Claude\\benchmark\\src",
+        "--port",
+        "8010"
+      ],
+      "port": 8010
+    }
+  ]
+}

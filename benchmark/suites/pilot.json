@@ -1,0 +1,94 @@
+{
+  "tasks": [
+    {
+      "id": "repo-understanding-auth-discovery",
+      "category": "repository_understanding",
+      "subcategory": "authentication_discovery",
+      "repo_key": "arcf",
+      "task_prompt": "Explain how this repository authenticates incoming API requests: which module and class handle it, which credential schemes are supported, and what happens when authentication fails.",
+      "expected_grounding": ["auth.py", "Authenticator", "AuthenticationError"]
+    },
+    {
+      "id": "repo-understanding-dependency-analysis",
+      "category": "repository_understanding",
+      "subcategory": "dependency_analysis",
+      "repo_key": "arcf",
+      "task_prompt": "What does ExecutionContractManager depend on, and which of those dependencies would need to change if the contract persistence backend were swapped out for a different database?",
+      "expected_grounding": ["manager.py", "contract_store.py", "ContractStore"]
+    },
+    {
+      "id": "bug-fixing-jwt-missing-sub",
+      "category": "bug_fixing",
+      "subcategory": "jwt_bug",
+      "repo_key": "arcf",
+      "task_prompt": "Requests bearing a JWT with no 'sub' claim are being authenticated successfully when they should be rejected outright — this is a real authentication bypass. Investigate src/infrastructure/auth.py and fix it.",
+      "expected_path_prefixes": ["src/infrastructure/auth.py"],
+      "protected_path_prefixes": ["tests/"],
+      "bug_fixture": {
+        "file_path": "src/infrastructure/auth.py",
+        "find": "        subject = payload.get(\"sub\")\n        if not isinstance(subject, str) or not subject:\n            raise AuthenticationError(\"JWT missing 'sub' claim\")\n        return Principal(id=subject, auth_method=\"jwt\")",
+        "replace": "        subject = payload.get(\"sub\") or \"anonymous\"\n        return Principal(id=subject, auth_method=\"jwt\")"
+      },
+      "verify_command": "\"{python}\" -m pytest tests/infrastructure/test_auth.py -q",
+      "verify_timeout_seconds": 60
+    },
+    {
+      "id": "bug-fixing-idempotency-replay",
+      "category": "bug_fixing",
+      "subcategory": "transaction_failure",
+      "repo_key": "arcf",
+      "task_prompt": "Reusing an Idempotency-Key with a different request body is supposed to be rejected as a conflict, but it is currently being silently accepted and replaying the original cached response instead. Investigate src/infrastructure/idempotency.py and fix it.",
+      "expected_path_prefixes": ["src/infrastructure/idempotency.py"],
+      "protected_path_prefixes": ["tests/"],
+      "bug_fixture": {
+        "file_path": "src/infrastructure/idempotency.py",
+        "find": "        existing = self._store.get(key)\n        if existing is None:\n            return None\n        if existing.request_hash != request_hash:\n            raise IdempotencyConflictError(\n                f\"Idempotency-Key {key!r} was already used with a different request body\"\n            )\n        return existing",
+        "replace": "        existing = self._store.get(key)\n        if existing is None:\n            return None\n        return existing"
+      },
+      "verify_command": "\"{python}\" -m pytest tests/infrastructure/test_idempotency.py -q",
+      "verify_timeout_seconds": 60
+    },
+    {
+      "id": "refactoring-retry-exception-resolution",
+      "category": "refactoring",
+      "subcategory": "retry_logic",
+      "repo_key": "arcf",
+      "task_prompt": "In src/infrastructure/llm_client.py, the retryable-exception-name resolution (building RETRYABLE_EXCEPTIONS from _RETRYABLE_NAMES) is done inline at module scope. Extract it into a small, named, reusable helper function without changing behavior.",
+      "expected_path_prefixes": ["src/infrastructure/llm_client.py"],
+      "protected_path_prefixes": ["tests/"],
+      "verify_command": "\"{python}\" -m pytest tests/infrastructure/test_llm_client.py -q",
+      "verify_timeout_seconds": 60
+    },
+    {
+      "id": "refactoring-shared-keyword-classifier",
+      "category": "refactoring",
+      "subcategory": "shared_utility",
+      "repo_key": "arcf",
+      "task_prompt": "src/contracts/task_classifier.py and src/contracts/domain_classifier.py both implement identical keyword-scoring + argmax classification logic (a classify() method and an agrees_with() method with the same shape). Extract the shared logic into one reusable helper both classifiers use, without changing either classifier's behavior.",
+      "expected_path_prefixes": ["src/contracts/"],
+      "protected_path_prefixes": ["tests/"],
+      "verify_command": "\"{python}\" -m pytest tests/contracts/test_task_classifier.py tests/contracts/test_domain_classifier.py -q",
+      "verify_timeout_seconds": 60
+    },
+    {
+      "id": "test-generation-boundary-long-title",
+      "category": "test_generation",
+      "subcategory": "boundary_test",
+      "repo_key": "todomvc",
+      "task_prompt": "Add a new Playwright test under tests/todo-creation/ that verifies adding a todo with a very long title (a boundary case) is handled correctly by the TodoMVC app, following the existing patterns and fixtures already used in that directory.",
+      "expected_path_prefixes": ["tests/todo-creation/"],
+      "verify_command": "npx playwright test tests/todo-creation --project=chromium",
+      "verify_timeout_seconds": 120
+    },
+    {
+      "id": "test-generation-regression-toggle-all-hidden",
+      "category": "test_generation",
+      "subcategory": "regression_test",
+      "repo_key": "todomvc",
+      "task_prompt": "Add a new Playwright test under tests/deleting-todos/ that verifies the 'toggle-all' checkbox is not visible once every todo has been deleted, following the existing patterns and fixtures already used in that directory.",
+      "expected_path_prefixes": ["tests/deleting-todos/"],
+      "verify_command": "npx playwright test tests/deleting-todos --project=chromium",
+      "verify_timeout_seconds": 120
+    }
+  ]
+}
