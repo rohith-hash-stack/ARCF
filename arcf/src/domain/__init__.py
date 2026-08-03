@@ -13,6 +13,7 @@ from domain.code_intelligence import (
     Symbol,
     SymbolKind,
 )
+from domain.comparison_result import ComparisonResult
 from domain.complexity import ComplexityScore
 from domain.context_package import ContextPackage, PackagedFile
 from domain.context_resolution import (
@@ -26,7 +27,9 @@ from domain.context_resolution import (
 from domain.contract import Contract
 from domain.enums import ArtifactKind, ComplexityLevel, ContractStatus
 from domain.execution_context import ExecutionContext, TokenBudget
+from domain.execution_ledger import ExecutionLedgerEntry, ExecutionMode
 from domain.intent import UserIntent
+from domain.predicted_response import PredictedResponseHint
 from domain.principal import Principal
 from domain.versioning import LivingContract
 from domain.workspace import (
@@ -42,6 +45,7 @@ __all__ = [
     "ArtifactKind",
     "CallEdge",
     "CallReference",
+    "ComparisonResult",
     "ComplexityLevel",
     "ComplexityScore",
     "Contract",
@@ -50,6 +54,8 @@ __all__ = [
     "ContractStatus",
     "DependencyEdge",
     "ExecutionContext",
+    "ExecutionLedgerEntry",
+    "ExecutionMode",
     "FileAnalysis",
     "FileReference",
     "FrameworkMatch",
@@ -57,6 +63,7 @@ __all__ = [
     "LanguageStat",
     "LivingContract",
     "PackagedFile",
+    "PredictedResponseHint",
     "Principal",
     "ProjectStructure",
     "RepositoryMetadata",

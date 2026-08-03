@@ -25,7 +25,12 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from code_intelligence.engine import CodeIntelligenceEngine
+from code_intelligence.languages.csharp_analyzer import CSharpLanguageAnalyzer
+from code_intelligence.languages.go_analyzer import GoLanguageAnalyzer
+from code_intelligence.languages.java_analyzer import JavaLanguageAnalyzer
+from code_intelligence.languages.kotlin_analyzer import KotlinLanguageAnalyzer
 from code_intelligence.languages.python_analyzer import PythonLanguageAnalyzer
+from code_intelligence.languages.typescript_analyzer import TypeScriptLanguageAnalyzer
 from code_intelligence.registry import LanguageRegistry
 from code_intelligence.service import CodeIntelligenceContractService
 from context.packager import ContextPackager
@@ -123,7 +128,17 @@ def build_runtime(settings: BenchmarkSettings) -> Runtime:
     )
     code_intelligence_service = CodeIntelligenceContractService(
         engine=CodeIntelligenceEngine(
-            registry=LanguageRegistry([PythonLanguageAnalyzer()]), token_estimator=cost_estimator
+            registry=LanguageRegistry(
+                [
+                    PythonLanguageAnalyzer(),
+                    TypeScriptLanguageAnalyzer(),
+                    GoLanguageAnalyzer(),
+                    JavaLanguageAnalyzer(),
+                    CSharpLanguageAnalyzer(),
+                    KotlinLanguageAnalyzer(),
+                ]
+            ),
+            token_estimator=cost_estimator,
         ),
         contract_store=contract_store,
         resolution_store=InMemoryContextResolutionStore(),

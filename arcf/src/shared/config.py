@@ -46,6 +46,12 @@ class Settings(BaseSettings):
     confidence_clarification_threshold: float = 0.6
     contract_store_path: str = "arcf_contracts.db"
 
+    # Execution Ledger (Phase 9)
+    execution_ledger_db_path: str = "arcf_execution_ledger.db"
+
+    # Comparison API (Phase 11)
+    comparison_store_path: str = "arcf_comparisons.db"
+
     # Workspace Intelligence (Phase 4)
     # Comma-separated absolute paths; empty = unrestricted (local-dev-tool default).
     workspace_allowlist_raw: str = ""

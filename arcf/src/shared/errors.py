@@ -70,3 +70,10 @@ class ContextResolutionNotFoundError(ArcfError):
 class NoWorkspaceAttachedError(ArcfError):
     """Code intelligence was requested but no workspace_root is available —
     neither attached to the contract (Phase 4) nor provided explicitly."""
+
+
+class PRHLError(ArcfError):
+    """PRHL failed to produce schema-valid structured output after
+    retries. Never fatal — like ContextUnderstandingError for SLM-2,
+    callers should catch this and degrade to no predicted hint, not fail
+    whatever's orchestrating the run."""

@@ -16,13 +16,16 @@ from contracts.manager import ExecutionContractManager
 from domain.execution_context import ExecutionContext, TokenBudget
 from domain.principal import Principal
 from infrastructure.auth import Authenticator
+from infrastructure.comparison_store import ComparisonStore
 from infrastructure.context_resolution_store import ContextResolutionStore
 from infrastructure.cost import CostGuardrail
+from infrastructure.execution_ledger_db import ExecutionLedgerStore
 from infrastructure.idempotency import IdempotencyGuard
 from infrastructure.llm_client import LiteLLMClient
 from infrastructure.rate_limit import RateLimiter
 from shared.config import Settings
 from shared.errors import AuthenticationError
+from telemetry.comparison_aggregator import ComparisonAggregator
 from workspace.service import WorkspaceContractService
 
 
@@ -68,6 +71,18 @@ def get_context_resolution_store(request: Request) -> ContextResolutionStore:
 
 def get_context_packager(request: Request) -> ContextPackager:
     return request.app.state.context_packager  # type: ignore[no-any-return]
+
+
+def get_execution_ledger_store(request: Request) -> ExecutionLedgerStore:
+    return request.app.state.execution_ledger_store  # type: ignore[no-any-return]
+
+
+def get_comparison_store(request: Request) -> ComparisonStore:
+    return request.app.state.comparison_store  # type: ignore[no-any-return]
+
+
+def get_comparison_aggregator(request: Request) -> ComparisonAggregator:
+    return request.app.state.comparison_aggregator  # type: ignore[no-any-return]
 
 
 def get_current_principal(

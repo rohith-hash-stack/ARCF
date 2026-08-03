@@ -11,7 +11,12 @@ from pathlib import Path
 from fastapi import FastAPI
 
 from code_intelligence.engine import CodeIntelligenceEngine
+from code_intelligence.languages.csharp_analyzer import CSharpLanguageAnalyzer
+from code_intelligence.languages.go_analyzer import GoLanguageAnalyzer
+from code_intelligence.languages.java_analyzer import JavaLanguageAnalyzer
+from code_intelligence.languages.kotlin_analyzer import KotlinLanguageAnalyzer
 from code_intelligence.languages.python_analyzer import PythonLanguageAnalyzer
+from code_intelligence.languages.typescript_analyzer import TypeScriptLanguageAnalyzer
 from code_intelligence.registry import LanguageRegistry
 from code_intelligence.service import CodeIntelligenceContractService
 from context.packager import ContextPackager
@@ -24,20 +29,25 @@ from contracts.intent_extraction import IntentExtractor
 from contracts.manager import ExecutionContractManager
 from contracts.task_classifier import TaskClassifier
 from infrastructure.auth import Authenticator
+from infrastructure.comparison_store import SqliteComparisonStore
 from infrastructure.context_resolution_store import InMemoryContextResolutionStore
 from infrastructure.contract_store import SqliteContractStore
 from infrastructure.cost import CostEstimator, CostGuardrail
+from infrastructure.execution_ledger_db import SqliteExecutionLedgerStore
 from infrastructure.idempotency import IdempotencyGuard, InMemoryIdempotencyStore
 from infrastructure.llm_client import LiteLLMClient
 from infrastructure.rate_limit import RateLimiter
 from infrastructure.tracing import configure_tracing
 from interfaces.api.middleware import RequestSizeLimitMiddleware, TracingMiddleware
 from interfaces.api.routes.code_intelligence import router as code_intelligence_router
+from interfaces.api.routes.comparison import router as comparison_router
 from interfaces.api.routes.context_package import router as context_package_router
 from interfaces.api.routes.contracts import router as contracts_router
 from interfaces.api.routes.execute import router as execute_router
+from interfaces.api.routes.execution_ledger import router as execution_ledger_router
 from interfaces.api.routes.workspace import router as workspace_router
 from shared.config import Settings, get_settings
+from telemetry.comparison_aggregator import ComparisonAggregator
 from workspace.analyzer import WorkspaceAnalyzer
 from workspace.git_discovery import GitRepositoryDiscovery
 from workspace.language_detection import LanguageDetector
@@ -93,7 +103,16 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     )
 
     code_intelligence_engine = CodeIntelligenceEngine(
-        registry=LanguageRegistry([PythonLanguageAnalyzer()]),
+        registry=LanguageRegistry(
+            [
+                PythonLanguageAnalyzer(),
+                TypeScriptLanguageAnalyzer(),
+                GoLanguageAnalyzer(),
+                JavaLanguageAnalyzer(),
+                CSharpLanguageAnalyzer(),
+                KotlinLanguageAnalyzer(),
+            ]
+        ),
         token_estimator=CostEstimator(),
     )
     context_resolution_store = InMemoryContextResolutionStore()
@@ -103,6 +122,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         resolution_store=context_resolution_store,
     )
     app.state.context_resolution_store = context_resolution_store
+    app.state.execution_ledger_store = SqliteExecutionLedgerStore(
+        settings.execution_ledger_db_path
+    )
+    app.state.comparison_store = SqliteComparisonStore(settings.comparison_store_path)
+    app.state.comparison_aggregator = ComparisonAggregator()
     app.state.context_packager = ContextPackager(
         ranker=RelevanceRanker(),
         token_estimator=CostEstimator(),
@@ -120,6 +144,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(workspace_router)
     app.include_router(code_intelligence_router)
     app.include_router(context_package_router)
+    app.include_router(execution_ledger_router)
+    app.include_router(comparison_router)
 
     return app
 

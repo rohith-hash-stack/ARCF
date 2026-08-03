@@ -12,12 +12,15 @@ rather than re-declaring its fields — it *is* the pipeline's real
 output, so there's no separate HTTP-shaped copy to keep in sync.
 """
 
+from uuid import UUID
+
 from pydantic import BaseModel, ConfigDict, Field
 
 from domain.context_package import ContextPackage
 from domain.context_resolution import ContextResolutionResult
 from domain.contract import Contract
 from domain.enums import ContractStatus
+from domain.execution_ledger import ExecutionLedgerEntry
 
 
 class ExecuteRequest(BaseModel):
@@ -105,3 +108,39 @@ class ContextPackageResponse(BaseModel):
     trace_id: str
     remaining_budget_usd: float
     package: ContextPackage
+
+
+class PatchExecutionLedgerRequest(BaseModel):
+    """Both fields are opt-in and nullable — see domain/execution_ledger.py.
+    At least one must be provided; omitting both is a 400, not a no-op."""
+
+    manual_rating: int | None = Field(default=None, ge=1, le=5)
+    build_test_result: str | None = None
+
+
+class ExecutionComparisonResult(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    entry_a: ExecutionLedgerEntry
+    entry_b: ExecutionLedgerEntry
+    total_tokens_delta: int
+    """entry_b.total_tokens - entry_a.total_tokens."""
+    estimated_cost_delta_usd: float
+    """entry_b.estimated_cost_usd - entry_a.estimated_cost_usd."""
+    latency_delta_ms: float
+    """entry_b.latency_ms - entry_a.latency_ms."""
+    artifact_diff: str
+    """Unified diff of artifact_content, a -> b. Purely textual — makes
+    no assumption about whether either artifact is prose, a patch, or
+    full file contents, since Phase 8 imposes no output schema."""
+
+
+class CreateComparisonRequest(BaseModel):
+    """References two already-persisted Execution Ledger entries rather
+    than driving a Direct/ARCF run itself — see
+    interfaces/api/routes/comparison.py's module docstring for why."""
+
+    task: str = Field(min_length=1, max_length=2_000)
+    repository: str = Field(min_length=1)
+    direct_request_id: UUID
+    arcf_request_id: UUID
