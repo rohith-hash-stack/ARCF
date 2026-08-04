@@ -65,6 +65,11 @@
       </div>
       <div id="local-slm-warning" class="status-line hidden"></div>
 
+      <label for="provider-select">Provider</label>
+      <select id="provider-select">
+        <option value="">(none — pass model straight through)</option>
+      </select>
+
       <label for="model-input">Model</label>
       <input type="text" id="model-input" placeholder="gpt-4o-mini" />
 
@@ -74,9 +79,62 @@
   </main>
 
   <section class="results hidden" id="results">
-    <h2>Results</h2>
+    <h2>Side-by-Side Comparison</h2>
     <div class="comparison" id="comparison"></div>
     <div class="result-summary hidden" id="summary"></div>
+  </section>
+
+  <section class="results hidden" id="charts-section">
+    <h2>Metrics Visualization</h2>
+    <div class="charts-grid" id="charts-grid"></div>
+  </section>
+
+  <section class="results hidden" id="diff-section">
+    <h2>Diff Viewer</h2>
+    <div class="diff-tabs" id="diff-tabs"></div>
+    <div class="diff-view" id="diff-view"></div>
+  </section>
+
+  <section class="results" id="history-section">
+    <h2>Execution History <span class="text-dim">(last 50, from the Execution Ledger)</span></h2>
+
+    <div class="history-toolbar">
+      <input type="text" id="history-search" placeholder="Search prompt or repository..." />
+      <select id="history-mode-filter">
+        <option value="">All modes</option>
+        <option value="direct">Direct</option>
+        <option value="arcf">ARCF</option>
+      </select>
+      <button type="button" class="secondary" id="history-refresh-btn">Refresh</button>
+      <button type="button" class="secondary" id="history-compare-btn" disabled>Compare selected (2)</button>
+      <button type="button" class="secondary" id="history-export-json-btn">Export JSON</button>
+      <button type="button" class="secondary" id="history-export-csv-btn">Export CSV</button>
+    </div>
+
+    <div class="history-summary" id="history-summary"></div>
+
+    <div class="history-table-wrap">
+      <table class="history-table" id="history-table">
+        <thead>
+          <tr>
+            <th></th>
+            <th>Time</th>
+            <th>Mode</th>
+            <th>Model</th>
+            <th>Provider</th>
+            <th>Status</th>
+            <th>Tokens</th>
+            <th>Latency</th>
+            <th>Cost</th>
+            <th>Files changed</th>
+            <th>Lines changed</th>
+          </tr>
+        </thead>
+        <tbody id="history-table-body"></tbody>
+      </table>
+    </div>
+
+    <div class="history-compare-view hidden" id="history-compare-view"></div>
   </section>
 
   <script src="/app.js"></script>

@@ -6,7 +6,9 @@ docstring for why (a local tool, not a multi-tenant service).
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException
+from domain.execution_ledger import ExecutionLedgerEntry
+from fastapi import APIRouter, Depends, HTTPException, Query
+from infrastructure.execution_ledger_db import ExecutionLedgerStore
 from shared.errors import (
     ContractNotFoundError,
     IntentExtractionError,
@@ -17,6 +19,7 @@ from shared.errors import (
 
 from benchmark.api.dependencies import (
     get_controller,
+    get_execution_ledger_store,
     get_local_slm_unavailable_reason,
     get_repository_loader,
     get_settings,
@@ -26,6 +29,7 @@ from benchmark.api.schemas import (
     LanguageStatResponse,
     LoadRepositoryRequest,
     LocalSlmStatusResponse,
+    ProviderInfoResponse,
     RepositoryInfoResponse,
     RunBenchmarkRequest,
 )
@@ -33,6 +37,9 @@ from benchmark.config import BenchmarkSettings
 from benchmark.controller import BenchmarkController
 from benchmark.domain.models import BenchmarkMode, ComparisonResult
 from benchmark.local_slm.errors import LocalSLMUnavailableError
+from benchmark.model_resolution import resolve_model
+from benchmark.providers.errors import UnknownProviderError
+from benchmark.providers.registry import default_provider_registry
 from benchmark.repository import RepositoryLoader
 from benchmark.storage import BenchmarkStore
 
@@ -110,13 +117,21 @@ async def run_benchmark(
     ]
 
     try:
+        model = resolve_model(
+            payload.provider, payload.model, settings.default_model, settings.local_slm_base_url
+        )
+    except UnknownProviderError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    try:
         result = await controller.run(
             repo=repo,
             task=payload.task,
-            model=payload.model or settings.default_model,
+            model=model,
             modes=modes,
             max_context_tokens=payload.max_context_tokens or settings.max_context_tokens,
             max_output_tokens=payload.max_output_tokens or settings.max_output_tokens,
+            provider=payload.provider,
         )
     except _ARCF_PIPELINE_ERRORS as exc:
         raise HTTPException(status_code=502, detail=f"Benchmark run failed: {exc}") from exc
@@ -144,3 +159,53 @@ async def get_report(
     if result is None:
         raise HTTPException(status_code=404, detail=f"No report found with id {report_id}")
     return result
+
+
+@router.get("/providers", response_model=list[ProviderInfoResponse])
+async def list_providers(
+    settings: Annotated[BenchmarkSettings, Depends(get_settings)],
+) -> list[ProviderInfoResponse]:
+    registry = default_provider_registry(settings.local_slm_base_url)
+    return [
+        ProviderInfoResponse(name=name, available=registry.get(name).is_available())
+        for name in registry.names()
+    ]
+
+
+@router.get("/executions", response_model=list[ExecutionLedgerEntry])
+async def list_executions(
+    store: Annotated[ExecutionLedgerStore, Depends(get_execution_ledger_store)],
+    limit: Annotated[int, Query(ge=1, le=200)] = 50,
+    mode: Annotated[str | None, Query()] = None,
+    search: Annotated[str | None, Query()] = None,
+) -> list[ExecutionLedgerEntry]:
+    """Execution History (Action 1 of the ARCF v2.3 Execution Directive):
+    the dashboard's own read surface over the same Execution Ledger
+    Action 2 now writes to automatically. `mode`/`search` are applied
+    in-process, not pushed into SQL — this is a local tool's ledger
+    (last 50 entries per workspace, per infrastructure/
+    execution_ledger_db.py's retention), not a scale that needs a real
+    query engine.
+    """
+    entries = store.list_recent(limit=200)
+    if mode is not None:
+        entries = [e for e in entries if e.mode == mode]
+    if search:
+        needle = search.lower()
+        entries = [
+            e
+            for e in entries
+            if needle in e.prompt.lower() or needle in (e.repository_root or "").lower()
+        ]
+    return entries[:limit]
+
+
+@router.get("/executions/{request_id}", response_model=ExecutionLedgerEntry)
+async def get_execution(
+    request_id: UUID,
+    store: Annotated[ExecutionLedgerStore, Depends(get_execution_ledger_store)],
+) -> ExecutionLedgerEntry:
+    entry = store.get(request_id)
+    if entry is None:
+        raise HTTPException(status_code=404, detail=f"No execution found with id {request_id}")
+    return entry

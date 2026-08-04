@@ -22,6 +22,12 @@ class TaskCategory(StrEnum):
     BUG_FIXING = "bug_fixing"
     REFACTORING = "refactoring"
     TEST_GENERATION = "test_generation"
+    FEATURE_IMPLEMENTATION = "feature_implementation"
+    """Added for the 40-task suite (ARCF v2.3 Execution Directive,
+    Action 3) — scored identically to REFACTORING/BUG_FIXING via
+    score_execution (patch-applied + verify_command), since adding a
+    feature is still a code-change category with the same "did it apply
+    and did the suite still pass" oracle shape."""
 
 
 class BugFixture(BaseModel):
@@ -141,8 +147,19 @@ class SuiteRunSummary(BaseModel):
     avg_cer: float | None
     avg_pcr: float | None
     avg_accuracy_delta: float | None
-    """mean(arcf.accuracy_score - direct.accuracy_score) across tasks
-    where both are non-null."""
+    """mean(arcf.accuracy_score - direct.accuracy_score) across ALL
+    tasks where both are non-null — blends grounding accuracy
+    (Repository Understanding) with test-pass accuracy (every other
+    category), since accuracy_score means different things per
+    category. See avg_direct_grounding_score/avg_arcf_grounding_score
+    below for the Repository-Understanding-only figure the v2.3
+    Execution Directive's executive report asks for by name."""
+    avg_direct_grounding_score: float | None
+    """mean(direct.accuracy_score) over REPOSITORY_UNDERSTANDING tasks
+    only — the fraction of expected_grounding terms Direct's answer
+    mentioned, averaged. None if no such tasks have both modes' data."""
+    avg_arcf_grounding_score: float | None
+    """Same as avg_direct_grounding_score, for ARCF."""
     avg_unrelated_file_modifications_delta: float | None
     """mean(arcf.unrelated_file_modifications - direct.unrelated_file_modifications).
     <= 0 means ARCF touched no more unrelated files than Direct did."""

@@ -126,6 +126,52 @@ def test_create_and_get_comparison_full_flow(tmp_path: Path) -> None:
     assert get_response.json()["id"] == comparison_id
 
 
+def test_comparison_surfaces_validation_baseline_fields_side_by_side(tmp_path: Path) -> None:
+    """v2.3 Validation Baseline item 5: the comparison response must
+    expose Direct vs ARCF side by side, including the fields added for
+    validation (files_changed/lines_changed/build_result/test_result/
+    execution_status) — proven here without any new comparison-layer
+    code, since ComparisonResult embeds full ExecutionLedgerEntry
+    objects for both modes rather than a re-declared subset."""
+    client = _build_client(tmp_path)
+    direct_entry = _seed_entry(
+        client,
+        "direct",
+        files_changed=["auth/service.py"],
+        lines_changed=12,
+        build_result="passed",
+        test_result="failed",
+    )
+    arcf_entry = _seed_entry(
+        client,
+        "arcf",
+        files_changed=["auth/service.py"],
+        lines_changed=4,
+        build_result="passed",
+        test_result="passed",
+    )
+
+    response = client.post(
+        "/api/v1/compare",
+        json={
+            "task": "fix the bug",
+            "repository": "my/repo",
+            "direct_request_id": str(direct_entry.request_id),
+            "arcf_request_id": str(arcf_entry.request_id),
+        },
+        headers={"X-API-Key": "testkey"},
+    )
+    assert response.status_code == 200
+    body = response.json()
+
+    assert body["direct"]["lines_changed"] == 12
+    assert body["direct"]["test_result"] == "failed"
+    assert body["arcf"]["lines_changed"] == 4
+    assert body["arcf"]["test_result"] == "passed"
+    assert body["direct"]["execution_status"] == "success"
+    assert body["arcf"]["execution_status"] == "success"
+
+
 def test_get_comparison_unknown_id_returns_404(tmp_path: Path) -> None:
     client = _build_client(tmp_path)
     response = client.get(f"/api/v1/compare/{uuid4()}", headers={"X-API-Key": "testkey"})

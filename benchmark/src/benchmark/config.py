@@ -44,6 +44,10 @@ class BenchmarkSettings(BaseSettings):
 
     clone_root: str = ".benchmark_repos"
     store_path: str = "benchmark_runs.db"
+    execution_ledger_db_path: str = "benchmark_execution_ledger.db"
+    """Separate from arcf/'s own execution_ledger_db_path (arcf_execution_
+    ledger.db) — the benchmark is a standalone tool with its own SQLite
+    files, not a client of a running ARCF API server."""
 
     arcf_source_root: str = "../arcf"
     """Path (relative to benchmark/) to the real arcf checkout used as

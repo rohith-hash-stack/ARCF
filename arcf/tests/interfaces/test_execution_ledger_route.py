@@ -126,6 +126,36 @@ def test_patch_execution_sets_manual_rating(tmp_path: Path) -> None:
     assert response.json()["manual_rating"] == 4
 
 
+def test_patch_execution_sets_build_and_test_result(tmp_path: Path) -> None:
+    client = _build_client(tmp_path)
+    entry = _seed(client)
+
+    response = client.patch(
+        f"/api/v1/executions/{entry.request_id}",
+        json={"build_result": "passed", "test_result": "failed"},
+        headers={"X-API-Key": "testkey"},
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["build_result"] == "passed"
+    assert body["test_result"] == "failed"
+
+
+def test_seeded_entry_defaults_for_new_fields(tmp_path: Path) -> None:
+    client = _build_client(tmp_path)
+    entry = _seed(client)
+
+    response = client.get(
+        f"/api/v1/executions/{entry.request_id}", headers={"X-API-Key": "testkey"}
+    )
+    body = response.json()
+    assert body["execution_status"] == "success"
+    assert body["files_changed"] == []
+    assert body["lines_changed"] == 0
+    assert body["build_result"] is None
+    assert body["test_result"] is None
+
+
 def test_patch_execution_requires_at_least_one_field(tmp_path: Path) -> None:
     client = _build_client(tmp_path)
     entry = _seed(client)

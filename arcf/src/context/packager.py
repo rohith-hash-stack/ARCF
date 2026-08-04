@@ -15,9 +15,19 @@ understanding_analyzer is optional; when it's None, or when it fails,
 ContextPackager still returns a complete, valid ContextPackage with
 empty understanding_notes — selection is never SLM-decided, so SLM-2
 being unavailable doesn't break packaging, only removes its commentary.
+
+Repository debugging routing fix, Change 6 (diagnostic logging): emits
+one DEBUG-level JSON log line per package() call via the
+"arcf.retrieval" logger (files_sent_to_llm, budget_used_tokens,
+excluded_file_count), keyed by context_resolution_id — the other half
+of the routing-decision log code_intelligence/service.py emits at
+resolution time (see that module's own docstring for why these are two
+correlated lines rather than one). Internal/DEBUG only.
 """
 
 import asyncio
+import json
+import logging
 from pathlib import Path
 
 from context.budget_manager import ContextBudgetManager
@@ -30,6 +40,8 @@ from infrastructure.cost import CostEstimator
 from infrastructure.llm_client import LLMResponse
 from shared.errors import ContextUnderstandingError, LLMInvocationError
 from workspace.permissions import PermissionManager
+
+_logger = logging.getLogger("arcf.retrieval")
 
 
 class ContextPackager:
@@ -88,4 +100,15 @@ class ContextPackager:
             excluded_file_count=excluded_count,
             understanding_notes=understanding_notes,
         )
+        if _logger.isEnabledFor(logging.DEBUG):
+            _logger.debug(
+                json.dumps(
+                    {
+                        "context_resolution_id": str(result.id),
+                        "files_sent_to_llm": len(packaged_files),
+                        "budget_used_tokens": used_tokens,
+                        "excluded_file_count": excluded_count,
+                    }
+                )
+            )
         return package, llm_response

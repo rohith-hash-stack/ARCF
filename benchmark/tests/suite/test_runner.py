@@ -11,7 +11,9 @@ from types import SimpleNamespace
 import litellm
 import pytest
 from infrastructure.cost import CostEstimator
+from infrastructure.execution_ledger_db import InMemoryExecutionLedgerStore
 from infrastructure.llm_client import LiteLLMClient
+from shared.errors import LLMInvocationError
 from workspace.analyzer import WorkspaceAnalyzer
 from workspace.git_discovery import GitRepositoryDiscovery
 from workspace.language_detection import LanguageDetector
@@ -19,6 +21,7 @@ from workspace.scanner import RepositoryScanner
 from workspace.structure_analyzer import ProjectStructureAnalyzer
 
 from benchmark.domain.models import BenchmarkMode
+from benchmark.ledger import LedgerRecorder
 from benchmark.runners.direct_llm_runner import DirectLLMRunner
 from benchmark.suite.models import BugFixture, SuiteTask, TaskCategory
 from benchmark.suite.repo_pool import RepoPool
@@ -42,7 +45,7 @@ def repo_pool(tmp_path: Path) -> RepoPool:
     return pool
 
 
-def _runner(repo_pool: RepoPool) -> SuiteRunner:
+def _runner(repo_pool: RepoPool, ledger_store: InMemoryExecutionLedgerStore) -> SuiteRunner:
     llm_client = LiteLLMClient(max_retries=1, base_delay_seconds=0.01)
     cost_estimator = CostEstimator()
     workspace_analyzer = WorkspaceAnalyzer(
@@ -61,6 +64,7 @@ def _runner(repo_pool: RepoPool) -> SuiteRunner:
         model="gpt-4o-mini",
         max_context_tokens=10_000,
         max_output_tokens=512,
+        ledger_recorder=LedgerRecorder(ledger_store),
     )
 
 
@@ -92,7 +96,8 @@ async def test_bug_fixing_task_full_flow(
         verify_timeout_seconds=30,
     )
 
-    runner = _runner(repo_pool)
+    ledger_store = InMemoryExecutionLedgerStore()
+    runner = _runner(repo_pool, ledger_store)
     run, verification = await runner.run_task_mode(task, BenchmarkMode.DIRECT)
 
     assert verification.patch_applied is True
@@ -100,6 +105,12 @@ async def test_bug_fixing_task_full_flow(
     assert verification.accuracy_score == 1.0
     assert verification.unrelated_file_modifications == 0
     assert run.generated_output.startswith("### src/mod.py")
+
+    entries = ledger_store.list_recent(limit=10)
+    assert len(entries) == 1
+    assert entries[0].mode == "direct"
+    assert entries[0].execution_status == "success"
+    assert entries[0].artifact_content == run.generated_output
 
 
 async def test_bug_fixing_task_still_broken_fails_verification(
@@ -131,7 +142,7 @@ async def test_bug_fixing_task_still_broken_fails_verification(
         verify_timeout_seconds=30,
     )
 
-    runner = _runner(repo_pool)
+    runner = _runner(repo_pool, InMemoryExecutionLedgerStore())
     _, verification = await runner.run_task_mode(task, BenchmarkMode.DIRECT)
 
     assert verification.patch_applied is True
@@ -156,9 +167,38 @@ async def test_repository_understanding_task_no_patch_or_verify(
         expected_grounding=["src/mod.py"],
     )
 
-    runner = _runner(repo_pool)
+    runner = _runner(repo_pool, InMemoryExecutionLedgerStore())
     _, verification = await runner.run_task_mode(task, BenchmarkMode.DIRECT)
 
     assert verification.tests_passed is None
     assert verification.accuracy_score == 1.0
     assert verification.unrelated_file_modifications == 0
+
+
+async def test_failed_run_is_still_recorded_to_the_ledger_and_reraised(
+    monkeypatch: pytest.MonkeyPatch, repo_pool: RepoPool
+) -> None:
+    async def failing_acompletion(**kwargs: object) -> SimpleNamespace:
+        raise LLMInvocationError("provider unreachable")
+
+    monkeypatch.setattr(litellm, "acompletion", failing_acompletion)
+
+    task = SuiteTask(
+        id="understand-fail",
+        category=TaskCategory.REPOSITORY_UNDERSTANDING,
+        subcategory="x",
+        repo_key="arcf",
+        task_prompt="Where does add() live?",
+        expected_grounding=["src/mod.py"],
+    )
+
+    ledger_store = InMemoryExecutionLedgerStore()
+    runner = _runner(repo_pool, ledger_store)
+
+    with pytest.raises(LLMInvocationError):
+        await runner.run_task_mode(task, BenchmarkMode.DIRECT)
+
+    entries = ledger_store.list_recent(limit=10)
+    assert len(entries) == 1
+    assert entries[0].execution_status == "provider_error"
+    assert "provider unreachable" in entries[0].metadata["error"]

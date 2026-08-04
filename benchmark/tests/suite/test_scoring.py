@@ -102,3 +102,17 @@ def test_execution_unrelated_file_counted() -> None:
     verification_result = VerificationResult(passed=True, output_tail="ok")
     verification = score(task, run, patch, verification_result)
     assert verification.unrelated_file_modifications == 1
+
+
+def test_feature_implementation_scored_via_score_execution_like_bug_fixing() -> None:
+    task = SuiteTask(
+        id="t3", category=TaskCategory.FEATURE_IMPLEMENTATION, subcategory="x", repo_key="arcf",
+        task_prompt="add a feature", expected_path_prefixes=["src/x.py"],
+        verify_command="pytest", verify_cwd=".",
+    )
+    run = _run("### src/x.py\n```\nadded\n```", ["src/x.py"])
+    patch = PatchResult(applied=True, written_paths=["src/x.py"], skipped_protected_paths=[])
+    verification_result = VerificationResult(passed=True, output_tail="ok")
+    verification = score(task, run, patch, verification_result)
+    assert verification.tests_passed is True
+    assert verification.accuracy_score == 1.0

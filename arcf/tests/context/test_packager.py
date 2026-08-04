@@ -1,4 +1,5 @@
 import json
+import logging
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -171,3 +172,19 @@ async def test_empty_candidates_produces_empty_package_without_calling_slm2(
     assert package.relevant_files == []
     assert llm_response is None
     assert calls["count"] == 0
+
+
+async def test_diagnostic_log_line_correlated_by_context_resolution_id(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    (tmp_path / "auth.py").write_text("def authenticate(user):\n    return True\n")
+    result = _result(str(tmp_path))
+
+    with caplog.at_level(logging.DEBUG, logger="arcf.retrieval"):
+        await _packager(with_understanding=False).package(result, "fix auth bug", max_tokens=10_000)
+
+    records = [r for r in caplog.records if r.name == "arcf.retrieval"]
+    assert len(records) == 1
+    payload = json.loads(records[0].getMessage())
+    assert payload["context_resolution_id"] == str(result.id)
+    assert payload["files_sent_to_llm"] == 1

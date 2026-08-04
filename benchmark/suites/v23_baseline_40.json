@@ -1,0 +1,432 @@
+{
+  "_comment": "ARCF v2.3 Execution Directive, Action 3 — the 40-task benchmark suite replacing pilot.json as the validation baseline. 8 tasks per category (Repository Understanding, Test Generation, Bug Fixing, Refactoring, Feature Implementation), targeting the two repos suite/repo_pool.py registers (arcf, todomvc). Where a prompt describes something that doesn't map onto either repo's actual architecture (e.g. arcf has no password/login concept, no database transactions, no Robot Framework), the prompt is kept as given — a real user wouldn't know that in advance either — but bug_fixture is honestly omitted rather than fabricated, and verify_command falls back to the full test suite as a safety-net oracle (did the change avoid breaking anything) rather than a fabricated targeted assertion. Two Bug Fixing tasks (401/JWT) inject real, verified regressions into src/infrastructure/auth.py. See ARCF_V2.3_VALIDATION_READINESS_REPORT.md for which tasks have a precise oracle vs. a broad one.",
+  "tasks": [
+    {
+      "id": "repo-understanding-auth-flow",
+      "category": "repository_understanding",
+      "subcategory": "authentication_discovery",
+      "repo_key": "arcf",
+      "task_prompt": "Explain how this repository authenticates incoming API requests: which module and class handle it, which credential schemes are supported, and what happens when authentication fails.",
+      "expected_grounding": ["auth.py", "Authenticator", "AuthenticationError", "api_key", "jwt"]
+    },
+    {
+      "id": "repo-understanding-login-trace",
+      "category": "repository_understanding",
+      "subcategory": "request_tracing",
+      "repo_key": "arcf",
+      "task_prompt": "Trace the login request to the database layer.",
+      "expected_grounding": ["Authenticator", "ExecutionContractManager", "SqliteContractStore", "save"]
+    },
+    {
+      "id": "repo-understanding-callers-of-authenticate",
+      "category": "repository_understanding",
+      "subcategory": "call_graph",
+      "repo_key": "arcf",
+      "task_prompt": "Find all callers of authenticate().",
+      "expected_grounding": ["get_current_principal", "dependencies.py", "authenticate"]
+    },
+    {
+      "id": "repo-understanding-di-wiring",
+      "category": "repository_understanding",
+      "subcategory": "dependency_injection",
+      "repo_key": "arcf",
+      "task_prompt": "Identify dependency injection wiring.",
+      "expected_grounding": ["app.py", "create_app", "app.state", "dependencies.py"]
+    },
+    {
+      "id": "repo-understanding-jwt-location",
+      "category": "repository_understanding",
+      "subcategory": "jwt_discovery",
+      "repo_key": "arcf",
+      "task_prompt": "Locate JWT generation and validation.",
+      "expected_grounding": ["auth.py", "jwt.decode", "_authenticate_jwt"]
+    },
+    {
+      "id": "repo-understanding-schema-change-impact",
+      "category": "repository_understanding",
+      "subcategory": "impact_analysis",
+      "repo_key": "arcf",
+      "task_prompt": "Find modules impacted by changing the login schema.",
+      "expected_grounding": ["Contract", "UserIntent", "LivingContract"]
+    },
+    {
+      "id": "repo-understanding-architecture-summary",
+      "category": "repository_understanding",
+      "subcategory": "architecture_summary",
+      "repo_key": "arcf",
+      "task_prompt": "Generate a repository architecture summary.",
+      "expected_grounding": ["domain", "contracts", "code_intelligence", "context", "execution"]
+    },
+    {
+      "id": "repo-understanding-endpoint-to-response-trace",
+      "category": "repository_understanding",
+      "subcategory": "request_tracing",
+      "repo_key": "arcf",
+      "task_prompt": "Trace execution from API endpoint to response.",
+      "expected_grounding": ["router", "HTTPException", "response_model"]
+    },
+
+    {
+      "id": "test-generation-pytest-unit-cost-estimator",
+      "category": "test_generation",
+      "subcategory": "unit_test",
+      "repo_key": "arcf",
+      "task_prompt": "Generate pytest unit tests for the CostEstimator class in src/infrastructure/cost.py, covering token counting and cost estimation for both known and unknown models.",
+      "expected_path_prefixes": ["tests/infrastructure/"],
+      "protected_path_prefixes": ["src/"],
+      "verify_command": "\"{python}\" -m pytest tests/infrastructure/test_cost.py -q",
+      "verify_timeout_seconds": 60
+    },
+    {
+      "id": "test-generation-playwright-todo-flows",
+      "category": "test_generation",
+      "subcategory": "e2e_test",
+      "repo_key": "todomvc",
+      "task_prompt": "Generate Playwright login tests.",
+      "expected_path_prefixes": ["tests/todo-creation/"],
+      "verify_command": "npx playwright test tests/todo-creation --project=chromium",
+      "verify_timeout_seconds": 120
+    },
+    {
+      "id": "test-generation-negative-auth",
+      "category": "test_generation",
+      "subcategory": "negative_test",
+      "repo_key": "arcf",
+      "task_prompt": "Generate negative authentication tests for the Authenticator class in src/infrastructure/auth.py — invalid API key, invalid JWT signature, and missing credentials.",
+      "expected_path_prefixes": ["tests/infrastructure/"],
+      "protected_path_prefixes": ["src/"],
+      "verify_command": "\"{python}\" -m pytest tests/infrastructure/test_auth.py -q",
+      "verify_timeout_seconds": 60
+    },
+    {
+      "id": "test-generation-robot-framework-api",
+      "category": "test_generation",
+      "subcategory": "api_test",
+      "repo_key": "arcf",
+      "task_prompt": "Generate Robot Framework API tests.",
+      "expected_path_prefixes": ["tests/"],
+      "protected_path_prefixes": ["src/"],
+      "verify_command": "\"{python}\" -m pytest -q",
+      "verify_timeout_seconds": 180
+    },
+    {
+      "id": "test-generation-boundary-context-budget",
+      "category": "test_generation",
+      "subcategory": "boundary_test",
+      "repo_key": "arcf",
+      "task_prompt": "Generate boundary-value tests for ContextBudgetManager's token budget selection in src/context/budget_manager.py.",
+      "expected_path_prefixes": ["tests/context/"],
+      "protected_path_prefixes": ["src/"],
+      "verify_command": "\"{python}\" -m pytest tests/context -q",
+      "verify_timeout_seconds": 60
+    },
+    {
+      "id": "test-generation-regression-jwt-bypass",
+      "category": "test_generation",
+      "subcategory": "regression_test",
+      "repo_key": "arcf",
+      "task_prompt": "Generate a regression test for the JWT missing-sub-claim authentication bypass in src/infrastructure/auth.py.",
+      "expected_path_prefixes": ["tests/infrastructure/"],
+      "protected_path_prefixes": ["src/"],
+      "verify_command": "\"{python}\" -m pytest tests/infrastructure/test_auth.py -q",
+      "verify_timeout_seconds": 60
+    },
+    {
+      "id": "test-generation-integration-contract-flow",
+      "category": "test_generation",
+      "subcategory": "integration_test",
+      "repo_key": "arcf",
+      "task_prompt": "Generate an integration test that exercises the full contract-creation flow (SLM-1 intent extraction through LivingContract persistence) via the FastAPI TestClient.",
+      "expected_path_prefixes": ["tests/interfaces/"],
+      "protected_path_prefixes": ["src/"],
+      "verify_command": "\"{python}\" -m pytest tests/interfaces/test_contracts_route.py -q",
+      "verify_timeout_seconds": 60
+    },
+    {
+      "id": "test-generation-fixtures-mocks-ledger",
+      "category": "test_generation",
+      "subcategory": "fixtures",
+      "repo_key": "arcf",
+      "task_prompt": "Generate reusable pytest fixtures and mocks for constructing a fake ExecutionLedgerEntry, to reduce duplication across tests that need one.",
+      "expected_path_prefixes": ["tests/"],
+      "protected_path_prefixes": ["src/"],
+      "verify_command": "\"{python}\" -m pytest tests/domain/test_execution_ledger.py tests/infrastructure/test_execution_ledger_db.py -q",
+      "verify_timeout_seconds": 60
+    },
+
+    {
+      "id": "bug-fixing-playwright-locator",
+      "category": "bug_fixing",
+      "subcategory": "flaky_locator",
+      "repo_key": "todomvc",
+      "task_prompt": "Fix a failing Playwright locator.",
+      "verify_command": "npx playwright test --project=chromium",
+      "verify_timeout_seconds": 180
+    },
+    {
+      "id": "bug-fixing-401-auth-failure",
+      "category": "bug_fixing",
+      "subcategory": "auth_bypass",
+      "repo_key": "arcf",
+      "task_prompt": "Valid API keys are intermittently being rejected with HTTP 401 Unauthorized. Investigate src/infrastructure/auth.py and fix it.",
+      "expected_path_prefixes": ["src/infrastructure/auth.py"],
+      "protected_path_prefixes": ["tests/"],
+      "bug_fixture": {
+        "file_path": "src/infrastructure/auth.py",
+        "find": "if hmac.compare_digest(configured_key, api_key):",
+        "replace": "if not hmac.compare_digest(configured_key, api_key):"
+      },
+      "verify_command": "\"{python}\" -m pytest tests/infrastructure/test_auth.py -q",
+      "verify_timeout_seconds": 60
+    },
+    {
+      "id": "bug-fixing-jwt-validation",
+      "category": "bug_fixing",
+      "subcategory": "jwt_bug",
+      "repo_key": "arcf",
+      "task_prompt": "JWT bearer tokens with an invalid signature are being accepted instead of rejected — this is a critical authentication bypass. Investigate src/infrastructure/auth.py and fix it.",
+      "expected_path_prefixes": ["src/infrastructure/auth.py"],
+      "protected_path_prefixes": ["tests/"],
+      "bug_fixture": {
+        "file_path": "src/infrastructure/auth.py",
+        "find": "algorithms=[self._settings.jwt_algorithm],",
+        "replace": "algorithms=[self._settings.jwt_algorithm], options={\"verify_signature\": False},"
+      },
+      "verify_command": "\"{python}\" -m pytest tests/infrastructure/test_auth.py -q",
+      "verify_timeout_seconds": 60
+    },
+    {
+      "id": "bug-fixing-circular-import",
+      "category": "bug_fixing",
+      "subcategory": "import_cycle",
+      "repo_key": "arcf",
+      "task_prompt": "Fix circular import.",
+      "expected_path_prefixes": ["src/"],
+      "protected_path_prefixes": ["tests/"],
+      "verify_command": "\"{python}\" -m pytest -q",
+      "verify_timeout_seconds": 180
+    },
+    {
+      "id": "bug-fixing-race-condition-token-refresh",
+      "category": "bug_fixing",
+      "subcategory": "concurrency",
+      "repo_key": "arcf",
+      "task_prompt": "Fix race condition in token refresh.",
+      "expected_path_prefixes": ["src/infrastructure/rate_limit.py"],
+      "protected_path_prefixes": ["tests/"],
+      "verify_command": "\"{python}\" -m pytest tests/infrastructure/test_rate_limit.py -q",
+      "verify_timeout_seconds": 60
+    },
+    {
+      "id": "bug-fixing-transaction-rollback",
+      "category": "bug_fixing",
+      "subcategory": "persistence",
+      "repo_key": "arcf",
+      "task_prompt": "Fix transaction rollback issue.",
+      "expected_path_prefixes": ["src/infrastructure/"],
+      "protected_path_prefixes": ["tests/"],
+      "verify_command": "\"{python}\" -m pytest -q",
+      "verify_timeout_seconds": 180
+    },
+    {
+      "id": "bug-fixing-memory-leak-idempotency-store",
+      "category": "bug_fixing",
+      "subcategory": "resource_leak",
+      "repo_key": "arcf",
+      "task_prompt": "The idempotency record store grows without bound in a long-running process — entries are only pruned lazily, on a get() call that happens to hit an expired one, never proactively. Investigate src/infrastructure/idempotency.py and fix the leak.",
+      "expected_path_prefixes": ["src/infrastructure/idempotency.py"],
+      "protected_path_prefixes": ["tests/"],
+      "verify_command": "\"{python}\" -m pytest tests/infrastructure/test_idempotency.py -q",
+      "verify_timeout_seconds": 60
+    },
+    {
+      "id": "bug-fixing-null-reference",
+      "category": "bug_fixing",
+      "subcategory": "null_reference",
+      "repo_key": "arcf",
+      "task_prompt": "Fix null-reference exception.",
+      "expected_path_prefixes": ["src/"],
+      "protected_path_prefixes": ["tests/"],
+      "verify_command": "\"{python}\" -m pytest -q",
+      "verify_timeout_seconds": 180
+    },
+
+    {
+      "id": "refactoring-shared-auth-utilities",
+      "category": "refactoring",
+      "subcategory": "extract_utility",
+      "repo_key": "arcf",
+      "task_prompt": "Extract shared authentication utilities: refactor src/infrastructure/auth.py so any duplication between _authenticate_api_key and _authenticate_jwt is removed, without changing behavior.",
+      "expected_path_prefixes": ["src/infrastructure/auth.py"],
+      "protected_path_prefixes": ["tests/"],
+      "verify_command": "\"{python}\" -m pytest tests/infrastructure/test_auth.py -q",
+      "verify_timeout_seconds": 60
+    },
+    {
+      "id": "refactoring-reduce-duplication-analyzers",
+      "category": "refactoring",
+      "subcategory": "reduce_duplication",
+      "repo_key": "arcf",
+      "task_prompt": "Reduce duplication across the LanguageAnalyzer implementations in src/code_intelligence/languages/ — each repeats identical _text/_location/_symbol_id static helper methods. Extract them into one shared module without changing any analyzer's behavior.",
+      "expected_path_prefixes": ["src/code_intelligence/languages/"],
+      "protected_path_prefixes": ["tests/"],
+      "verify_command": "\"{python}\" -m pytest tests/code_intelligence/languages -q",
+      "verify_timeout_seconds": 90
+    },
+    {
+      "id": "refactoring-improve-di-app-factory",
+      "category": "refactoring",
+      "subcategory": "dependency_injection",
+      "repo_key": "arcf",
+      "task_prompt": "Improve dependency injection in src/interfaces/api/app.py's create_app — reduce the number of concrete classes constructed inline so the wiring is easier to override in tests.",
+      "expected_path_prefixes": ["src/interfaces/api/app.py"],
+      "protected_path_prefixes": ["tests/"],
+      "verify_command": "\"{python}\" -m pytest tests/interfaces -q",
+      "verify_timeout_seconds": 120
+    },
+    {
+      "id": "refactoring-large-methods-context-resolver",
+      "category": "refactoring",
+      "subcategory": "extract_method",
+      "repo_key": "arcf",
+      "task_prompt": "Refactor large methods: ContextResolver.resolve() in src/code_intelligence/context_resolver.py handles multiple responsibilities in one long method. Break it into smaller, named steps without changing its observable behavior.",
+      "expected_path_prefixes": ["src/code_intelligence/context_resolver.py"],
+      "protected_path_prefixes": ["tests/"],
+      "verify_command": "\"{python}\" -m pytest tests/code_intelligence/test_context_resolver.py -q",
+      "verify_timeout_seconds": 60
+    },
+    {
+      "id": "refactoring-factory-pattern-language-registry",
+      "category": "refactoring",
+      "subcategory": "factory_pattern",
+      "repo_key": "arcf",
+      "task_prompt": "Introduce factory pattern: in src/interfaces/api/app.py, the LanguageAnalyzer instances are constructed as a hardcoded list literal — introduce a small factory function that builds the full registry, so the list isn't duplicated wherever a registry is needed.",
+      "expected_path_prefixes": ["src/interfaces/api/app.py", "src/code_intelligence/"],
+      "protected_path_prefixes": ["tests/"],
+      "verify_command": "\"{python}\" -m pytest tests/interfaces tests/code_intelligence -q",
+      "verify_timeout_seconds": 120
+    },
+    {
+      "id": "refactoring-improve-readability-contract-manager",
+      "category": "refactoring",
+      "subcategory": "readability",
+      "repo_key": "arcf",
+      "task_prompt": "Improve readability: src/contracts/manager.py's ExecutionContractManager.create_contract method is dense — improve variable naming and add structure (without changing behavior) to make its control flow easier to follow.",
+      "expected_path_prefixes": ["src/contracts/manager.py"],
+      "protected_path_prefixes": ["tests/"],
+      "verify_command": "\"{python}\" -m pytest tests/contracts -q",
+      "verify_timeout_seconds": 60
+    },
+    {
+      "id": "refactoring-simplify-exception-handling-llm-client",
+      "category": "refactoring",
+      "subcategory": "exception_handling",
+      "repo_key": "arcf",
+      "task_prompt": "Simplify exception handling: in src/infrastructure/llm_client.py's LiteLLMClient.complete, the retry/exception-handling logic is intricate — simplify it while preserving the exact retry behavior (exponential backoff, only retryable exceptions retried).",
+      "expected_path_prefixes": ["src/infrastructure/llm_client.py"],
+      "protected_path_prefixes": ["tests/"],
+      "verify_command": "\"{python}\" -m pytest tests/infrastructure/test_llm_client.py -q",
+      "verify_timeout_seconds": 60
+    },
+    {
+      "id": "refactoring-remove-dead-code",
+      "category": "refactoring",
+      "subcategory": "dead_code",
+      "repo_key": "arcf",
+      "task_prompt": "Remove dead code. Search src/ for any unused imports, unreachable branches, or functions with no remaining callers, and remove them without changing behavior.",
+      "expected_path_prefixes": ["src/"],
+      "protected_path_prefixes": ["tests/"],
+      "verify_command": "\"{python}\" -m pytest -q",
+      "verify_timeout_seconds": 180
+    },
+
+    {
+      "id": "feature-password-reset-endpoint",
+      "category": "feature_implementation",
+      "subcategory": "new_endpoint",
+      "repo_key": "arcf",
+      "task_prompt": "Add password reset endpoint.",
+      "expected_path_prefixes": ["src/interfaces/api/routes/", "src/domain/"],
+      "protected_path_prefixes": ["tests/"],
+      "verify_command": "\"{python}\" -m pytest -q",
+      "verify_timeout_seconds": 180
+    },
+    {
+      "id": "feature-refresh-token-rotation",
+      "category": "feature_implementation",
+      "subcategory": "auth_feature",
+      "repo_key": "arcf",
+      "task_prompt": "Add refresh token rotation.",
+      "expected_path_prefixes": ["src/infrastructure/", "src/interfaces/api/"],
+      "protected_path_prefixes": ["tests/"],
+      "verify_command": "\"{python}\" -m pytest -q",
+      "verify_timeout_seconds": 180
+    },
+    {
+      "id": "feature-role-based-authorization",
+      "category": "feature_implementation",
+      "subcategory": "authorization",
+      "repo_key": "arcf",
+      "task_prompt": "Add role-based authorization.",
+      "expected_path_prefixes": ["src/domain/principal.py", "src/interfaces/api/"],
+      "protected_path_prefixes": ["tests/"],
+      "verify_command": "\"{python}\" -m pytest tests/interfaces tests/domain -q",
+      "verify_timeout_seconds": 120
+    },
+    {
+      "id": "feature-login-rate-limiting",
+      "category": "feature_implementation",
+      "subcategory": "rate_limiting",
+      "repo_key": "arcf",
+      "task_prompt": "Add login rate limiting.",
+      "expected_path_prefixes": ["src/infrastructure/rate_limit.py", "src/interfaces/api/"],
+      "protected_path_prefixes": ["tests/"],
+      "verify_command": "\"{python}\" -m pytest tests/infrastructure/test_rate_limit.py tests/interfaces -q",
+      "verify_timeout_seconds": 120
+    },
+    {
+      "id": "feature-audit-logging",
+      "category": "feature_implementation",
+      "subcategory": "observability",
+      "repo_key": "arcf",
+      "task_prompt": "Add audit logging.",
+      "expected_path_prefixes": ["src/"],
+      "protected_path_prefixes": ["tests/"],
+      "verify_command": "\"{python}\" -m pytest -q",
+      "verify_timeout_seconds": 180
+    },
+    {
+      "id": "feature-account-lockout",
+      "category": "feature_implementation",
+      "subcategory": "auth_feature",
+      "repo_key": "arcf",
+      "task_prompt": "Add account lockout.",
+      "expected_path_prefixes": ["src/infrastructure/auth.py", "src/infrastructure/"],
+      "protected_path_prefixes": ["tests/"],
+      "verify_command": "\"{python}\" -m pytest -q",
+      "verify_timeout_seconds": 180
+    },
+    {
+      "id": "feature-structured-logging",
+      "category": "feature_implementation",
+      "subcategory": "observability",
+      "repo_key": "arcf",
+      "task_prompt": "Add structured logging.",
+      "expected_path_prefixes": ["src/"],
+      "protected_path_prefixes": ["tests/"],
+      "verify_command": "\"{python}\" -m pytest -q",
+      "verify_timeout_seconds": 180
+    },
+    {
+      "id": "feature-update-tests-after-schema-change",
+      "category": "feature_implementation",
+      "subcategory": "schema_migration",
+      "repo_key": "arcf",
+      "task_prompt": "Update all affected tests after a schema change: add a new optional 'notes' field (str | None, default None) to ExecutionLedgerEntry in src/domain/execution_ledger.py, and update any tests that construct one directly if the change requires it.",
+      "expected_path_prefixes": ["src/domain/execution_ledger.py", "tests/"],
+      "protected_path_prefixes": [],
+      "verify_command": "\"{python}\" -m pytest -q",
+      "verify_timeout_seconds": 180
+    }
+  ]
+}

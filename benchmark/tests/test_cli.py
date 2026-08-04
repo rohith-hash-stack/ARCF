@@ -34,3 +34,22 @@ def test_suite_setup_parses() -> None:
     args = _parse_args(["suite", "setup", "--repo", "todomvc", "--yes"])
     assert args.repo == "todomvc"
     assert args.yes is True
+
+
+def test_compare_provider_defaults_to_none() -> None:
+    args = _parse_args(["compare", "--repo", "/repo", "--task", "fix bug"])
+    assert args.provider is None
+
+
+def test_compare_accepts_a_valid_provider() -> None:
+    args = _parse_args(
+        ["compare", "--repo", "/repo", "--task", "fix bug", "--provider", "openai"]
+    )
+    assert args.provider == "openai"
+
+
+def test_suite_run_accepts_a_valid_provider() -> None:
+    args = _parse_args(
+        ["suite", "run", "--suite", "pilot", "--mode", "direct", "--provider", "gemini"]
+    )
+    assert args.provider == "gemini"

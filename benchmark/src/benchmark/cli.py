@@ -35,12 +35,14 @@ from workspace.structure_analyzer import ProjectStructureAnalyzer
 from benchmark.bootstrap import build_runtime
 from benchmark.config import BenchmarkSettings, get_settings
 from benchmark.domain.models import BenchmarkMode
+from benchmark.model_resolution import resolve_model
+from benchmark.providers.registry import default_provider_registry
 from benchmark.report import render_text_report
 from benchmark.suite.assemble import assemble_task_result
 from benchmark.suite.loader import load_suite
 from benchmark.suite.models import SuiteModeRunRecord
 from benchmark.suite.repo_pool import RepoPool
-from benchmark.suite.report import render_suite_report
+from benchmark.suite.report import render_executive_summary, render_suite_report, summarize
 from benchmark.suite.runner import SuiteRunner
 from benchmark.suite.store import SuiteResultStore
 
@@ -48,6 +50,7 @@ _ALL_MODES = [BenchmarkMode.DIRECT, BenchmarkMode.ARCF, BenchmarkMode.ARCF_LOCAL
 _MODE_CHOICES = {mode.value: mode for mode in _ALL_MODES}
 _SUITE_MODE_CHOICES = {"direct": BenchmarkMode.DIRECT, "arcf-remote": BenchmarkMode.ARCF,
                         "arcf-local": BenchmarkMode.ARCF_LOCAL}
+_PROVIDER_CHOICES = default_provider_registry().names()
 
 _BENCHMARK_ROOT = Path(__file__).resolve().parent.parent.parent
 _SUITES_DIR = _BENCHMARK_ROOT / "suites"
@@ -64,6 +67,12 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
     compare.add_argument("--repo", required=True, help="Path to a local repository")
     compare.add_argument("--task", required=True, help="The task/prompt to run against the repo")
     compare.add_argument("--model", default=None)
+    compare.add_argument(
+        "--provider", choices=_PROVIDER_CHOICES, default=None,
+        help="Resolve --model as an alias through this BenchmarkProvider (e.g. "
+        "--provider gemini --model gemini-flash-latest) instead of passing --model "
+        "straight through to litellm.",
+    )
     compare.add_argument(
         "--modes", nargs="+", choices=list(_MODE_CHOICES), default=list(_MODE_CHOICES)
     )
@@ -85,6 +94,11 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
     run.add_argument("--suite", required=True, help="Suite name (benchmark/suites/<name>.json)")
     run.add_argument("--mode", required=True, choices=list(_SUITE_MODE_CHOICES))
     run.add_argument("--model", default=None)
+    run.add_argument(
+        "--provider", choices=_PROVIDER_CHOICES, default=None,
+        help="Resolve --model as an alias through this BenchmarkProvider instead of "
+        "passing --model straight through to litellm.",
+    )
     run.add_argument("--max-context-tokens", type=int, default=None)
     run.add_argument("--max-output-tokens", type=int, default=None)
     run.add_argument(
@@ -112,10 +126,13 @@ async def _run_compare(args: argparse.Namespace) -> int:
     result = await runtime.controller.run(
         repo=repo,
         task=args.task,
-        model=args.model or settings.default_model,
+        model=resolve_model(
+            args.provider, args.model, settings.default_model, settings.local_slm_base_url
+        ),
         modes=modes,
         max_context_tokens=args.max_context_tokens or settings.max_context_tokens,
         max_output_tokens=args.max_output_tokens or settings.max_output_tokens,
+        provider=args.provider,
     )
 
     runtime.store.save(result)
@@ -179,9 +196,13 @@ async def _suite_run(args: argparse.Namespace) -> int:
         arcf_local_runner=runtime.arcf_local_runner,
         workspace_analyzer=workspace_analyzer,
         scanner=scanner,
-        model=args.model or settings.default_model,
+        model=resolve_model(
+            args.provider, args.model, settings.default_model, settings.local_slm_base_url
+        ),
         max_context_tokens=args.max_context_tokens or settings.max_context_tokens,
         max_output_tokens=args.max_output_tokens or settings.max_output_tokens,
+        ledger_recorder=runtime.ledger_recorder,
+        provider=args.provider,
     )
     store = SuiteResultStore(settings.suite_store_path)
 
@@ -230,13 +251,19 @@ def _suite_report(args: argparse.Namespace) -> int:
     if missing:
         print(f"Note: no runs stored yet for: {', '.join(missing)}", file=sys.stderr)
 
+    summary = summarize(args.suite, results)
     report_text = render_suite_report(args.suite, results)
+    executive_text = render_executive_summary(summary)
     print(report_text)
 
     _REPORTS_DIR.mkdir(parents=True, exist_ok=True)
-    out_path = _REPORTS_DIR / f"{args.suite}_{datetime.now():%Y%m%d_%H%M%S}.md"
+    timestamp = f"{datetime.now():%Y%m%d_%H%M%S}"
+    out_path = _REPORTS_DIR / f"{args.suite}_{timestamp}.md"
+    executive_path = _REPORTS_DIR / f"{args.suite}_{timestamp}_executive_summary.md"
     out_path.write_text(report_text, encoding="utf-8")
+    executive_path.write_text(executive_text, encoding="utf-8")
     print(f"\nSaved to {out_path}", file=sys.stderr)
+    print(f"Executive summary saved to {executive_path}", file=sys.stderr)
     return 0
 
 

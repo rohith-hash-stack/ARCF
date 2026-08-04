@@ -17,7 +17,7 @@ Task:
 \"\"\"
 {task}
 \"\"\"
-
+{repository_summary}
 Repository context:
 {file_sections}
 
@@ -32,12 +32,16 @@ class FileContext:
     content: str
 
 
-def compile_prompt(task: str, files: list[FileContext]) -> str:
+def compile_prompt(task: str, files: list[FileContext], repository_summary: str = "") -> str:
     if files:
         sections = "\n\n".join(f"### {f.file_path}\n```\n{f.content}\n```" for f in files)
     else:
         sections = "(no file context available)"
-    return _PROMPT_TEMPLATE.format(task=task, file_sections=sections)
+    return _PROMPT_TEMPLATE.format(
+        task=task,
+        repository_summary=f"\n{repository_summary}\n" if repository_summary else "",
+        file_sections=sections,
+    )
 
 
 async def generate(

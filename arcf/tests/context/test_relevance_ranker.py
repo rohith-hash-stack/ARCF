@@ -109,6 +109,32 @@ def test_score_never_exceeds_one() -> None:
     assert ranked[0].relevance_score <= 1.0
 
 
+def test_references_outranks_generic_evidence_default_weight() -> None:
+    """"references: ..." (query-referenced files, context/evidence_fallback.py)
+    is weighted above the default weight generic "evidence: <category>"
+    files fall back to — the only pairing that actually occurs in
+    practice, since both only ever appear together in an evidence-only
+    fallback candidate list (never alongside defines/calls/extends)."""
+    result = _result(
+        [
+            FileReference(
+                file_path="a.py",
+                reason="evidence: project metadata",
+                language="unknown",
+                token_count=10,
+            ),
+            FileReference(
+                file_path="b.py",
+                reason="references: query-referenced",
+                language="python",
+                token_count=10,
+            ),
+        ]
+    )
+    ranked = RelevanceRanker().rank(result)
+    assert [r.file_path for r in ranked] == ["b.py", "a.py"]
+
+
 def test_empty_candidates_returns_empty_list() -> None:
     result = _result([])
     assert RelevanceRanker().rank(result) == []

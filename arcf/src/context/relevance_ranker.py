@@ -13,10 +13,17 @@ from dataclasses import dataclass
 
 from domain.context_resolution import ContextResolutionResult
 
+# "references:" is context/evidence_fallback.py's tag for a query-
+# referenced file (one the raw request itself named) — weighted one
+# tier above its generic "evidence: <category>" fallback files (which
+# fall through to _DEFAULT_REASON_WEIGHT below), so a file the user
+# actually asked about survives ContextBudgetManager's token cutoff
+# ahead of baseline diagnostic evidence when both can't fit.
 _REASON_WEIGHTS: dict[str, float] = {
     "defines": 1.0,
     "calls": 0.7,
     "extends": 0.6,
+    "references:": 0.8,
 }
 _DEFAULT_REASON_WEIGHT = 0.3
 _ENTRY_POINT_BONUS = 0.2

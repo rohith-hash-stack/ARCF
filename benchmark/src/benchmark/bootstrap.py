@@ -44,6 +44,7 @@ from contracts.task_classifier import TaskClassifier
 from infrastructure.context_resolution_store import InMemoryContextResolutionStore
 from infrastructure.contract_store import InMemoryContractStore
 from infrastructure.cost import CostEstimator
+from infrastructure.execution_ledger_db import SqliteExecutionLedgerStore
 from infrastructure.llm_client import LiteLLMClient
 from workspace.analyzer import WorkspaceAnalyzer
 from workspace.git_discovery import GitRepositoryDiscovery
@@ -56,6 +57,7 @@ from benchmark.analyzer import BenchmarkAnalyzer
 from benchmark.config import BenchmarkSettings
 from benchmark.controller import BenchmarkController
 from benchmark.domain.models import BenchmarkMode
+from benchmark.ledger import LedgerRecorder
 from benchmark.local_slm.errors import LocalSLMUnavailableError
 from benchmark.local_slm.ollama_provider import OllamaProvider
 from benchmark.repository import RepositoryLoader
@@ -72,6 +74,9 @@ class Runtime:
     repository_loader: RepositoryLoader
     controller: BenchmarkController
     store: BenchmarkStore
+    ledger_recorder: LedgerRecorder
+    """Shared with SuiteRunner (built by cli.py's _suite_run) so `suite
+    run` and `compare`/the API write to the same Execution Ledger."""
     local_slm_unavailable_reason: str | None
     """None when Mode C (arcf_local) is available. Otherwise, why it
     isn't — surfaced by callers so operators aren't left guessing why
@@ -181,11 +186,16 @@ def build_runtime(settings: BenchmarkSettings) -> Runtime:
             mode=BenchmarkMode.ARCF_LOCAL,
         )
 
+    ledger_recorder = LedgerRecorder(
+        SqliteExecutionLedgerStore(settings.execution_ledger_db_path)
+    )
+
     controller = BenchmarkController(
         direct_runner=direct_runner,
         arcf_runner=arcf_runner,
         arcf_local_runner=arcf_local_runner,
         analyzer=BenchmarkAnalyzer(),
+        ledger_recorder=ledger_recorder,
     )
 
     return Runtime(
@@ -193,6 +203,7 @@ def build_runtime(settings: BenchmarkSettings) -> Runtime:
         repository_loader=repository_loader,
         controller=controller,
         store=BenchmarkStore(settings.store_path),
+        ledger_recorder=ledger_recorder,
         local_slm_unavailable_reason=local_slm_unavailable_reason,
         direct_runner=direct_runner,
         arcf_runner=arcf_runner,

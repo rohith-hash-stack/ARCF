@@ -27,6 +27,7 @@ def create_app(settings: BenchmarkSettings | None = None) -> FastAPI:
     app.state.repository_loader = runtime.repository_loader
     app.state.controller = runtime.controller
     app.state.store = runtime.store
+    app.state.ledger_recorder = runtime.ledger_recorder
     app.state.local_slm_unavailable_reason = runtime.local_slm_unavailable_reason
 
     app.include_router(router)

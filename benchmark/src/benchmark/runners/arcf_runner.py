@@ -24,16 +24,26 @@ handles the case where it IS enabled, for when that's toggled on later.
 target_names for code intelligence resolution come from
 UserIntent.entities (SLM-1's own extraction) — if a task doesn't
 mention any existing named symbol (a green-field task, or one phrased
-without specifics), entities may be empty and candidate selection can
-legitimately return nothing. That is not papered over here: it is a
-real, measurable characteristic of ARCF's current pipeline, and
-surfacing it honestly is the point of the benchmark.
+without specifics), entities may be empty and symbol-based candidate
+selection legitimately finds nothing. CodeIntelligenceContractService
+(ARCF v2.3 retrieval-context stabilization patch) now covers that case
+for repository-scoped requests (e.g. "generate documentation for this
+repository's test suite"): it classifies the raw request
+deterministically and, only when candidate_files is still empty,
+expands the search via the documentation evidence contract
+(contracts/evidence_contract.py, context/evidence_fallback.py) so this
+runner's final LLM call is not left with zero repository context. A
+green-field task with no named symbols AND no repository-scope signal
+(e.g. "add a new feature that doesn't exist yet") can still legitimately
+resolve to nothing — that remains a real, measurable characteristic of
+the pipeline, not papered over.
 """
 
 import time
 from pathlib import Path
 
 from code_intelligence.service import CodeIntelligenceContractService
+from context.evidence_fallback import build_repository_summary
 from context.packager import ContextPackager
 from contracts.manager import ExecutionContractManager
 from infrastructure.cost import CostEstimator
@@ -123,7 +133,8 @@ class ArcfRunner:
         files = [
             FileContext(file_path=f.file_path, content=f.content) for f in package.relevant_files
         ]
-        prompt = compile_prompt(task, files)
+        repository_summary = build_repository_summary(package.relevant_files)
+        prompt = compile_prompt(task, files, repository_summary)
 
         llm_start = time.perf_counter()
         response, estimated_cost, actual_cost = await generate(
@@ -143,6 +154,7 @@ class ArcfRunner:
         return RunResult(
             mode=self._mode,
             model=model,
+            prompt=prompt,
             generated_output=response.content,
             token_metrics=TokenMetrics(
                 input_tokens=response.prompt_tokens,
@@ -175,6 +187,7 @@ class ArcfRunner:
                 files_sent_to_llm=len(package.relevant_files),
             ),
             quality_metrics=build_quality_metrics(response.content),
+            referenced_files=[f.file_path for f in package.relevant_files],
             contract=living.contract,
             context_resolution=resolution,
             context_package=package,

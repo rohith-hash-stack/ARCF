@@ -82,6 +82,12 @@ class QualityMetrics(BaseModel):
 
     answer_length: int = Field(ge=0)
     modified_files: list[str] = Field(default_factory=list)
+    lines_changed: int = Field(default=0, ge=0)
+    """Count of added/removed lines when generated_output is unified-
+    diff-formatted (quality.count_changed_lines) — 0 for the suite's
+    full-file-block output format, since counting there requires
+    diffing against the original file content, which this signal
+    doesn't have access to. See quality.py's module docstring."""
     compilation_success: bool | None = None
     test_success: bool | None = None
 
@@ -133,12 +139,25 @@ class RunResult(BaseModel):
 
     mode: BenchmarkMode
     model: str
+    prompt: str = ""
+    """The exact compiled prompt sent to the final LLM call — the same
+    text LedgerRecorder records, exposed here too so a caller (the
+    dashboard) doesn't need a second round-trip to the Execution Ledger
+    just to show what was actually asked."""
     generated_output: str
     token_metrics: TokenMetrics
     latency_metrics: LatencyMetrics
     cost_metrics: CostMetrics
     context_metrics: ContextMetrics
     quality_metrics: QualityMetrics
+
+    referenced_files: list[str] = Field(default_factory=list)
+    """Relative paths actually placed in the compiled prompt — the same
+    files context_metrics.files_sent_to_llm only counts. Populated
+    identically by DirectLLMRunner (the files it fit under
+    max_context_tokens) and ArcfRunner (context_package.relevant_files),
+    so both modes expose what a dashboard would call "files referenced"
+    without having to re-derive it from generated_output's text."""
 
     contract: Contract | None = None
     context_resolution: ContextResolutionResult | None = None

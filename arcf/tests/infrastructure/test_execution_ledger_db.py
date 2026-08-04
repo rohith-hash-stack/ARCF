@@ -58,6 +58,24 @@ def test_save_and_get_roundtrips(store: ExecutionLedgerStore) -> None:
     assert fetched.total_tokens == entry.total_tokens
 
 
+def test_save_and_get_roundtrips_validation_fields(store: ExecutionLedgerStore) -> None:
+    entry = _make_entry(
+        execution_status="success",
+        files_changed=["foo.py", "bar.py"],
+        lines_changed=42,
+        build_result="passed",
+        test_result="failed",
+    )
+    store.save(entry)
+    fetched = store.get(entry.request_id)
+    assert fetched is not None
+    assert fetched.execution_status == "success"
+    assert fetched.files_changed == ["foo.py", "bar.py"]
+    assert fetched.lines_changed == 42
+    assert fetched.build_result == "passed"
+    assert fetched.test_result == "failed"
+
+
 def test_list_recent_orders_newest_first(store: ExecutionLedgerStore) -> None:
     now = datetime.now(UTC)
     older = _make_entry(created_at=now - timedelta(minutes=5))

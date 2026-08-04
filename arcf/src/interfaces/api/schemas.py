@@ -20,7 +20,7 @@ from domain.context_package import ContextPackage
 from domain.context_resolution import ContextResolutionResult
 from domain.contract import Contract
 from domain.enums import ContractStatus
-from domain.execution_ledger import ExecutionLedgerEntry
+from domain.execution_ledger import ExecutionLedgerEntry, VerificationResult
 
 
 class ExecuteRequest(BaseModel):
@@ -111,11 +111,13 @@ class ContextPackageResponse(BaseModel):
 
 
 class PatchExecutionLedgerRequest(BaseModel):
-    """Both fields are opt-in and nullable — see domain/execution_ledger.py.
-    At least one must be provided; omitting both is a 400, not a no-op."""
+    """All fields are opt-in and nullable — see domain/execution_ledger.py.
+    At least one must be provided; omitting all of them is a 400, not a
+    no-op."""
 
     manual_rating: int | None = Field(default=None, ge=1, le=5)
-    build_test_result: str | None = None
+    build_result: VerificationResult | None = None
+    test_result: VerificationResult | None = None
 
 
 class ExecutionComparisonResult(BaseModel):

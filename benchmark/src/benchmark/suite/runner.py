@@ -7,6 +7,15 @@ score, and always discard the scratch copy afterward.
 Nothing here re-implements ARCF's pipeline or the Direct/ARCF runners —
 this module's only job is repo lifecycle + verification wiring around
 calls that already exist.
+
+Also records every run to the Execution Ledger (Action 2 of the ARCF
+v2.3 Execution Directive), success or failure, using the same
+LedgerRecorder BenchmarkController uses — `benchmark suite run` is one
+of the code paths Action 2 explicitly named. A failure is still
+re-raised after being recorded (unchanged behavior for cli.py's own
+try/except around run_task_mode, which prints and moves on to the next
+task) — recording happens as a side effect of failing, not instead of
+failing.
 """
 
 from pathlib import Path
@@ -16,6 +25,7 @@ from workspace.analyzer import WorkspaceAnalyzer
 from workspace.scanner import RepositoryScanner
 
 from benchmark.domain.models import BenchmarkMode, RunResult
+from benchmark.ledger import LedgerRecorder
 from benchmark.repository import LoadedRepository
 from benchmark.runners.arcf_runner import ArcfRunner
 from benchmark.runners.direct_llm_runner import DirectLLMRunner
@@ -43,6 +53,8 @@ class SuiteRunner:
         model: str,
         max_context_tokens: int,
         max_output_tokens: int,
+        ledger_recorder: LedgerRecorder,
+        provider: str | None = None,
     ) -> None:
         self._repo_pool = repo_pool
         self._runners: dict[BenchmarkMode, DirectLLMRunner | ArcfRunner | None] = {
@@ -55,6 +67,8 @@ class SuiteRunner:
         self._model = model
         self._max_context_tokens = max_context_tokens
         self._max_output_tokens = max_output_tokens
+        self._ledger_recorder = ledger_recorder
+        self._provider = provider
 
     async def run_task_mode(
         self, task: SuiteTask, mode: BenchmarkMode
@@ -74,25 +88,47 @@ class SuiteRunner:
                 if task.category is TaskCategory.REPOSITORY_UNDERSTANDING
                 else task.task_prompt + FORMAT_ADDENDUM
             )
+            branch = repo.metadata.repository.current_branch
 
-            if isinstance(runner, DirectLLMRunner):
-                run = await runner.run(
-                    repo.root,
-                    repo.scan,
-                    prompt_text,
-                    self._model,
-                    self._max_context_tokens,
-                    self._max_output_tokens,
+            try:
+                if isinstance(runner, DirectLLMRunner):
+                    run = await runner.run(
+                        repo.root,
+                        repo.scan,
+                        prompt_text,
+                        self._model,
+                        self._max_context_tokens,
+                        self._max_output_tokens,
+                    )
+                else:
+                    run = await runner.run(
+                        repo.root,
+                        len(repo.scan.files),
+                        prompt_text,
+                        self._model,
+                        self._max_context_tokens,
+                        self._max_output_tokens,
+                    )
+            except Exception as exc:  # noqa: BLE001 — no suite result may ever be lost
+                self._ledger_recorder.record_failure(
+                    mode=mode,
+                    exc=exc,
+                    repository_root=repo.root,
+                    branch=branch,
+                    prompt=prompt_text,
+                    model=self._model,
+                    provider=self._provider,
                 )
-            else:
-                run = await runner.run(
-                    repo.root,
-                    len(repo.scan.files),
-                    prompt_text,
-                    self._model,
-                    self._max_context_tokens,
-                    self._max_output_tokens,
-                )
+                raise
+
+            self._ledger_recorder.record_success(
+                mode=mode,
+                run=run,
+                repository_root=repo.root,
+                branch=branch,
+                prompt=prompt_text,
+                provider=self._provider,
+            )
 
             verification = self._verify(task, scratch_dir, run)
             return run, verification

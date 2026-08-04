@@ -22,6 +22,7 @@ rather than a convention, verified by
 tests/execution/test_context_goal_composer.py.
 """
 
+from context.evidence_fallback import build_repository_summary
 from domain.context_package import ContextPackage, PackagedFile
 from domain.context_resolution import ContextResolutionResult
 from domain.contract import Contract
@@ -37,7 +38,7 @@ Goal:
 
 Success criteria:
 {success_criteria}
-
+{repository_summary}
 Selected repository context (already chosen deterministically):
 {file_sections}
 
@@ -67,9 +68,11 @@ class ContextGoalComposer:
             "\n".join(f"- {e.from_file} -> {e.to_file}" for e in package.dependency_chain)
             or "(none)"
         )
+        summary = build_repository_summary(package.relevant_files)
         return _PROMPT_TEMPLATE.format(
             goal=contract.intent.intent,
             success_criteria=success_criteria,
+            repository_summary=f"\n{summary}\n" if summary else "",
             file_sections=self._file_sections(package.relevant_files),
             symbol_list=symbol_list,
             dependency_list=dependency_list,

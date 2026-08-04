@@ -77,6 +77,7 @@ class DirectLLMRunner:
         return RunResult(
             mode=BenchmarkMode.DIRECT,
             model=model,
+            prompt=prompt,
             generated_output=response.content,
             token_metrics=TokenMetrics(
                 input_tokens=response.prompt_tokens,
@@ -97,4 +98,5 @@ class DirectLLMRunner:
                 files_sent_to_llm=len(files),
             ),
             quality_metrics=build_quality_metrics(response.content),
+            referenced_files=[f.file_path for f in files],
         )

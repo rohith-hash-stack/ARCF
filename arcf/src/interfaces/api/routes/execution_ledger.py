@@ -82,16 +82,24 @@ async def patch_execution(
     _principal: Annotated[Principal, Depends(get_current_principal)],
     store: Annotated[ExecutionLedgerStore, Depends(get_execution_ledger_store)],
 ) -> ExecutionLedgerEntry:
-    if payload.manual_rating is None and payload.build_test_result is None:
+    no_fields_provided = (
+        payload.manual_rating is None
+        and payload.build_result is None
+        and payload.test_result is None
+    )
+    if no_fields_provided:
         raise HTTPException(
-            status_code=400, detail="Provide at least one of manual_rating, build_test_result"
+            status_code=400,
+            detail="Provide at least one of manual_rating, build_result, test_result",
         )
 
     entry = _get_or_404(store, request_id)
     if payload.manual_rating is not None:
         entry = entry.with_manual_rating(payload.manual_rating)
-    if payload.build_test_result is not None:
-        entry = entry.with_build_test_result(payload.build_test_result)
+    if payload.build_result is not None:
+        entry = entry.with_build_result(payload.build_result)
+    if payload.test_result is not None:
+        entry = entry.with_test_result(payload.test_result)
 
     store.save(entry)
     return entry

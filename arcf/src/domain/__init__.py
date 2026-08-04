@@ -27,7 +27,12 @@ from domain.context_resolution import (
 from domain.contract import Contract
 from domain.enums import ArtifactKind, ComplexityLevel, ContractStatus
 from domain.execution_context import ExecutionContext, TokenBudget
-from domain.execution_ledger import ExecutionLedgerEntry, ExecutionMode
+from domain.execution_ledger import (
+    ExecutionLedgerEntry,
+    ExecutionMode,
+    ExecutionStatus,
+    VerificationResult,
+)
 from domain.intent import UserIntent
 from domain.predicted_response import PredictedResponseHint
 from domain.principal import Principal
@@ -56,6 +61,7 @@ __all__ = [
     "ExecutionContext",
     "ExecutionLedgerEntry",
     "ExecutionMode",
+    "ExecutionStatus",
     "FileAnalysis",
     "FileReference",
     "FrameworkMatch",
@@ -74,5 +80,6 @@ __all__ = [
     "TokenBudget",
     "TokenEstimate",
     "UserIntent",
+    "VerificationResult",
     "WorkspaceMetadata",
 ]

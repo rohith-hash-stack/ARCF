@@ -1,4 +1,4 @@
-from benchmark.quality import build_quality_metrics, extract_modified_files
+from benchmark.quality import build_quality_metrics, count_changed_lines, extract_modified_files
 
 
 def test_extracts_paths_from_markdown_headers() -> None:
@@ -37,3 +37,39 @@ def test_build_quality_metrics_reports_length_and_files() -> None:
     assert metrics.modified_files == ["src/auth.py"]
     assert metrics.compilation_success is None
     assert metrics.test_success is None
+
+
+def test_count_changed_lines_counts_plus_and_minus_hunk_lines() -> None:
+    text = (
+        "--- a/src/auth.py\n+++ b/src/auth.py\n@@ -1,2 +1,2 @@\n"
+        "-old line\n-old line 2\n+new line\n"
+    )
+    assert count_changed_lines(text) == 3
+
+
+def test_count_changed_lines_excludes_file_header_lines() -> None:
+    text = "--- a/src/auth.py\n+++ b/src/auth.py\n@@ -1 +1 @@\n-old\n+new\n"
+    assert count_changed_lines(text) == 2
+
+
+def test_count_changed_lines_zero_for_full_file_block_format() -> None:
+    text = "### src/auth.py\n```\ndef authenticate():\n    return True\n```"
+    assert count_changed_lines(text) == 0
+
+
+def test_count_changed_lines_zero_for_plain_prose() -> None:
+    assert count_changed_lines("just a plain text answer, no diffs here") == 0
+
+
+def test_count_changed_lines_handles_multi_file_diff() -> None:
+    text = (
+        "--- a/a.py\n+++ b/a.py\n@@ -1 +1 @@\n-x\n+y\n"
+        "--- a/b.py\n+++ b/b.py\n@@ -1 +1 @@\n-p\n+q\n"
+    )
+    assert count_changed_lines(text) == 4
+
+
+def test_build_quality_metrics_includes_lines_changed() -> None:
+    text = "--- a/src/auth.py\n+++ b/src/auth.py\n@@ -1 +1 @@\n-old\n+new\n"
+    metrics = build_quality_metrics(text)
+    assert metrics.lines_changed == 2

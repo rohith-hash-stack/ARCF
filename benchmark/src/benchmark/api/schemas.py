@@ -39,6 +39,10 @@ class RunBenchmarkRequest(BaseModel):
     repository_root: str
     task: str = Field(min_length=1, max_length=10_000)
     model: str | None = None
+    provider: str | None = None
+    """When set, `model` is resolved as a provider-scoped alias via
+    BenchmarkProvider (see benchmark/providers/) instead of being
+    passed straight through to litellm as a raw model string."""
     modes: list[BenchmarkModeName] = Field(default_factory=lambda: list(_DEFAULT_MODES))
     max_context_tokens: int | None = None
     max_output_tokens: int | None = None
@@ -49,3 +53,12 @@ class LocalSlmStatusResponse(BaseModel):
     reason: str | None = None
     """Why arcf_local is unavailable, e.g. a missing-model pull hint or
     that the Ollama daemon isn't reachable. None when available."""
+
+
+class ProviderInfoResponse(BaseModel):
+    name: str
+    available: bool
+    """Whether this provider's credentials/daemon were detected as
+    usable right now (an API key env var is set, or the Ollama daemon
+    answered) — informational for the dashboard's provider picker, not
+    a guarantee the next call will succeed."""

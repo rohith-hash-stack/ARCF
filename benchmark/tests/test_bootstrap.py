@@ -9,7 +9,9 @@ from benchmark.config import BenchmarkSettings
 
 def _settings(tmp_path: Path) -> BenchmarkSettings:
     return BenchmarkSettings(
-        clone_root=str(tmp_path / "clones"), store_path=str(tmp_path / "runs.db")
+        clone_root=str(tmp_path / "clones"),
+        store_path=str(tmp_path / "runs.db"),
+        execution_ledger_db_path=str(tmp_path / "ledger.db"),
     )
 
 

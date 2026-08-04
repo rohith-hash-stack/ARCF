@@ -79,6 +79,18 @@ def summarize(suite_name: str, results: list[SuiteTaskResult]) -> SuiteRunSummar
         and r.direct_verification.accuracy_score is not None
     ]
 
+    grounding_results = [r for r in results if r.category is TaskCategory.REPOSITORY_UNDERSTANDING]
+    direct_grounding_scores = [
+        r.direct_verification.accuracy_score
+        for r in grounding_results
+        if r.direct_verification is not None and r.direct_verification.accuracy_score is not None
+    ]
+    arcf_grounding_scores = [
+        r.arcf_verification.accuracy_score
+        for r in grounding_results
+        if r.arcf_verification is not None and r.arcf_verification.accuracy_score is not None
+    ]
+
     unrelated_deltas = [
         r.arcf_verification.unrelated_file_modifications
         - r.direct_verification.unrelated_file_modifications
@@ -171,6 +183,8 @@ def summarize(suite_name: str, results: list[SuiteTaskResult]) -> SuiteRunSummar
         avg_cer=avg_cer,
         avg_pcr=_mean(pcrs),
         avg_accuracy_delta=avg_accuracy_delta,
+        avg_direct_grounding_score=_mean(direct_grounding_scores),
+        avg_arcf_grounding_score=_mean(arcf_grounding_scores),
         avg_unrelated_file_modifications_delta=avg_unrelated_delta,
         tasks_won_by_arcf=arcf_wins,
         tasks_won_by_direct=direct_wins,
@@ -182,6 +196,57 @@ def summarize(suite_name: str, results: list[SuiteTaskResult]) -> SuiteRunSummar
         token_ttest_p_value_local=token_ttest_local[1] if token_ttest_local else None,
         verdict=verdict,
     )
+
+
+def render_executive_summary(summary: SuiteRunSummary) -> str:
+    """A CTO/Delivery-Manager-facing artifact distinct from
+    render_suite_report's full technical report (Action 3 of the ARCF
+    v2.3 Execution Directive lists these as two separate deliverables:
+    "Aggregated Report Generator" and "Executive Dashboard Summary").
+    Every number here is the SAME summary.* value the full report uses
+    — nothing is recomputed or reworded into a softer claim — this is
+    just the subset a non-technical reader needs, without the per-task
+    detail table.
+    """
+    lines: list[str] = [
+        f"# ARCF Benchmark — Executive Summary ({summary.suite_name})",
+        "",
+        f"**{summary.task_count} tasks** run, Direct LLM vs. ARCF.",
+        "",
+        f"- Average token reduction: {_fmt_pct(summary.avg_token_reduction_pct)}",
+        f"- Average cost reduction: {_fmt_pct(summary.avg_cost_reduction_pct)}",
+        f"- Average latency difference: {_fmt_pct(summary.avg_latency_reduction_pct)}",
+        f"- Average Context Efficiency Ratio (CER): {_fmt_ratio_pct(summary.avg_cer)}",
+        f"- Average Prompt Compression Ratio (PCR): {_fmt_ratio(summary.avg_pcr)}",
+        f"- Average repository grounding score — Direct: "
+        f"{_fmt_ratio_pct(summary.avg_direct_grounding_score)}, ARCF: "
+        f"{_fmt_ratio_pct(summary.avg_arcf_grounding_score)}",
+        "",
+        f"- Tasks won by ARCF: **{summary.tasks_won_by_arcf}**",
+        f"- Tasks won by Direct LLM: **{summary.tasks_won_by_direct}**",
+        f"- Tasks tied: **{summary.tasks_tied}**",
+        "",
+        "**Statistical significance** (paired t-test, Direct vs. ARCF Remote):",
+        f"- Latency: p = {_fmt_p(summary.latency_ttest_p_value)}",
+        f"- Tokens: p = {_fmt_p(summary.token_ttest_p_value)}",
+        "",
+        "## By category",
+        "",
+    ]
+    for cat in summary.category_summaries:
+        lines.append(
+            f"- **{cat.category.value}** ({cat.task_count} tasks): "
+            f"ARCF won {cat.arcf_wins}, Direct won {cat.direct_wins}"
+        )
+    lines += [
+        "",
+        "## Final Recommendation",
+        "",
+        f"**{summary.verdict.upper()}**",
+        "",
+        _verdict_rationale(summary),
+    ]
+    return "\n".join(lines)
 
 
 def render_suite_report(suite_name: str, results: list[SuiteTaskResult]) -> str:
@@ -197,6 +262,11 @@ def render_suite_report(suite_name: str, results: list[SuiteTaskResult]) -> str:
     lines.append(f"- Average PCR: {_fmt_ratio(summary.avg_pcr)}")
     lines.append(
         f"- Average accuracy difference (ARCF - Direct): {_fmt_delta(summary.avg_accuracy_delta)}"
+    )
+    lines.append(
+        f"- Average repository grounding score (Direct / ARCF, Repository Understanding "
+        f"tasks only): {_fmt_ratio_pct(summary.avg_direct_grounding_score)} / "
+        f"{_fmt_ratio_pct(summary.avg_arcf_grounding_score)}"
     )
     lines.append(
         f"- Average unrelated file modifications difference (ARCF - Direct): "
