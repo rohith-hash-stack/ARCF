@@ -1,6 +1,6 @@
 # ARCF v2.3 — Architecture Freeze
 
-**Status:** ACTIVE — effective 2026-08-04
+**Status:** RE-SCOPED — effective 2026-08-06 (see [Re-scope Addendum](#re-scope-addendum-2026-08-06) below); ACTIVE for everything not explicitly carved out
 **Scope:** `arcf/` and `benchmark/` (this repository)
 **Supersedes:** nothing — this is the first freeze declaration; it formalizes the state
 reached at the end of [ARCF_v2.3_ARCHITECTURE_REVIEW.md](ARCF_v2.3_ARCHITECTURE_REVIEW.md)'s
@@ -68,3 +68,72 @@ completion and produced a statistically defensible result, at which point v2.3's
 architecture is validated (or specific weaknesses are identified) and Phase 10
 (orchestration/runtime) or other deferred work can be scoped deliberately, informed by
 that result — not before.
+
+## Re-scope Addendum (2026-08-06)
+
+**Decision:** the freeze is **re-scoped, not lifted**, to explicitly authorize one
+named body of work: the deterministic hardening effort described in a Principal
+Architect review covering adaptive-depth graph traversal, evidence-sufficiency
+validation, symbol disambiguation, repository boundary segmentation, the multi-language
+analyzer capability registry, import/dependency resolution improvements, task-aware
+deterministic ranking profiles, semantics-preserving compression, parallel indexing,
+context packaging priorities, retrieval-completeness metadata, pipeline reordering, and
+explicit surfacing of unsupported conditions — plus the deterministic validation
+benchmark suite required to prove it. Authorized directly by the repository owner in
+session, in full awareness of this freeze and its stated preference (§"Lifting the
+freeze") to wait for the 30–40 task suite first.
+
+**Why re-scope instead of lifting outright:** the original freeze's concern was scope
+creep into agentic loops, memory systems, workflow automation, or a rigid Phase-8 output
+schema — none of which this work touches. This effort changes the *contracts* of
+`code_intelligence/` and `context/` (candidate selection, ranking, compression), which
+the freeze's own text says requires an explicit re-scoping decision rather than being
+silently treated as a "bug fix." That explicit decision is this addendum.
+
+**What remains prohibited, unchanged from the base freeze:** embeddings, vector
+databases, semantic/probabilistic retrieval, LLM-based file ranking, learned retrieval
+weights, runtime/execution tracing, autonomous agentic loops, cross-session memory
+systems beyond the Execution Ledger, and any forced response schema on Phase 8's final
+generation call. See §14 of the hardening brief this addendum authorizes — it restates
+the same boundary independently and is binding here too.
+
+**What is explicitly now in scope**, superseding the base freeze's "new architectural
+modules... out of scope" line for this work only:
+
+- Deterministic, configurable-depth graph traversal in `code_intelligence/` (replacing
+  fixed one-hop candidate selection), with a preserved justification chain per file.
+- A deterministic evidence-sufficiency validation stage between candidate selection and
+  packaging, with task-specific required-evidence contracts.
+- Deterministic symbol disambiguation using module/package/namespace/import-graph
+  locality, with ambiguity surfaced explicitly rather than silently resolved to the
+  first match.
+- Deterministic repository/workspace boundary segmentation for monorepos.
+- A language capability registry that reports coverage and warns on skipped files,
+  plus scaffolding for any currently-missing analyzers.
+- Improved deterministic import/dependency resolution (relative, package, workspace,
+  alias, build-tool path mappings) — no runtime execution, no probabilistic inference.
+- Deterministic, configurable, task-aware ranking profiles (bug fix / refactor /
+  architecture explanation / CI-CD / performance).
+- Semantics-preserving symbol-range compression (constructors, required fields,
+  referenced helpers, nearby constants stay attached to what they support).
+- Parallelized indexing with a deterministic, reproducible, thread-scheduling-independent
+  merge order.
+- Deterministic context-packaging priority ordering, stopping at token budget.
+- Deterministic retrieval-completeness metadata on `ContextResolutionResult` (files
+  scanned/analyzed, languages detected, analyzer coverage, depth used, evidence
+  categories satisfied, unresolved symbols, unsupported languages, compression count,
+  token reduction ratio).
+- Pipeline reordering so lightweight deterministic checks (repo/language detection,
+  analyzer coverage, cost estimate) run before expensive SLM work.
+- Explicit surfacing (never silent fallback) of unsupported languages, unresolved
+  dynamic imports, reflection-heavy code, generated code, parser failures, truncated
+  scans, and unresolved symbol ambiguity.
+- A new deterministic benchmark suite validating the above against the categories listed
+  in the hardening brief's §15, reporting files selected, depth, evidence satisfaction,
+  token reduction, latency, justification chains, and a full-repository-context
+  comparison.
+
+Everything else in the base freeze — the two-category rule (bug fixes / benchmark
+improvements) for anything *not* listed above, and the prohibition on agentic loops,
+memory systems, workflow automation, and prompt-constraining schemas — remains in force
+without change.

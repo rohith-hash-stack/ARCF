@@ -48,6 +48,7 @@ import re
 from collections import Counter
 from pathlib import Path
 
+from context.lexical_symbol_probe import probe_file_paths
 from contracts.evidence_contract import build_evidence_contract, match_evidence
 from domain.context_package import PackagedFile
 from domain.context_resolution import ContextResolutionResult, FileReference
@@ -100,13 +101,22 @@ def expand_with_evidence(
     workspace_root: Path,
     task_type: str,
     raw_request: str = "",
+    repository_scope: bool = True,
 ) -> ContextResolutionResult:
     """Returns `result` unchanged unless candidate_files is empty; then
     combines query-referenced files with the evidence contract, falling
     back further to root-level files if both find nothing — or returns
     `result` unchanged if nothing at all matches (a repository-scoped
     task with truly no matching files still fails honestly rather than
-    fabricating context)."""
+    fabricating context).
+
+    Tier 1 (query-referenced files) runs regardless of `repository_scope`:
+    if the user's literal words match a real scanned filename/path, that's
+    a safe, cheap, precise signal independent of whether
+    RepositoryScopeClassifier recognized the query's phrasing. Tiers 2
+    (evidence contract) and 3 (root-level fallback) are broader, lower-
+    precision categories and stay gated behind `repository_scope`, same as
+    before."""
     if result.candidate_files:
         return result
 
@@ -117,11 +127,15 @@ def expand_with_evidence(
         raw_request, files, permissions, token_estimator
     )
     seen = {ref.file_path for ref in referenced_refs}
-    contract_refs = [
-        ref
-        for ref in _match_evidence_contract(files, task_type, permissions, token_estimator)
-        if ref.file_path not in seen
-    ]
+    contract_refs = (
+        [
+            ref
+            for ref in _match_evidence_contract(files, task_type, permissions, token_estimator)
+            if ref.file_path not in seen
+        ]
+        if repository_scope
+        else []
+    )
     new_refs = referenced_refs + contract_refs
     expansion_note = "the evidence contract"
     if referenced_refs and contract_refs:
@@ -130,6 +144,24 @@ def expand_with_evidence(
         expansion_note = "query-referenced file(s)"
 
     if not new_refs:
+        # Layer 3 of the classifier-gap fix (§4.3 of the 2026-08-06
+        # handoff): a lexical-prefix probe against real file basenames,
+        # ungated by repository_scope for the same reason tier 1 is —
+        # this is a literal match against real repository content, not a
+        # classifier judgment call. Runs before the (gated, unranked)
+        # root-level fallback since it's still a targeted signal, not a
+        # blind dump of whatever sits at the repository root.
+        lexical_refs = _to_file_references(
+            probe_file_paths(raw_request, files),
+            "references: lexical-match",
+            permissions,
+            token_estimator,
+        )
+        if lexical_refs:
+            new_refs = lexical_refs
+            expansion_note = "lexical file-name probing"
+
+    if not new_refs and repository_scope:
         new_refs = _root_level_fallback(files, permissions, token_estimator)
         expansion_note = "repository root-level files"
 
@@ -243,6 +275,20 @@ def _root_level_fallback(
         ref = _to_file_reference(
             file.relative_path, "evidence: repository tree", permissions, token_estimator
         )
+        if ref is not None:
+            refs.append(ref)
+    return refs
+
+
+def _to_file_references(
+    relative_paths: list[str],
+    reason: str,
+    permissions: PermissionManager,
+    token_estimator: CostEstimator,
+) -> list[FileReference]:
+    refs: list[FileReference] = []
+    for relative_path in relative_paths:
+        ref = _to_file_reference(relative_path, reason, permissions, token_estimator)
         if ref is not None:
             refs.append(ref)
     return refs

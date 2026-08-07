@@ -100,58 +100,60 @@ class CSharpLanguageAnalyzer:
 
     def _visit(
         self,
-        node: Node,
+        root: Node,
         scope_stack: list[Symbol],
         qualname_parts: list[str],
         ctx: _WalkContext,
     ) -> None:
-        if node.type == "class_declaration":
-            symbol = self._build_class_symbol(node, scope_stack, qualname_parts, ctx)
-            ctx.symbols.append(symbol)
-            body = node.child_by_field_name("body")
-            if body is not None:
-                new_scope, new_qual = [*scope_stack, symbol], [*qualname_parts, symbol.name]
-                self._visit_children(body, new_scope, new_qual, ctx)
-            return
+        # Iterative, explicit-stack pre-order traversal — a plain recursive
+        # descent overflows Python's call stack on deeply nested real-world
+        # files; this stays bounded by heap, not the C call stack. Children
+        # are pushed in reverse so pop() yields them in the same
+        # left-to-right order the recursive version visited.
+        stack: list[tuple[Node, list[Symbol], list[str]]] = [(root, scope_stack, qualname_parts)]
+        while stack:
+            node, node_scope, node_qualname = stack.pop()
 
-        if node.type == "interface_declaration":
-            symbol = self._build_interface_symbol(node, scope_stack, qualname_parts, ctx)
-            ctx.symbols.append(symbol)
-            body = node.child_by_field_name("body")
-            if body is not None:
-                new_scope, new_qual = [*scope_stack, symbol], [*qualname_parts, symbol.name]
-                self._visit_children(body, new_scope, new_qual, ctx)
-            return
+            if node.type == "class_declaration":
+                symbol = self._build_class_symbol(node, node_scope, node_qualname, ctx)
+                ctx.symbols.append(symbol)
+                body = node.child_by_field_name("body")
+                if body is not None:
+                    new_scope = [*node_scope, symbol]
+                    new_qual = [*node_qualname, symbol.name]
+                    stack.extend((c, new_scope, new_qual) for c in reversed(body.children))
+                continue
 
-        if node.type == "method_declaration":
-            symbol = self._build_method_symbol(node, scope_stack, qualname_parts, ctx)
-            ctx.symbols.append(symbol)
-            body = node.child_by_field_name("body")
-            if body is not None:
-                new_scope, new_qual = [*scope_stack, symbol], [*qualname_parts, symbol.name]
-                self._visit_children(body, new_scope, new_qual, ctx)
-            return
+            if node.type == "interface_declaration":
+                symbol = self._build_interface_symbol(node, node_scope, node_qualname, ctx)
+                ctx.symbols.append(symbol)
+                body = node.child_by_field_name("body")
+                if body is not None:
+                    new_scope = [*node_scope, symbol]
+                    new_qual = [*node_qualname, symbol.name]
+                    stack.extend((c, new_scope, new_qual) for c in reversed(body.children))
+                continue
 
-        if node.type == "invocation_expression":
-            self._record_call(node, scope_stack, ctx)
-            self._visit_children(node, scope_stack, qualname_parts, ctx)
-            return
+            if node.type == "method_declaration":
+                symbol = self._build_method_symbol(node, node_scope, node_qualname, ctx)
+                ctx.symbols.append(symbol)
+                body = node.child_by_field_name("body")
+                if body is not None:
+                    new_scope = [*node_scope, symbol]
+                    new_qual = [*node_qualname, symbol.name]
+                    stack.extend((c, new_scope, new_qual) for c in reversed(body.children))
+                continue
 
-        if node.type == "using_directive":
-            self._extract_import(node, ctx)
-            return
+            if node.type == "invocation_expression":
+                self._record_call(node, node_scope, ctx)
+                stack.extend((c, node_scope, node_qualname) for c in reversed(node.children))
+                continue
 
-        self._visit_children(node, scope_stack, qualname_parts, ctx)
+            if node.type == "using_directive":
+                self._extract_import(node, ctx)
+                continue
 
-    def _visit_children(
-        self,
-        node: Node,
-        scope_stack: list[Symbol],
-        qualname_parts: list[str],
-        ctx: _WalkContext,
-    ) -> None:
-        for child in node.children:
-            self._visit(child, scope_stack, qualname_parts, ctx)
+            stack.extend((c, node_scope, node_qualname) for c in reversed(node.children))
 
     # -- symbol builders --------------------------------------------------
 

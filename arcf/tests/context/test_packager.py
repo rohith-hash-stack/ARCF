@@ -8,6 +8,7 @@ import pytest
 
 from context.packager import ContextPackager
 from context.relevance_ranker import RelevanceRanker
+from context.task_profile import RANKING_PROFILES, RetrievalTaskType
 from context.understanding import ContextUnderstandingAnalyzer
 from domain.code_intelligence import SymbolKind
 from domain.context_resolution import (
@@ -172,6 +173,35 @@ async def test_empty_candidates_produces_empty_package_without_calling_slm2(
     assert package.relevant_files == []
     assert llm_response is None
     assert calls["count"] == 0
+
+
+async def test_ranking_profile_is_threaded_through_to_the_ranker(tmp_path: Path) -> None:
+    (tmp_path / "auth.py").write_text("def authenticate(user):\n    return True\n")
+    result = _result(str(tmp_path))
+
+    package, _ = await _packager(with_understanding=False).package(
+        result,
+        "fix auth bug",
+        max_tokens=10_000,
+        ranking_profile=RANKING_PROFILES[RetrievalTaskType.BUG_FIX],
+    )
+
+    assert len(package.relevant_files) == 1
+
+
+async def test_compressed_snippet_count_reflects_truncated_files(tmp_path: Path) -> None:
+    (tmp_path / "auth.py").write_text(
+        "\n".join(f"line {i}" for i in range(1, 300))
+        + "\n\ndef authenticate(user):\n    return True\n"
+    )
+    result = _result(str(tmp_path))
+
+    package, _ = await _packager(with_understanding=False).package(
+        result, "fix auth bug", max_tokens=20
+    )
+
+    assert package.compressed_snippet_count == sum(1 for f in package.relevant_files if f.truncated)
+    assert package.compressed_snippet_count >= 0
 
 
 async def test_diagnostic_log_line_correlated_by_context_resolution_id(

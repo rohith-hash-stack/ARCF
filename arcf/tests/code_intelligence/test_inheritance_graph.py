@@ -37,6 +37,17 @@ def test_transitive_subclasses() -> None:
     assert graph.all_superclasses_of(c.id) == {a.id, b.id}
 
 
+def test_all_subclasses_of_respects_max_depth() -> None:
+    a = _class("A")
+    b = _class("B", bases=["A"])
+    c = _class("C", bases=["B"])
+    resolver = ReferenceResolver(SymbolIndex([a, b, c]))
+    graph = InheritanceGraph([a, b, c], resolver)
+
+    assert graph.all_subclasses_of(a.id, max_depth=1) == {b.id}
+    assert graph.all_subclasses_of(a.id, max_depth=2) == {b.id, c.id}
+
+
 def test_external_base_class_recorded_as_unresolved() -> None:
     contract = _class("Contract", bases=["BaseModel"])
     resolver = ReferenceResolver(SymbolIndex([contract]))

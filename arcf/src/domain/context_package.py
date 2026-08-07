@@ -62,4 +62,10 @@ class ContextPackage(BaseModel):
     means either SLM-2 wasn't used or it failed; the package is still
     complete and valid either way, since selection is never SLM-decided."""
 
+    compressed_snippet_count: int = Field(ge=0, default=0)
+    """ARCF hardening §11: how many of relevant_files are compressed
+    excerpts (truncated=True) rather than full file content — part of the
+    deterministic retrieval-completeness metadata, computed by counting,
+    never estimated."""
+
     generated_at: datetime = Field(default_factory=utc_now)

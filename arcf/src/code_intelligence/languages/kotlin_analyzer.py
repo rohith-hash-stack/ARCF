@@ -98,88 +98,91 @@ class KotlinLanguageAnalyzer:
 
     def _visit(
         self,
-        node: Node,
+        root: Node,
         scope_stack: list[Symbol],
         qualname_parts: list[str],
         ctx: _WalkContext,
     ) -> None:
-        if node.type == "class_declaration":
-            symbol = self._build_class_or_interface_symbol(
-                node, scope_stack, qualname_parts, ctx
-            )
-            ctx.symbols.append(symbol)
-            body = next((c for c in node.children if c.type == "class_body"), None)
-            if body is not None:
-                new_scope, new_qual = [*scope_stack, symbol], [*qualname_parts, symbol.name]
-                self._visit_children(body, new_scope, new_qual, ctx)
-            return
+        # Iterative, explicit-stack pre-order traversal — a plain recursive
+        # descent overflows Python's call stack on deeply nested real-world
+        # files; this stays bounded by heap, not the C call stack. Children
+        # are pushed in reverse so pop() yields them in the same
+        # left-to-right order the recursive version visited.
+        stack: list[tuple[Node, list[Symbol], list[str]]] = [(root, scope_stack, qualname_parts)]
+        while stack:
+            node, node_scope, node_qualname = stack.pop()
 
-        if node.type == "function_declaration":
-            func_symbol = self._build_named_symbol(
-                node.child_by_field_name("name"), node, scope_stack, qualname_parts, ctx
-            )
-            if func_symbol is None:
-                self._visit_children(node, scope_stack, qualname_parts, ctx)
-                return
-            ctx.symbols.append(func_symbol)
-            body = next((c for c in node.children if c.type == "function_body"), None)
-            if body is not None:
-                new_scope = [*scope_stack, func_symbol]
-                new_qual = [*qualname_parts, func_symbol.name]
-                self._visit_children(body, new_scope, new_qual, ctx)
-            return
+            if node.type == "class_declaration":
+                symbol = self._build_class_or_interface_symbol(
+                    node, node_scope, node_qualname, ctx
+                )
+                ctx.symbols.append(symbol)
+                body = next((c for c in node.children if c.type == "class_body"), None)
+                if body is not None:
+                    new_scope = [*node_scope, symbol]
+                    new_qual = [*node_qualname, symbol.name]
+                    stack.extend((c, new_scope, new_qual) for c in reversed(body.children))
+                continue
 
-        if node.type == "property_declaration":
-            if self._try_visit_function_valued_property(node, scope_stack, qualname_parts, ctx):
-                return
-            self._visit_children(node, scope_stack, qualname_parts, ctx)
-            return
+            if node.type == "function_declaration":
+                func_symbol = self._build_named_symbol(
+                    node.child_by_field_name("name"), node, node_scope, node_qualname, ctx
+                )
+                if func_symbol is None:
+                    stack.extend((c, node_scope, node_qualname) for c in reversed(node.children))
+                    continue
+                ctx.symbols.append(func_symbol)
+                body = next((c for c in node.children if c.type == "function_body"), None)
+                if body is not None:
+                    new_scope = [*node_scope, func_symbol]
+                    new_qual = [*node_qualname, func_symbol.name]
+                    stack.extend((c, new_scope, new_qual) for c in reversed(body.children))
+                continue
 
-        if node.type == "call_expression":
-            self._record_call(node, scope_stack, ctx)
-            self._visit_children(node, scope_stack, qualname_parts, ctx)
-            return
+            if node.type == "property_declaration":
+                binding = self._function_valued_property(node, node_scope, node_qualname, ctx)
+                if binding is not None:
+                    symbol, value = binding
+                    ctx.symbols.append(symbol)
+                    new_scope = [*node_scope, symbol]
+                    new_qual = [*node_qualname, symbol.name]
+                    stack.extend((c, new_scope, new_qual) for c in reversed(value.children))
+                else:
+                    stack.extend((c, node_scope, node_qualname) for c in reversed(node.children))
+                continue
 
-        if node.type == "import":
-            self._extract_import(node, ctx)
-            return
+            if node.type == "call_expression":
+                self._record_call(node, node_scope, ctx)
+                stack.extend((c, node_scope, node_qualname) for c in reversed(node.children))
+                continue
 
-        self._visit_children(node, scope_stack, qualname_parts, ctx)
+            if node.type == "import":
+                self._extract_import(node, ctx)
+                continue
 
-    def _visit_children(
+            stack.extend((c, node_scope, node_qualname) for c in reversed(node.children))
+
+    def _function_valued_property(
         self,
         node: Node,
         scope_stack: list[Symbol],
         qualname_parts: list[str],
         ctx: _WalkContext,
-    ) -> None:
-        for child in node.children:
-            self._visit(child, scope_stack, qualname_parts, ctx)
-
-    def _try_visit_function_valued_property(
-        self,
-        node: Node,
-        scope_stack: list[Symbol],
-        qualname_parts: list[str],
-        ctx: _WalkContext,
-    ) -> bool:
+    ) -> tuple[Symbol, Node] | None:
         var_decl = next((c for c in node.children if c.type == "variable_declaration"), None)
         value = next(
             (c for c in node.children if c.type in ("lambda_literal", "anonymous_function")), None
         )
         if var_decl is None or value is None:
-            return False
+            return None
         name_node = next((c for c in var_decl.children if c.type == "identifier"), None)
         if name_node is None:
-            return False
+            return None
 
         symbol = self._build_named_symbol(name_node, node, scope_stack, qualname_parts, ctx)
         if symbol is None:
-            return False
-        ctx.symbols.append(symbol)
-        new_scope, new_qual = [*scope_stack, symbol], [*qualname_parts, symbol.name]
-        self._visit_children(value, new_scope, new_qual, ctx)
-        return True
+            return None
+        return symbol, value
 
     # -- symbol builders --------------------------------------------------
 

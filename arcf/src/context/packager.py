@@ -60,13 +60,14 @@ class ContextPackager:
         result: ContextResolutionResult,
         raw_request: str,
         max_tokens: int,
+        ranking_profile: dict[str, float] | None = None,
     ) -> tuple[ContextPackage, LLMResponse | None]:
         permissions = PermissionManager(Path(result.repository_root))
         budget_manager = ContextBudgetManager(
             permissions, self._token_estimator, SymbolRangeCompressor(permissions)
         )
 
-        ranked = await asyncio.to_thread(self._ranker.rank, result)
+        ranked = await asyncio.to_thread(self._ranker.rank, result, ranking_profile)
         packaged_files, used_tokens, excluded_count = await asyncio.to_thread(
             budget_manager.select, ranked, result, max_tokens
         )
@@ -99,6 +100,7 @@ class ContextPackager:
             prompt_compression_ratio=prompt_compression_ratio,
             excluded_file_count=excluded_count,
             understanding_notes=understanding_notes,
+            compressed_snippet_count=sum(1 for file in packaged_files if file.truncated),
         )
         if _logger.isEnabledFor(logging.DEBUG):
             _logger.debug(

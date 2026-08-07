@@ -4,7 +4,8 @@
       "Bash(uv --version)",
       "Bash(git --version)",
       "Bash(uv sync *)",
-      "Bash(uv run *)"
+      "Bash(uv run *)",
+      "Bash(python -c ' *)"
     ]
   }
 }

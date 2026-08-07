@@ -77,14 +77,29 @@ _DEBUGGING_STRONG_TRIGGERS: tuple[str, ...] = (
     "stack trace",
 )
 
+# Debugging ACTION verbs — like _DEBUGGING_STRONG_TRIGGERS, specific
+# enough on their own that this tool has no other plausible subject:
+# "debug"/"diagnose"/"investigate" almost never mean anything but "debug
+# this repository" when asked of a code-context tool (same reasoning
+# applied to _DOCUMENTATION_WORDS). Checked unconditionally, no
+# co-occurring repository word required.
+_DEBUGGING_VERBS: tuple[str, ...] = (
+    "debug",
+    "diagnose",
+    "investigate",
+)
+
+# Debugging NOUNS/adjectives — unlike the action verbs above, these
+# describe a concept ("an error message", "handle timeout gracefully",
+# "the crash log format") that shows up plenty in non-debugging requests
+# too (UI copy, feature specs, logging design), so these stay gated
+# behind a co-occurring repository-reference word rather than triggering
+# on their own.
 _DEBUGGING_WORDS: tuple[str, ...] = (
     "failing",
     "failed",
     "error",
     "exception",
-    "diagnose",
-    "debug",
-    "investigate",
     "inspect",
     "trace",
     "stack trace",
@@ -117,18 +132,28 @@ class RepositoryScopeClassifier:
     def classify(self, text: str) -> RepositoryScopeClassification:
         text_lower = text.lower()
 
-        is_debugging = any(trigger in text_lower for trigger in _DEBUGGING_STRONG_TRIGGERS) or (
-            any(word in text_lower for word in _DEBUGGING_WORDS)
-            and any(word in text_lower for word in _DEBUGGING_REPOSITORY_WORDS)
+        is_debugging = (
+            any(trigger in text_lower for trigger in _DEBUGGING_STRONG_TRIGGERS)
+            or any(verb in text_lower for verb in _DEBUGGING_VERBS)
+            or (
+                any(word in text_lower for word in _DEBUGGING_WORDS)
+                and any(word in text_lower for word in _DEBUGGING_REPOSITORY_WORDS)
+            )
         )
         if is_debugging:
             return RepositoryScopeClassification(
                 task_type="repository_debugging", repository_scope=True
             )
 
-        is_documentation = any(trigger in text_lower for trigger in _STRONG_TRIGGERS) or (
-            any(word in text_lower for word in _DOCUMENTATION_WORDS)
-            and any(word in text_lower for word in _REPOSITORY_WORDS)
+        # No AND-condition against _REPOSITORY_WORDS here, deliberately —
+        # same reasoning _DEBUGGING_STRONG_TRIGGERS already establishes for
+        # debugging phrases: an explanation verb ("explain"/"describe"/
+        # "summarize"/"document") almost never means anything else when
+        # asked of this tool, so requiring a co-occurring repository noun
+        # just misses conceptual questions ("Explain how X works") that
+        # never say "repo"/"codebase" at all.
+        is_documentation = any(trigger in text_lower for trigger in _STRONG_TRIGGERS) or any(
+            word in text_lower for word in _DOCUMENTATION_WORDS
         )
         if is_documentation:
             return RepositoryScopeClassification(

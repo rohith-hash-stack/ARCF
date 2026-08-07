@@ -6,6 +6,16 @@ function of signals already present in the contract (reason type,
 whether the file contains an entry point, how many impacted symbols it
 holds) — the same "software governs, SLM only assists" posture as
 Phase 3's ConfidenceEngine.
+
+ARCF architecture hardening §7 (task-aware deterministic ranking):
+`rank()` takes an optional reason-verb weight `profile` — see
+context/task_profile.py's RANKING_PROFILES, one per RetrievalTaskType —
+so a bug-fix query and an architecture-explanation query over the same
+candidate set can prioritize differently (direct callers vs.
+configuration/dependency roots) without either becoming probabilistic:
+every profile is still a fixed, reproducible weight table, just a
+different one. `profile=None` (the default) reproduces the exact
+pre-hardening weights below, unchanged.
 """
 
 from collections import Counter
@@ -41,7 +51,9 @@ class RankedFile:
 
 
 class RelevanceRanker:
-    def rank(self, result: ContextResolutionResult) -> list[RankedFile]:
+    def rank(
+        self, result: ContextResolutionResult, profile: dict[str, float] | None = None
+    ) -> list[RankedFile]:
         entry_point_files = {symbol.file_path for symbol in result.entry_points}
         impacted_counts = Counter(symbol.file_path for symbol in result.impacted_symbols)
 
@@ -49,7 +61,11 @@ class RelevanceRanker:
             RankedFile(
                 file_path=file_ref.file_path,
                 relevance_score=self._score(
-                    file_ref.reason, file_ref.file_path, entry_point_files, impacted_counts
+                    file_ref.reason,
+                    file_ref.file_path,
+                    entry_point_files,
+                    impacted_counts,
+                    profile,
                 ),
                 reason=file_ref.reason,
                 language=file_ref.language,
@@ -65,9 +81,11 @@ class RelevanceRanker:
         file_path: str,
         entry_point_files: set[str],
         impacted_counts: Counter[str],
+        profile: dict[str, float] | None,
     ) -> float:
+        weights = profile if profile is not None else _REASON_WEIGHTS
         verb = reason.split(" ", 1)[0]
-        base = _REASON_WEIGHTS.get(verb, _DEFAULT_REASON_WEIGHT)
+        base = weights.get(verb, weights.get("*", _DEFAULT_REASON_WEIGHT))
         entry_bonus = _ENTRY_POINT_BONUS if file_path in entry_point_files else 0.0
         impact_count = min(impacted_counts.get(file_path, 0), _IMPACT_BONUS_CAP)
         impact_bonus = impact_count / _IMPACT_BONUS_CAP * _IMPACT_BONUS_MAX

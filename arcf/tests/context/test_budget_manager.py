@@ -106,6 +106,53 @@ def test_stops_once_budget_exhausted(tmp_path: Path) -> None:
     assert excluded == 1
 
 
+def test_compressed_excerpt_includes_a_constructor_symbol_added_by_context_resolver(
+    tmp_path: Path,
+) -> None:
+    # Mirrors what ContextResolver._enrich_with_constructors now does: the
+    # constructor symbol (near the top of the file) rides along in
+    # impacted_symbols alongside the selected method far below it — the
+    # compressor should pick up both ranges, proving the excerpt isn't
+    # severed from its class's initialization context.
+    lines = ["class AuthService:", "    def __init__(self, db):", "        self.db = db", ""]
+    lines += [f"    # padding {i}" for i in range(1, 60)]
+    lines += ["    def authenticate(self, user):", "        return self.db.check(user)"]
+    (tmp_path / "service.py").write_text("\n".join(lines) + "\n")
+
+    manager = _manager(tmp_path)
+    ranked = [_ranked("service.py", token_count=100_000)]
+    method_symbol = SymbolReference(
+        symbol_id="service.py::authenticate",
+        name="authenticate",
+        qualified_name="AuthService.authenticate",
+        kind=SymbolKind.METHOD,
+        file_path="service.py",
+        start_line=len(lines) - 1,
+        end_line=len(lines),
+        parent_symbol_id="service.py::AuthService",
+    )
+    constructor_symbol = SymbolReference(
+        symbol_id="service.py::__init__",
+        name="__init__",
+        qualified_name="AuthService.__init__",
+        kind=SymbolKind.METHOD,
+        file_path="service.py",
+        start_line=2,
+        end_line=3,
+        parent_symbol_id="service.py::AuthService",
+    )
+    result = _empty_result(entry_points=[method_symbol]).model_copy(
+        update={"impacted_symbols": [constructor_symbol]}
+    )
+
+    packaged, _, _ = manager.select(ranked, result, max_tokens=1000)
+
+    assert len(packaged) == 1
+    assert packaged[0].truncated is True
+    assert "def __init__" in packaged[0].content
+    assert "def authenticate" in packaged[0].content
+
+
 def test_deleted_file_between_resolution_and_packaging_is_excluded_not_fatal(
     tmp_path: Path,
 ) -> None:

@@ -42,3 +42,19 @@ def test_unimported_file_has_no_impact() -> None:
     graph = ImportGraph([_import("a.py", "b.py")])
     dep_graph = DependencyGraph(graph)
     assert dep_graph.impacted_by("a.py") == set()
+
+
+def test_transitive_dependencies_respects_max_depth() -> None:
+    # a -> b -> c
+    graph = ImportGraph([_import("a.py", "b.py"), _import("b.py", "c.py")])
+    dep_graph = DependencyGraph(graph)
+    assert dep_graph.transitive_dependencies("a.py", max_depth=1) == {"b.py"}
+    assert dep_graph.transitive_dependencies("a.py", max_depth=2) == {"b.py", "c.py"}
+
+
+def test_impacted_by_respects_max_depth() -> None:
+    # a -> b -> c ; changing c impacts b and a
+    graph = ImportGraph([_import("a.py", "b.py"), _import("b.py", "c.py")])
+    dep_graph = DependencyGraph(graph)
+    assert dep_graph.impacted_by("c.py", max_depth=1) == {"b.py"}
+    assert dep_graph.impacted_by("c.py", max_depth=2) == {"a.py", "b.py"}

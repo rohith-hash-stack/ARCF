@@ -52,3 +52,46 @@ class CallGraph:
     @property
     def unresolved_calls(self) -> list[CallReference]:
         return list(self._unresolved)
+
+    def transitive_caller_symbols_of(
+        self, symbol_id: str, max_depth: int | None = None
+    ) -> dict[str, tuple[int, str]]:
+        """Symbols that transitively call `symbol_id` (its callers, their
+        callers, ...), mapped to `(hop, parent_symbol_id)` — hop 1 is a
+        direct caller. `max_depth=None` expands until no more callers are
+        found (adaptive deterministic traversal, ARCF hardening §1)."""
+        return self._layered_bfs(symbol_id, self._caller_symbols_of, max_depth)
+
+    def transitive_callee_symbols_of(
+        self, symbol_id: str, max_depth: int | None = None
+    ) -> dict[str, tuple[int, str]]:
+        """Symbols transitively called by `symbol_id`, mapped to
+        `(hop, parent_symbol_id)` — hop 1 is a direct callee."""
+        return self._layered_bfs(symbol_id, self._callee_symbols_of, max_depth)
+
+    @staticmethod
+    def _layered_bfs(
+        start: str, edges: dict[str, set[str]], max_depth: int | None
+    ) -> dict[str, tuple[int, str]]:
+        """BFS shortest-hop traversal over `edges`, capped at `max_depth`
+        hops (`None` = unbounded). Deterministic regardless of set
+        iteration order: when a node is reachable from multiple same-hop
+        predecessors, the lexicographically smallest predecessor id is
+        recorded as its parent, so the result never depends on Python's
+        hash-randomized set ordering."""
+        result: dict[str, tuple[int, str]] = {}
+        frontier: set[str] = set(edges.get(start, set()))
+        parents: dict[str, str] = dict.fromkeys(frontier, start)
+        depth = 1
+        while frontier and (max_depth is None or depth <= max_depth):
+            for node in frontier:
+                result[node] = (depth, parents[node])
+            candidates: dict[str, set[str]] = defaultdict(set)
+            for node in frontier:
+                for neighbor in edges.get(node, set()):
+                    if neighbor not in result and neighbor != start:
+                        candidates[neighbor].add(node)
+            frontier = set(candidates.keys())
+            parents = {neighbor: min(preds) for neighbor, preds in candidates.items()}
+            depth += 1
+        return result

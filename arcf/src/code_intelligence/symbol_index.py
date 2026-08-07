@@ -8,6 +8,7 @@ by kind. Building four data structures that all have to be kept in
 sync for one list of facts would be pure duplication.
 """
 
+import posixpath
 from collections import defaultdict
 
 from domain.code_intelligence import Symbol, SymbolKind
@@ -58,3 +59,11 @@ class SymbolIndex:
 
     def __len__(self) -> int:
         return len(self._by_id)
+
+    @staticmethod
+    def same_package(file_a: str, file_b: str) -> bool:
+        """True when both files sit in the same directory (workspace-
+        relative path comparison, not a build-tool package concept) —
+        used by ReferenceResolver.resolve_with_disambiguation for
+        deterministic symbol disambiguation (ARCF hardening §3)."""
+        return posixpath.dirname(file_a) == posixpath.dirname(file_b)

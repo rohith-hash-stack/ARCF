@@ -244,6 +244,70 @@ def test_build_repository_summary_includes_query_referenced_files() -> None:
     assert "- test framework/configuration: pytest.ini" in summary
 
 
+def test_query_referenced_file_matches_even_when_not_repository_scoped(
+    tmp_path: Path,
+) -> None:
+    """Classifier-gap fix, layer 2 (§4.2 of the 2026-08-06 handoff): tier 1
+    (literal filename/path/quoted-token matching) runs regardless of
+    repository_scope — a query naming a real file is a safe, cheap,
+    precise signal independent of whether RepositoryScopeClassifier
+    recognized the query's phrasing."""
+    _write(tmp_path, "src/widgets/checkout.py", "def checkout():\n    ...\n")
+    scan = RepositoryScanner().scan(tmp_path)
+
+    expanded = expand_with_evidence(
+        _empty_result(str(tmp_path)),
+        scan.files,
+        tmp_path,
+        "unscoped",
+        raw_request="Add caching to checkout.py",
+        repository_scope=False,
+    )
+
+    file_paths = {ref.file_path for ref in expanded.candidate_files}
+    assert "src/widgets/checkout.py" in file_paths
+
+
+def test_evidence_contract_and_root_fallback_stay_gated_when_not_repository_scoped(
+    tmp_path: Path,
+) -> None:
+    _write(tmp_path, "pytest.ini", "[pytest]\n")
+    _write(tmp_path, "notes.txt", "just some notes\n")
+    scan = RepositoryScanner().scan(tmp_path)
+
+    expanded = expand_with_evidence(
+        _empty_result(str(tmp_path)),
+        scan.files,
+        tmp_path,
+        "repository_debugging",
+        raw_request="Add a new caching layer",
+        repository_scope=False,
+    )
+
+    assert expanded.candidate_files == []
+
+
+def test_lexical_file_probe_matches_when_not_repository_scoped(tmp_path: Path) -> None:
+    """Classifier-gap fix, layer 3 (§4.3 of the 2026-08-06 handoff): a
+    lexical-prefix probe against real file basenames runs regardless of
+    repository_scope, same reasoning as tier 1's exact match."""
+    _write(tmp_path, "src/deps/dependency_resolver.py", "def resolve():\n    ...\n")
+    scan = RepositoryScanner().scan(tmp_path)
+
+    expanded = expand_with_evidence(
+        _empty_result(str(tmp_path)),
+        scan.files,
+        tmp_path,
+        "unscoped",
+        raw_request="Add support for a custom dependency cache invalidation strategy",
+        repository_scope=False,
+    )
+
+    file_paths = {ref.file_path for ref in expanded.candidate_files}
+    assert "src/deps/dependency_resolver.py" in file_paths
+    assert all(ref.reason == "references: lexical-match" for ref in expanded.candidate_files)
+
+
 def test_build_repository_summary_empty_when_no_evidence_files() -> None:
     files = [
         PackagedFile(

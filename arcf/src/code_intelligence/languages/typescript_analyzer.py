@@ -123,77 +123,84 @@ class TypeScriptLanguageAnalyzer:
 
     def _visit(
         self,
-        node: Node,
+        root: Node,
         scope_stack: list[Symbol],
         qualname_parts: list[str],
         ctx: _WalkContext,
     ) -> None:
-        if node.type in _CLASS_TYPES:
-            symbol = self._build_class_symbol(node, scope_stack, qualname_parts, ctx)
-            ctx.symbols.append(symbol)
-            body = node.child_by_field_name("body")
-            if body is not None:
-                new_scope, new_qualname = [*scope_stack, symbol], [*qualname_parts, symbol.name]
-                self._visit_children(body, new_scope, new_qualname, ctx)
-            return
+        # Iterative, explicit-stack pre-order traversal — a plain recursive
+        # descent overflows Python's call stack on deeply nested real-world
+        # files; this stays bounded by heap, not the C call stack. Each
+        # stack entry is one "_visit(node, ...)" call, not one child, since
+        # the concise-arrow-body case below revisits a single node directly
+        # rather than only its children (what the old _visit_children did).
+        stack: list[tuple[Node, list[Symbol], list[str]]] = [(root, scope_stack, qualname_parts)]
+        while stack:
+            node, node_scope, node_qualname = stack.pop()
 
-        if node.type == "interface_declaration":
-            ctx.symbols.append(self._build_interface_symbol(node, scope_stack, qualname_parts, ctx))
-            return
-
-        if node.type in _FUNCTION_LIKE_TYPES:
-            symbol = self._build_named_symbol(node, scope_stack, qualname_parts, ctx)
-            ctx.symbols.append(symbol)
-            body = node.child_by_field_name("body")
-            if body is not None:
-                new_scope, new_qualname = [*scope_stack, symbol], [*qualname_parts, symbol.name]
-                self._visit_children(body, new_scope, new_qualname, ctx)
-            return
-
-        if node.type in ("public_field_definition", "variable_declarator"):
-            value = node.child_by_field_name("value")
-            name_node = node.child_by_field_name("name")
-            if (
-                value is not None
-                and value.type in _FUNCTION_VALUE_TYPES
-                and name_node is not None
-            ):
-                symbol = self._build_named_symbol(node, scope_stack, qualname_parts, ctx)
+            if node.type in _CLASS_TYPES:
+                symbol = self._build_class_symbol(node, node_scope, node_qualname, ctx)
                 ctx.symbols.append(symbol)
-                new_scope = [*scope_stack, symbol]
-                new_qualname = [*qualname_parts, symbol.name]
-                fn_body = value.child_by_field_name("body")
-                if fn_body is not None:
-                    if fn_body.type == "statement_block":
-                        self._visit_children(fn_body, new_scope, new_qualname, ctx)
-                    else:
-                        # Concise arrow body, e.g. `() => doThing()` — the
-                        # body field is the expression itself, not a block.
-                        self._visit(fn_body, new_scope, new_qualname, ctx)
-                return
-            self._visit_children(node, scope_stack, qualname_parts, ctx)
-            return
+                body = node.child_by_field_name("body")
+                if body is not None:
+                    new_scope = [*node_scope, symbol]
+                    new_qualname = [*node_qualname, symbol.name]
+                    stack.extend((c, new_scope, new_qualname) for c in reversed(body.children))
+                continue
 
-        if node.type == "call_expression":
-            self._record_call(node, scope_stack, ctx)
-            self._visit_children(node, scope_stack, qualname_parts, ctx)
-            return
+            if node.type == "interface_declaration":
+                ctx.symbols.append(
+                    self._build_interface_symbol(node, node_scope, node_qualname, ctx)
+                )
+                continue
 
-        if node.type == "import_statement":
-            self._extract_import(node, ctx)
-            return
+            if node.type in _FUNCTION_LIKE_TYPES:
+                symbol = self._build_named_symbol(node, node_scope, node_qualname, ctx)
+                ctx.symbols.append(symbol)
+                body = node.child_by_field_name("body")
+                if body is not None:
+                    new_scope = [*node_scope, symbol]
+                    new_qualname = [*node_qualname, symbol.name]
+                    stack.extend((c, new_scope, new_qualname) for c in reversed(body.children))
+                continue
 
-        self._visit_children(node, scope_stack, qualname_parts, ctx)
+            if node.type in ("public_field_definition", "variable_declarator"):
+                value = node.child_by_field_name("value")
+                name_node = node.child_by_field_name("name")
+                if (
+                    value is not None
+                    and value.type in _FUNCTION_VALUE_TYPES
+                    and name_node is not None
+                ):
+                    symbol = self._build_named_symbol(node, node_scope, node_qualname, ctx)
+                    ctx.symbols.append(symbol)
+                    new_scope = [*node_scope, symbol]
+                    new_qualname = [*node_qualname, symbol.name]
+                    fn_body = value.child_by_field_name("body")
+                    if fn_body is not None:
+                        if fn_body.type == "statement_block":
+                            stack.extend(
+                                (c, new_scope, new_qualname) for c in reversed(fn_body.children)
+                            )
+                        else:
+                            # Concise arrow body, e.g. `() => doThing()` —
+                            # the body field is the expression itself, not
+                            # a block, so revisit it directly.
+                            stack.append((fn_body, new_scope, new_qualname))
+                    continue
+                stack.extend((c, node_scope, node_qualname) for c in reversed(node.children))
+                continue
 
-    def _visit_children(
-        self,
-        node: Node,
-        scope_stack: list[Symbol],
-        qualname_parts: list[str],
-        ctx: _WalkContext,
-    ) -> None:
-        for child in node.children:
-            self._visit(child, scope_stack, qualname_parts, ctx)
+            if node.type == "call_expression":
+                self._record_call(node, node_scope, ctx)
+                stack.extend((c, node_scope, node_qualname) for c in reversed(node.children))
+                continue
+
+            if node.type == "import_statement":
+                self._extract_import(node, ctx)
+                continue
+
+            stack.extend((c, node_scope, node_qualname) for c in reversed(node.children))
 
     # -- symbol builders --------------------------------------------------
 

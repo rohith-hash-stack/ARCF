@@ -1,4 +1,5 @@
 from context.relevance_ranker import RelevanceRanker
+from context.task_profile import RANKING_PROFILES, RetrievalTaskType
 from domain.code_intelligence import SymbolKind
 from domain.context_resolution import (
     ContextResolutionResult,
@@ -138,6 +139,73 @@ def test_references_outranks_generic_evidence_default_weight() -> None:
 def test_empty_candidates_returns_empty_list() -> None:
     result = _result([])
     assert RelevanceRanker().rank(result) == []
+
+
+def test_no_profile_reproduces_pre_hardening_weights_exactly() -> None:
+    result = _result(
+        [
+            FileReference(file_path="a.py", reason="defines foo", language="python", token_count=5),
+            FileReference(file_path="b.py", reason="calls foo", language="python", token_count=5),
+        ]
+    )
+    without_profile = RelevanceRanker().rank(result)
+    with_unknown_profile = RelevanceRanker().rank(
+        result, profile=RANKING_PROFILES[RetrievalTaskType.UNKNOWN]
+    )
+    assert without_profile == with_unknown_profile
+
+
+def test_ci_cd_profile_ranks_evidence_above_calls() -> None:
+    result = _result(
+        [
+            FileReference(
+                file_path="workflow.yml",
+                reason="evidence: CI/workflow files",
+                language="yaml",
+                token_count=5,
+            ),
+            FileReference(
+                file_path="handler.py", reason="calls foo", language="python", token_count=5
+            ),
+        ]
+    )
+    ranked = RelevanceRanker().rank(result, profile=RANKING_PROFILES[RetrievalTaskType.CI_CD])
+    assert [r.file_path for r in ranked] == ["workflow.yml", "handler.py"]
+
+
+def test_bug_fix_profile_still_ranks_calls_above_generic_evidence() -> None:
+    result = _result(
+        [
+            FileReference(
+                file_path="config.py",
+                reason="evidence: configuration",
+                language="python",
+                token_count=5,
+            ),
+            FileReference(
+                file_path="caller.py", reason="calls foo", language="python", token_count=5
+            ),
+        ]
+    )
+    ranked = RelevanceRanker().rank(result, profile=RANKING_PROFILES[RetrievalTaskType.BUG_FIX])
+    assert [r.file_path for r in ranked] == ["caller.py", "config.py"]
+
+
+def test_every_ranking_profile_produces_a_valid_deterministic_order() -> None:
+    result = _result(
+        [
+            FileReference(file_path="a.py", reason="defines foo", language="python", token_count=5),
+            FileReference(file_path="b.py", reason="calls foo", language="python", token_count=5),
+            FileReference(
+                file_path="c.py", reason="evidence: configuration", language="python", token_count=5
+            ),
+        ]
+    )
+    for task_type in RetrievalTaskType:
+        ranked_once = RelevanceRanker().rank(result, profile=RANKING_PROFILES[task_type])
+        ranked_again = RelevanceRanker().rank(result, profile=RANKING_PROFILES[task_type])
+        assert ranked_once == ranked_again
+        assert {r.file_path for r in ranked_once} == {"a.py", "b.py", "c.py"}
 
 
 def test_ranking_is_deterministic() -> None:

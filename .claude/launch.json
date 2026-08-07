@@ -12,6 +12,21 @@
         "8010"
       ],
       "port": 8010
+    },
+    {
+      "name": "arcf-api",
+      "runtimeExecutable": "C:\\Users\\VasiganiRohitBabu\\Desktop\\Claude\\arcf\\.venv\\Scripts\\uvicorn.exe",
+      "runtimeArgs": [
+        "interfaces.api.app:app",
+        "--app-dir",
+        "C:\\Users\\VasiganiRohitBabu\\Desktop\\Claude\\arcf\\src",
+        "--port",
+        "8000",
+        "--env-file",
+        "C:\\Users\\VasiganiRohitBabu\\Desktop\\Claude\\arcf\\.env"
+      ],
+      "port": 8000,
+      "url": "http://localhost:8000"
     }
   ]
 }

@@ -36,3 +36,17 @@ def test_actual_cost_uses_real_usage_numbers() -> None:
     estimator = CostEstimator()
     cost = estimator.actual_cost(prompt_tokens=1000, completion_tokens=1000, model="gpt-4o-mini")
     assert cost == pytest.approx(0.15 + 0.60)
+
+
+def test_count_tokens_handles_literal_special_token_text() -> None:
+    """Real crash repro (2026-08-07): a real repository file (an LLM-
+    adjacent codebase's example/fixture content) can literally contain a
+    tiktoken special-token-shaped substring like "<|endoftext|>". tiktoken
+    raises ValueError on that by default (a safety check meant for
+    constructing actual model payloads) — count_tokens only ever counts
+    tokens of file/prompt content for budget/cost estimation, never
+    constructs a payload sent to a model verbatim, so this should count
+    it as plain text instead of crashing."""
+    estimator = CostEstimator()
+    count = estimator.count_tokens("some text <|endoftext|> more text", "gpt-4o-mini")
+    assert count > 0

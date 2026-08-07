@@ -97,29 +97,42 @@ class PythonLanguageAnalyzer:
 
     def _walk(
         self,
-        node: Node,
+        root: Node,
         scope_stack: list[Symbol],
         qualname_parts: list[str],
         ctx: _WalkContext,
     ) -> None:
-        for child in node.children:
-            if child.type == "class_definition":
-                symbol = self._build_class_symbol(child, scope_stack, qualname_parts, ctx)
+        # Iterative, explicit-stack pre-order traversal — a plain recursive
+        # descent overflows Python's call stack on deeply nested real-world
+        # files; this stays bounded by heap, not the C call stack. Children
+        # are pushed in reverse so pop() yields them in the same
+        # left-to-right order the recursive version visited.
+        stack: list[tuple[Node, list[Symbol], list[str]]] = [
+            (child, scope_stack, qualname_parts) for child in reversed(root.children)
+        ]
+        while stack:
+            node, node_scope, node_qualname = stack.pop()
+            if node.type == "class_definition":
+                symbol = self._build_class_symbol(node, node_scope, node_qualname, ctx)
                 ctx.symbols.append(symbol)
-                self._walk(child, [*scope_stack, symbol], [*qualname_parts, symbol.name], ctx)
-            elif child.type == "function_definition":
-                symbol = self._build_function_symbol(child, scope_stack, qualname_parts, ctx)
+                new_scope = [*node_scope, symbol]
+                new_qualname = [*node_qualname, symbol.name]
+                stack.extend((c, new_scope, new_qualname) for c in reversed(node.children))
+            elif node.type == "function_definition":
+                symbol = self._build_function_symbol(node, node_scope, node_qualname, ctx)
                 ctx.symbols.append(symbol)
-                self._walk(child, [*scope_stack, symbol], [*qualname_parts, symbol.name], ctx)
-            elif child.type == "call":
-                self._record_call(child, scope_stack, ctx)
-                self._walk(child, scope_stack, qualname_parts, ctx)
-            elif child.type == "import_statement":
-                self._extract_plain_imports(child, ctx)
-            elif child.type == "import_from_statement":
-                self._extract_from_imports(child, ctx)
+                new_scope = [*node_scope, symbol]
+                new_qualname = [*node_qualname, symbol.name]
+                stack.extend((c, new_scope, new_qualname) for c in reversed(node.children))
+            elif node.type == "call":
+                self._record_call(node, node_scope, ctx)
+                stack.extend((c, node_scope, node_qualname) for c in reversed(node.children))
+            elif node.type == "import_statement":
+                self._extract_plain_imports(node, ctx)
+            elif node.type == "import_from_statement":
+                self._extract_from_imports(node, ctx)
             else:
-                self._walk(child, scope_stack, qualname_parts, ctx)
+                stack.extend((c, node_scope, node_qualname) for c in reversed(node.children))
 
     def _build_class_symbol(
         self, node: Node, scope_stack: list[Symbol], qualname_parts: list[str], ctx: _WalkContext

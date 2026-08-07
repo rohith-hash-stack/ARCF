@@ -55,6 +55,12 @@ class FileReference(BaseModel):
     Budget Manager needs this for budget-aware selection but must not
     reach into code_intelligence internals to get it, so it travels
     with the contract instead."""
+    justification_chain: tuple[str, ...] = ()
+    """ARCF hardening (adaptive deterministic traversal): the full hop-by-
+    hop path from a resolved entry point to this file, e.g. ("defines
+    authenticate", "called by Service.login", "called by
+    Controller.handle_login") — empty for files added via a single-step
+    relationship (`reason` alone already explains those)."""
 
 
 class SymbolReference(BaseModel):
@@ -67,6 +73,11 @@ class SymbolReference(BaseModel):
     file_path: str
     start_line: int
     end_line: int
+    parent_symbol_id: str | None = None
+    """ARCF hardening §8: the enclosing class's symbol id, when this is a
+    METHOD — carried across the Phase 5/6 boundary so a constructor added
+    by ContextResolver._enrich_with_constructors is auditable rather than
+    appearing to be an unexplained extra symbol."""
 
 
 class DependencyEdge(BaseModel):
@@ -117,3 +128,76 @@ class ContextResolutionResult(BaseModel):
     token_estimate: TokenEstimate
     resolution_reason: str
     generated_at: datetime = Field(default_factory=utc_now)
+
+    retrieval_depth_used: int = 0
+    """ARCF hardening: the deepest call/import/inheritance hop actually
+    reached during traversal (0 = only entry-point definitions, no
+    expansion). Part of the deterministic retrieval-completeness metadata
+    — never an LLM-generated confidence score."""
+
+    ambiguous_targets: tuple[str, ...] = ()
+    """ARCF hardening §3 (symbol disambiguation): target names that
+    resolved to more than one candidate symbol and could not be narrowed
+    to a single one via deterministic locality signals (same file, same
+    directory, import-graph reachability from the already-resolved
+    context). Surfaced explicitly rather than silently expanding to every
+    candidate or silently picking one."""
+
+    evidence_categories_satisfied: tuple[str, ...] = ()
+    """ARCF hardening §2 (evidence sufficiency validation): required
+    evidence categories (contracts/evidence_contract.py, per task type)
+    already covered by candidate_files, whether from graph-driven
+    selection or deterministic expansion."""
+    evidence_categories_missing: tuple[str, ...] = ()
+    """Required evidence categories that remained unsatisfied even after
+    deterministic expansion (e.g. the repository genuinely has no CI
+    workflow file) — surfaced honestly rather than fabricated."""
+
+    repository_segment: str = ""
+    """ARCF hardening §4 (repository boundary awareness): the monorepo
+    segment (nearest enclosing manifest/workspace-config directory) that
+    dominates candidate_files — "" means the whole-repository segment
+    (single-project repo, or no dominant segment yet)."""
+
+    files_scanned: int = 0
+    """ARCF hardening §5/§11: total files RepositoryScanner found in the
+    workspace, regardless of language support."""
+    files_analyzed: int = 0
+    """Files an analyzer actually parsed (files_scanned minus
+    skipped_files, see code_intelligence.index.CodeIntelligenceIndex)."""
+    languages_detected: tuple[str, ...] = ()
+    """Every language workspace/language_detection.py found at least one
+    file for, ranked by file count."""
+    languages_unsupported: tuple[str, ...] = ()
+    """Subset of languages_detected with no registered LanguageAnalyzer —
+    files in these languages were scanned but never indexed."""
+    analyzer_coverage: float = 1.0
+    """files_analyzed / files_scanned (1.0 when there's nothing to scan or
+    everything scanned was analyzed)."""
+    unresolved_symbols: tuple[str, ...] = ()
+    """Target names that resolved to zero symbols, plus (via
+    ambiguous_targets) names that resolved to more than one candidate the
+    disambiguation locality signals couldn't narrow — the parts of this
+    resolution that are honestly incomplete rather than silently assumed
+    complete."""
+    unresolved_imports: tuple[str, ...] = ()
+    """Import statements a LanguageAnalyzer recorded but could not resolve
+    to a workspace file (ImportReference.resolved_file_path is None) —
+    stdlib/third-party imports, or a genuinely unresolvable one, surfaced
+    rather than silently dropped from the import graph."""
+    parse_error_files: tuple[str, ...] = ()
+    """Files an analyzer attempted but reported parse errors for
+    (FileAnalysis.parse_errors) — malformed source or an unsupported
+    syntax construct, distinct from files never attempted at all."""
+    generated_files: tuple[str, ...] = ()
+    """ARCF hardening §13: files matching common generated-code
+    conventions (protobuf/gRPC stubs, *.g.cs, /generated/ directories,
+    `@Generated`-style markers) — a deterministic, best-effort heuristic,
+    not exhaustive. Included in candidate_files like any other file, just
+    flagged so low-value generated content can be deprioritized."""
+    dynamic_dispatch_hints: tuple[str, ...] = ()
+    """Files containing a deterministic keyword hint of reflection-heavy
+    or runtime-dependency-injected code (e.g. `getattr(`, `@Inject`,
+    `importlib.import_module(`) — static analysis cannot see through
+    these, so they're surfaced as a known limitation rather than silently
+    assumed fully resolved."""

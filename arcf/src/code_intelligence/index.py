@@ -18,7 +18,7 @@ alongside content_hashes for the same reason — it's what lets
 ContextResolver compute TokenEstimate without re-reading every file.
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from code_intelligence.call_graph import CallGraph
 from code_intelligence.candidate_selector import CandidateFileSelector
@@ -40,3 +40,21 @@ class CodeIntelligenceIndex:
     inheritance_graph: InheritanceGraph
     call_graph: CallGraph
     candidate_selector: CandidateFileSelector
+    skipped_files: list[str] = field(default_factory=list)
+    """ARCF hardening §5/§13: files the scanner found but that were never
+    analyzed — no registered LanguageAnalyzer handled the extension, or
+    the file couldn't be read. Previously a silent `continue` in
+    CodeIntelligenceEngine.build_index; now recorded so unsupported
+    conditions are surfaced rather than assumed away."""
+
+    @property
+    def parse_error_files(self) -> list[str]:
+        """Files that were analyzed but whose analyzer reported parse
+        errors (FileAnalysis.parse_errors) — a genuine limitation
+        (malformed source, an unsupported syntax construct) distinct from
+        skipped_files' "never even attempted"."""
+        return sorted(
+            file_path
+            for file_path, analysis in self.file_analyses.items()
+            if analysis.parse_errors
+        )

@@ -40,7 +40,16 @@ class CostEstimator:
             encoding = tiktoken.encoding_for_model(model)
         except KeyError:
             encoding = tiktoken.get_encoding("cl100k_base")
-        return len(encoding.encode(text))
+        # disallowed_special=() — every caller here is counting tokens of
+        # real file/prompt content for budget/cost estimation, never
+        # constructing a payload that gets sent to a model verbatim (that
+        # happens elsewhere, via LiteLLMClient). tiktoken's default raises
+        # if the text merely CONTAINS a special-token-shaped substring
+        # (e.g. a real repository file with "<|endoftext|>" in a string
+        # literal, docstring, or test fixture — plausible in any LLM-
+        # adjacent codebase); that default exists to stop accidental
+        # special tokens from reaching a model, which isn't a risk here.
+        return len(encoding.encode(text, disallowed_special=()))
 
     def _prices_for(self, model: str) -> tuple[float, float]:
         return self._pricing.get(model, FALLBACK_PRICING)

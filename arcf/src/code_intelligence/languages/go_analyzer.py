@@ -206,55 +206,72 @@ class GoLanguageAnalyzer:
 
     # -- pass 2: functions/methods/calls/imports ---------------------------
 
-    def _visit_children(self, node: Node, scope_stack: list[Symbol], ctx: _WalkContext) -> None:
-        for child in node.children:
-            self._visit(child, scope_stack, ctx)
+    def _visit_children(self, root: Node, scope_stack: list[Symbol], ctx: _WalkContext) -> None:
+        # Iterative, explicit-stack pre-order traversal — a plain recursive
+        # descent overflows Python's call stack on deeply nested real-world
+        # Go files (e.g. generated deepcopy code); this stays bounded by
+        # heap, not the C call stack. Children are pushed in reverse so
+        # pop() yields them in the same left-to-right order the recursive
+        # version visited. Note this replaces both the old _visit and
+        # _visit_children: a stack entry IS one "_visit(node, ...)" call.
+        stack: list[tuple[Node, list[Symbol]]] = [
+            (child, scope_stack) for child in reversed(root.children)
+        ]
+        while stack:
+            node, node_scope = stack.pop()
 
-    def _visit(self, node: Node, scope_stack: list[Symbol], ctx: _WalkContext) -> None:
-        if node.type == "function_declaration":
-            symbol = self._build_function_symbol(node, scope_stack, ctx)
-            ctx.symbols.append(symbol)
-            body = node.child_by_field_name("body")
-            if body is not None:
-                self._visit_children(body, [*scope_stack, symbol], ctx)
-            return
+            if node.type == "function_declaration":
+                symbol = self._build_function_symbol(node, node_scope, ctx)
+                ctx.symbols.append(symbol)
+                body = node.child_by_field_name("body")
+                if body is not None:
+                    new_scope = [*node_scope, symbol]
+                    stack.extend((c, new_scope) for c in reversed(body.children))
+                continue
 
-        if node.type == "method_declaration":
-            symbol = self._build_method_symbol(node, ctx)
-            ctx.symbols.append(symbol)
-            body = node.child_by_field_name("body")
-            if body is not None:
-                self._visit_children(body, [*scope_stack, symbol], ctx)
-            return
+            if node.type == "method_declaration":
+                symbol = self._build_method_symbol(node, ctx)
+                ctx.symbols.append(symbol)
+                body = node.child_by_field_name("body")
+                if body is not None:
+                    new_scope = [*node_scope, symbol]
+                    stack.extend((c, new_scope) for c in reversed(body.children))
+                continue
 
-        if node.type == "short_var_declaration":
-            if self._try_visit_func_literal_binding(node, scope_stack, ctx):
-                return
-            self._visit_children(node, scope_stack, ctx)
-            return
+            if node.type == "short_var_declaration":
+                binding = self._func_literal_binding(node, node_scope, ctx)
+                if binding is not None:
+                    symbol, body = binding
+                    ctx.symbols.append(symbol)
+                    if body is not None:
+                        new_scope = [*node_scope, symbol]
+                        stack.extend((c, new_scope) for c in reversed(body.children))
+                else:
+                    stack.extend((c, node_scope) for c in reversed(node.children))
+                continue
 
-        if node.type == "call_expression":
-            self._record_call(node, scope_stack, ctx)
-            self._visit_children(node, scope_stack, ctx)
-            return
+            if node.type == "call_expression":
+                self._record_call(node, node_scope, ctx)
+                stack.extend((c, node_scope) for c in reversed(node.children))
+                continue
 
-        if node.type == "import_declaration":
-            self._extract_imports(node, ctx)
-            return
+            if node.type == "import_declaration":
+                self._extract_imports(node, ctx)
+                continue
 
-        self._visit_children(node, scope_stack, ctx)
+            stack.extend((c, node_scope) for c in reversed(node.children))
 
-    def _try_visit_func_literal_binding(
+    def _func_literal_binding(
         self, node: Node, scope_stack: list[Symbol], ctx: _WalkContext
-    ) -> bool:
+    ) -> tuple[Symbol, Node | None] | None:
         left = node.child_by_field_name("left")
         right = node.child_by_field_name("right")
         if left is None or right is None:
-            return False
+            return None
         name_node = next((c for c in left.children if c.type == "identifier"), None)
         func_literal = next((c for c in right.children if c.type == "func_literal"), None)
         if name_node is None or func_literal is None:
-            return False
+            return None
 
         name = self._text(name_node, ctx)
         parent = scope_stack[-1] if scope_stack else None
@@ -269,11 +286,7 @@ class GoLanguageAnalyzer:
             location=location,
             parent_id=parent.id if parent else None,
         )
-        ctx.symbols.append(symbol)
-        body = func_literal.child_by_field_name("body")
-        if body is not None:
-            self._visit_children(body, [*scope_stack, symbol], ctx)
-        return True
+        return symbol, func_literal.child_by_field_name("body")
 
     def _build_function_symbol(
         self, node: Node, scope_stack: list[Symbol], ctx: _WalkContext
@@ -394,13 +407,18 @@ class GoLanguageAnalyzer:
     # -- tree helpers ---------------------------------------------------
 
     @staticmethod
-    def _find_all(node: Node, node_type: str) -> list[Node]:
+    def _find_all(root: Node, node_type: str) -> list[Node]:
+        # Iterative pre-order search — see _visit_children's comment for why
+        # this can't be plain recursion. Matched nodes are not searched
+        # further, mirroring the original recursive behavior.
         found: list[Node] = []
-        for child in node.children:
-            if child.type == node_type:
-                found.append(child)
+        stack: list[Node] = list(reversed(root.children))
+        while stack:
+            node = stack.pop()
+            if node.type == node_type:
+                found.append(node)
             else:
-                found.extend(GoLanguageAnalyzer._find_all(child, node_type))
+                stack.extend(reversed(node.children))
         return found
 
     # -- node helpers ---------------------------------------------------

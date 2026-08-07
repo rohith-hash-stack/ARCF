@@ -41,15 +41,20 @@ class InheritanceGraph:
     def unresolved_bases_of(self, class_id: str) -> list[str]:
         return list(self._unresolved_bases.get(class_id, []))
 
-    def all_subclasses_of(self, class_id: str) -> set[str]:
+    def all_subclasses_of(self, class_id: str, max_depth: int | None = None) -> set[str]:
+        """Every class transitively extending `class_id`. `max_depth=None`
+        (the default, unchanged from before ARCF hardening) expands the
+        full hierarchy; an int caps how many inheritance hops to follow."""
         visited: set[str] = set()
-        queue: deque[str] = deque(self._subclasses.get(class_id, set()))
-        while queue:
-            current = queue.popleft()
-            if current in visited:
-                continue
-            visited.add(current)
-            queue.extend(self._subclasses.get(current, set()) - visited)
+        frontier: set[str] = set(self._subclasses.get(class_id, set()))
+        depth = 1
+        while frontier and (max_depth is None or depth <= max_depth):
+            visited |= frontier
+            next_frontier: set[str] = set()
+            for current in frontier:
+                next_frontier |= self._subclasses.get(current, set()) - visited
+            frontier = next_frontier
+            depth += 1
         return visited
 
     def all_superclasses_of(self, class_id: str) -> set[str]:

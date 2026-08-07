@@ -67,10 +67,10 @@ select = ["E", "F", "I", "UP", "B", "SIM", "N"]
 [tool.mypy]
 python_version = "3.12"
 strict = true
-mypy_path = "src"
-files = ["src", "tests"]
+mypy_path = "src:scripts"
+files = ["src", "tests", "scripts"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-pythonpath = ["src"]
+pythonpath = ["src", "scripts"]
 asyncio_mode = "auto"

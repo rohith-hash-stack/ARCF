@@ -12,7 +12,10 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException
 
 from context.packager import ContextPackager
+from context.task_profile import RANKING_PROFILES, classify_retrieval_task
 from contracts.manager import ExecutionContractManager
+from contracts.repository_scope_classifier import RepositoryScopeClassifier
+from contracts.task_classifier import TaskClassifier
 from domain.execution_context import ExecutionContext
 from infrastructure.context_resolution_store import ContextResolutionStore
 from infrastructure.cost import CostGuardrail
@@ -97,7 +100,21 @@ async def create_context_package(
     raw_request = living.contract.intent.raw_request
     _check_budget(cost_guardrail, context, raw_request, settings.slm_model)
 
-    package, llm_response = await packager.package(result, raw_request, payload.max_tokens)
+    # ARCF hardening §7 (task-aware deterministic ranking): the same
+    # deterministic classification service.py already uses to pick a
+    # traversal depth also picks a ranking profile here — a bug-fix
+    # request and an architecture-explanation request over the same
+    # ContextResolutionResult prioritize differently at packaging time.
+    scope_classification = RepositoryScopeClassifier().classify(raw_request)
+    task_classifier_task = TaskClassifier().classify(raw_request)
+    retrieval_task_type = classify_retrieval_task(
+        raw_request, task_classifier_task, scope_classification.task_type
+    )
+    ranking_profile = RANKING_PROFILES[retrieval_task_type]
+
+    package, llm_response = await packager.package(
+        result, raw_request, payload.max_tokens, ranking_profile=ranking_profile
+    )
 
     if llm_response is not None:
         actual_cost = cost_guardrail.estimator.actual_cost(

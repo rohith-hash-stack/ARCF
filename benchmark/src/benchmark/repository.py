@@ -9,7 +9,9 @@ effect of a different file listing, is the whole point of the
 benchmark.
 """
 
+import os
 import shutil
+import stat
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -17,6 +19,20 @@ import git
 from domain.workspace import WorkspaceMetadata
 from workspace.analyzer import WorkspaceAnalyzer
 from workspace.scanner import RepositoryScanner, ScanResult
+
+
+def _force_rmtree(path: Path) -> None:
+    """git clones pack files read-only; plain rmtree fails on Windows
+    (PermissionError / WinError 5) trying to delete them. Clear the
+    read-only bit on whatever failed to delete, then retry once. Same
+    fix as suite/repo_pool.py's own _force_rmtree, for the same reason —
+    this loader just never got it."""
+
+    def _on_error(func, target_path, _exc_info):  # type: ignore[no-untyped-def]
+        os.chmod(target_path, stat.S_IWRITE)
+        func(target_path)
+
+    shutil.rmtree(path, onerror=_on_error)
 
 
 @dataclass(frozen=True)
@@ -47,7 +63,7 @@ class RepositoryLoader:
         self._clone_root.mkdir(parents=True, exist_ok=True)
         dest = self._clone_root / self._slug_for(url)
         if dest.exists():
-            shutil.rmtree(dest)
+            _force_rmtree(dest)
         if ref:
             git.Repo.clone_from(url, dest, branch=ref)
         else:
