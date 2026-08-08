@@ -94,11 +94,58 @@ def _probe_prefixes(raw_request: str) -> list[str]:
     return prefixes
 
 
-def probe_symbol_names(raw_request: str, symbol_index: SymbolIndex) -> list[str]:
+def probe_prefixes(raw_request: str) -> list[str]:
+    """Public wrapper around this module's own prefix-extraction (see
+    module docstring) — exposed for callers that need the actual prefix
+    list, not just a boolean match (shares_lexical_root). Used by
+    context/subsystem_localizer.py's ARCF root-cause validation
+    experiment to score which repository subsystem a query's wording
+    concentrates in, before restricting lexical symbol probing to it."""
+    return _probe_prefixes(raw_request)
+
+
+def shares_lexical_root(text: str, raw_request: str) -> bool:
+    """Public wrapper around this module's own prefix-probing technique
+    (see module docstring) for callers outside symbol/file-path probing —
+    ARCF Phase 7's LSE candidate pruning (context/evidence_validator.py)
+    reuses this rather than re-implementing prefix matching a second way,
+    so "what counts as a lexical match" stays defined in exactly one
+    place. True when `text`'s lowercased form contains any of
+    `raw_request`'s probe prefixes as a substring."""
+    prefixes = _probe_prefixes(raw_request)
+    if not prefixes:
+        return False
+    lowered = text.lower()
+    return any(prefix in lowered for prefix in prefixes)
+
+
+def probe_symbol_names(
+    raw_request: str,
+    symbol_index: SymbolIndex,
+    restrict_to_prefixes: tuple[str, ...] | None = None,
+) -> list[str]:
     """Real, exact Symbol.name values whose lowercased form contains one
     of the query's probe prefixes as a substring — safe to feed straight
     into ContextResolver.resolve()'s target_names, since every returned
-    name already exists in this repository's real symbol table."""
+    name already exists in this repository's real symbol table.
+
+    `restrict_to_prefixes` (ARCF subsystem-localization experiment,
+    context/subsystem_localizer.py): when given, only names with at
+    least one occurrence whose `file_path` starts with one of these
+    directory prefixes are eligible for the returned list. Ambiguity is
+    still counted globally (every real occurrence anywhere in the
+    repository, restricted or not) — this only changes which NAMES are
+    eligible to be returned, not the safety bound on how ambiguous a
+    returned name is allowed to be (see _MAX_MATCHES_PER_NAME's own
+    comment for why that bound exists and must stay global: a name fed
+    into ContextResolver.resolve() still resolves against the WHOLE
+    index regardless of why it was selected). Filtering happens before
+    the _MAX_MATCHED_NAMES cap, not after: without this, a subsystem's
+    own relevant symbol could already be excluded from the unrestricted
+    top-20 by unrelated same-rooted symbols encountered earlier in
+    symbol_index.all()'s iteration order, making restriction downstream
+    of an unrestricted probe unable to ever recover it — this is exactly
+    the gap the real SQLAlchemy experiment (2026-08-08) found."""
     prefixes = _probe_prefixes(raw_request)
     if not prefixes:
         return []
@@ -110,6 +157,7 @@ def probe_symbol_names(raw_request: str, symbol_index: SymbolIndex) -> list[str]
     # name straight through on its first (innocent-looking) sighting.
     counts: dict[str, int] = defaultdict(int)
     first_seen_order: list[str] = []
+    in_scope: set[str] = set()
     for symbol in symbol_index.all():
         if len(symbol.name) < _PROBE_PREFIX_LEN:
             continue
@@ -119,15 +167,82 @@ def probe_symbol_names(raw_request: str, symbol_index: SymbolIndex) -> list[str]
         if counts[symbol.name] == 0:
             first_seen_order.append(symbol.name)
         counts[symbol.name] += 1
+        if restrict_to_prefixes and symbol.file_path.startswith(restrict_to_prefixes):
+            in_scope.add(symbol.name)
+
+    candidates = first_seen_order
+    if restrict_to_prefixes is not None:
+        candidates = [name for name in first_seen_order if name in in_scope]
 
     matched: list[str] = []
-    for name in first_seen_order:
+    for name in candidates:
         if counts[name] > _MAX_MATCHES_PER_NAME:
             continue
         matched.append(name)
         if len(matched) >= _MAX_MATCHED_NAMES:
             break
     return matched
+
+
+def probe_symbol_names_ranked(
+    raw_request: str,
+    symbol_index: SymbolIndex,
+    restrict_to_prefixes: tuple[str, ...] | None = None,
+) -> list[str]:
+    """ARCF candidate-ranking experiment (2026-08-08, SQLAlchemy-only
+    validation of the principal-architect design review's Stage A):
+    same eligibility rules as `probe_symbol_names` (min name length,
+    prefix-substring match, the same global `_MAX_MATCHES_PER_NAME`
+    ambiguity cap, the same `restrict_to_prefixes` scoping) — the only
+    difference is which names win the `_MAX_MATCHED_NAMES` slots when
+    more eligible names exist than the cap allows.
+
+    `probe_symbol_names` fills those slots in raw `symbol_index.all()`
+    scan order — an accident of iteration, not a relevance judgment.
+    This ranks eligible names by (a) how many *distinct* query prefixes
+    the name matches — a name matching two or more of the query's own
+    words ("load_strategy" matching both "loadin" and "strate") reflects
+    more of the query's actual vocabulary than one matching a single
+    coincidental 6-character overlap ("attr_is_internal_proxy" matching
+    only "intern"); (b) global ambiguity count ascending — fewer
+    repo-wide occurrences means a more specific, less generic name.
+    Both signals are already computed by the unranked function; this
+    only changes the selection rule applied to them, not what's
+    eligible in the first place — see this repo's subsystem-localization
+    experiment write-up (`docs/ARCF_SESSION_HANDOFF_2026-08-08.md`, §8)
+    for the real run where the unranked cap dropped `orm/loading.py`'s
+    own symbols in favor of unrelated same-rooted matches."""
+    prefixes = _probe_prefixes(raw_request)
+    if not prefixes:
+        return []
+
+    counts: dict[str, int] = defaultdict(int)
+    matched_prefix_counts: dict[str, int] = defaultdict(int)
+    first_seen_order: list[str] = []
+    in_scope: set[str] = set()
+    for symbol in symbol_index.all():
+        if len(symbol.name) < _PROBE_PREFIX_LEN:
+            continue
+        lowered = symbol.name.lower()
+        hits = sum(1 for prefix in prefixes if prefix in lowered)
+        if not hits:
+            continue
+        if counts[symbol.name] == 0:
+            first_seen_order.append(symbol.name)
+            matched_prefix_counts[symbol.name] = hits
+        counts[symbol.name] += 1
+        if restrict_to_prefixes and symbol.file_path.startswith(restrict_to_prefixes):
+            in_scope.add(symbol.name)
+
+    candidates = first_seen_order
+    if restrict_to_prefixes is not None:
+        candidates = [name for name in first_seen_order if name in in_scope]
+
+    eligible = [name for name in candidates if counts[name] <= _MAX_MATCHES_PER_NAME]
+    # Tie-break on `name` itself only for determinism (stable output for
+    # otherwise-equal scores) — not a relevance signal.
+    ranked = sorted(eligible, key=lambda name: (-matched_prefix_counts[name], counts[name], name))
+    return ranked[:_MAX_MATCHED_NAMES]
 
 
 def probe_file_paths(raw_request: str, files: list[ScannedFile]) -> list[str]:

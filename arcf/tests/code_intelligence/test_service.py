@@ -123,6 +123,326 @@ async def test_non_repository_scoped_request_recovers_via_lexical_symbol_probe(
     assert "Lexical symbol probing" in resolution.resolution_reason
 
 
+async def test_conceptual_query_with_no_entities_still_finds_real_symbol_via_lexical_probe(
+    tmp_path: Path,
+) -> None:
+    """Regression for the flask 'explain how context locals work' case: a
+    conceptual question with no named entity (empty target_names) used to
+    settle for whatever expand_with_evidence's generic categories matched
+    (README, dependency manifest) and never probe for the real symbol —
+    even though the query's wording ("context locals") shares a lexical
+    root with a real class, AppContext, defined in a file none of the
+    evidence categories would ever glob-match. Lexical symbol probing must
+    run regardless of expand_with_evidence already having found
+    (irrelevant) files, and must ADD the real match rather than replace
+    what evidence-fallback already found (see
+    test_symbol_resolved_request_is_not_touched_by_fallback's sibling
+    concern for why an outright replace was tried and reverted: a later,
+    independent completeness guarantee — evidence_validator.
+    validate_sufficiency — re-adds any evidence category dropped here, so
+    trying to trim them from this method is a no-op fight against that
+    guarantee, not a real savings)."""
+    _write(tmp_path, "README.md", "# Demo\n")
+    _write(tmp_path, "pyproject.toml", '[project]\nname = "demo"\n')
+    _write(
+        tmp_path,
+        "ctx.py",
+        "class AppContext:\n    def push(self):\n        ...\n",
+    )
+
+    service, contract_store = _service()
+    living = _seed_contract(
+        contract_store,
+        "Explain how request and application contexts are implemented using context locals.",
+    )
+
+    _, resolution = await service.attach_code_intelligence(
+        living.contract_id, target_names=[], workspace_root=str(tmp_path)
+    )
+
+    file_paths = {ref.file_path for ref in resolution.candidate_files}
+    assert "ctx.py" in file_paths, (
+        "lexical symbol probing should have surfaced AppContext's file even "
+        "though it matches no evidence-contract category"
+    )
+    assert "README.md" in file_paths and "pyproject.toml" in file_paths, (
+        "evidence-fallback's own matches must survive, not be replaced"
+    )
+    assert "Lexical symbol probing" in resolution.resolution_reason
+    ctx_ref = next(ref for ref in resolution.candidate_files if ref.file_path == "ctx.py")
+    assert ctx_ref.reason == "defines AppContext"
+
+
+async def test_subsystem_localization_flag_defaults_off_and_reproduces_sqlalchemy_fanout(
+    tmp_path: Path,
+) -> None:
+    """ARCF root-cause validation experiment (context/subsystem_localizer.py)
+    — end-to-end proof that `enable_subsystem_localization` actually
+    changes `attach_code_intelligence`'s behavior, using a small fixture
+    that reproduces the real SQLAlchemy failure shape: a query-relevant
+    module (orm/) and an unrelated module (dialects/) whose generically-
+    named helper happens to share a lexical root with the query, exactly
+    the "_generate_cache_key" pattern measured in the real benchmark."""
+    _write(
+        tmp_path,
+        "orm/strategies.py",
+        "class LazyLoader:\n    def load_strategy(self):\n        pass\n",
+    )
+    _write(tmp_path, "orm/loading.py", "def load_on_ident():\n    pass\n")
+    _write(
+        tmp_path,
+        "dialects/mssql.py",
+        "def apply_strategy_workaround():\n    pass\n",
+    )
+    service, contract_store = _service()
+    query = "Explain the loading strategies used internally."
+
+    living_default = _seed_contract(contract_store, query)
+    _, default_resolution = await service.attach_code_intelligence(
+        living_default.contract_id, target_names=[], workspace_root=str(tmp_path)
+    )
+    default_paths = {f.file_path for f in default_resolution.candidate_files}
+    assert "dialects/mssql.py" in default_paths, (
+        "default (flag off) behavior must reproduce the real fan-out — if this "
+        "assertion fails, the fixture no longer demonstrates the problem this "
+        "experiment exists to test"
+    )
+
+    living_experimental = _seed_contract(contract_store, query)
+    _, experimental_resolution = await service.attach_code_intelligence(
+        living_experimental.contract_id,
+        target_names=[],
+        workspace_root=str(tmp_path),
+        enable_subsystem_localization=True,
+    )
+    experimental_paths = {f.file_path for f in experimental_resolution.candidate_files}
+    assert "orm/strategies.py" in experimental_paths
+    assert "orm/loading.py" in experimental_paths
+    assert "dialects/mssql.py" not in experimental_paths, (
+        "subsystem localization should have excluded the out-of-subsystem "
+        "helper the unrestricted probe fanned out into"
+    )
+
+
+async def test_anchor_classification_flag_defaults_off_and_promotes_exact_match(
+    tmp_path: Path,
+) -> None:
+    """ARCF Pre-Expansion Anchor Classification experiment — end-to-end
+    proof that `enable_anchor_classification` changes
+    `attach_code_intelligence`'s output, using the same query-names-an-
+    exact-class shape as the real SQLAlchemy case (LazyLoader/
+    EagerLoader in orm/strategies.py), plus an unrelated Tier-3-only
+    lexical match (dialects/mssql.py) to prove Tier 1 doesn't just
+    happen to subsume Tier 3."""
+    _write(
+        tmp_path,
+        "orm/strategies.py",
+        "class LazyLoader:\n    def load_strategy(self):\n        pass\n\n"
+        "class EagerLoader:\n    def load_strategy(self):\n        pass\n",
+    )
+    _write(tmp_path, "orm/loading.py", "def load_on_ident():\n    pass\n")
+    _write(
+        tmp_path,
+        "dialects/mssql.py",
+        "def apply_strategy_workaround():\n    pass\n",
+    )
+    service, contract_store = _service()
+    query = "Explain how LazyLoader differs from EagerLoader for loading strategies."
+
+    living_default = _seed_contract(contract_store, query)
+    _, default_resolution = await service.attach_code_intelligence(
+        living_default.contract_id, target_names=[], workspace_root=str(tmp_path)
+    )
+    assert all(f.anchor_confidence is None for f in default_resolution.candidate_files), (
+        "default (both flags off) behavior must never set anchor_confidence"
+    )
+
+    living_experimental = _seed_contract(contract_store, query)
+    _, experimental_resolution = await service.attach_code_intelligence(
+        living_experimental.contract_id,
+        target_names=[],
+        workspace_root=str(tmp_path),
+        enable_anchor_classification=True,
+        enable_confidence_propagation=True,
+    )
+    experimental_paths = {f.file_path for f in experimental_resolution.candidate_files}
+    assert "orm/strategies.py" in experimental_paths
+    strategies_ref = next(
+        f for f in experimental_resolution.candidate_files if f.file_path == "orm/strategies.py"
+    )
+    assert strategies_ref.reason in ("defines LazyLoader", "defines EagerLoader")
+    assert strategies_ref.anchor_confidence == 1.0, (
+        "an exact-identifier (Tier 1) match's own defining file must carry "
+        "full confidence (hop 0, no decay)"
+    )
+    assert "Pre-expansion anchor classification" in experimental_resolution.resolution_reason
+
+
+async def test_anchor_classification_without_confidence_propagation_leaves_confidence_unset(
+    tmp_path: Path,
+) -> None:
+    _write(
+        tmp_path, "orm/strategies.py", "class LazyLoader:\n    def load_strategy(self):\n        pass\n"
+    )
+    service, contract_store = _service()
+    living = _seed_contract(contract_store, "Explain how LazyLoader works.")
+
+    _, resolution = await service.attach_code_intelligence(
+        living.contract_id,
+        target_names=[],
+        workspace_root=str(tmp_path),
+        enable_anchor_classification=True,
+        enable_confidence_propagation=False,
+    )
+
+    assert any(f.file_path == "orm/strategies.py" for f in resolution.candidate_files)
+    assert all(f.anchor_confidence is None for f in resolution.candidate_files), (
+        "enable_anchor_classification alone (propagation off) must not set anchor_confidence"
+    )
+
+
+async def test_anchor_classification_expands_class_anchor_to_its_own_methods(
+    tmp_path: Path,
+) -> None:
+    """ARCF Pre-Expansion Anchor Classification follow-up (2026-08-08):
+    real SQLAlchemy repro — `_LazyLoader` (a CLASS) has a method that
+    calls into `orm/loading.py`, but ContextResolver only runs call-graph
+    expansion for FUNCTION/METHOD-kind symbols, never for the CLASS
+    itself, so that real edge was invisible until the class's own
+    methods were also seeded. This fixture reproduces the same shape:
+    LazyLoader.helper() calls load_helper(), defined in a different
+    file — reachable only if the class anchor also seeds its methods."""
+    _write(
+        tmp_path,
+        "orm/strategies.py",
+        "class LazyLoader:\n    def helper(self):\n        load_helper()\n",
+    )
+    _write(tmp_path, "orm/loading.py", "def load_helper():\n    pass\n")
+    service, contract_store = _service()
+    living = _seed_contract(contract_store, "Explain how LazyLoader works.")
+
+    _, resolution = await service.attach_code_intelligence(
+        living.contract_id,
+        target_names=[],
+        workspace_root=str(tmp_path),
+        enable_anchor_classification=True,
+    )
+
+    paths = {f.file_path for f in resolution.candidate_files}
+    assert "orm/strategies.py" in paths
+    assert "orm/loading.py" in paths, (
+        "LazyLoader's own method calls load_helper() in a different file — "
+        "this edge is only reachable if the class anchor's methods are "
+        "also seeded for call-graph expansion, not just the class itself"
+    )
+
+
+async def test_anchor_classification_class_method_expansion_guards_ambiguous_names(
+    tmp_path: Path,
+) -> None:
+    """Real regression found on the actual SQLAlchemy repo (2026-08-08):
+    expanding a Tier 1 class anchor to its own methods without an
+    ambiguity guard let an unqualified, widely-shared method name
+    (`__init__`) resolve against every unrelated class's own `__init__`
+    across the whole repo — 268 files on the real run, candidate count
+    jumping from 45 to 297. This fixture reproduces the same shape with
+    6 unrelated classes sharing `__init__` (over the 5-match ambiguity
+    cap) so the guard must exclude it, while still allowing the real,
+    non-ambiguous cross-file edge (helper -> load_helper) through."""
+    _write(
+        tmp_path,
+        "orm/strategies.py",
+        "class LazyLoader:\n"
+        "    def __init__(self):\n"
+        "        pass\n"
+        "    def helper(self):\n"
+        "        load_helper()\n",
+    )
+    _write(tmp_path, "orm/loading.py", "def load_helper():\n    pass\n")
+    for i in range(6):
+        _write(
+            tmp_path,
+            f"unrelated/thing_{i}.py",
+            f"class Unrelated{i}:\n    def __init__(self):\n        pass\n",
+        )
+    service, contract_store = _service()
+    living = _seed_contract(contract_store, "Explain how LazyLoader works.")
+
+    _, resolution = await service.attach_code_intelligence(
+        living.contract_id,
+        target_names=[],
+        workspace_root=str(tmp_path),
+        enable_anchor_classification=True,
+    )
+
+    paths = {f.file_path for f in resolution.candidate_files}
+    assert "orm/loading.py" in paths, "the real, non-ambiguous edge must still be found"
+    for i in range(6):
+        assert f"unrelated/thing_{i}.py" not in paths, (
+            "an ambiguous shared method name (__init__) must not pull in "
+            "every unrelated class that happens to also define one"
+        )
+
+
+async def test_multi_axis_decomposition_flag_defaults_off_and_gives_each_axis_a_quota(
+    tmp_path: Path,
+) -> None:
+    """ARCF Multi-Axis Query Decomposition experiment — end-to-end proof
+    that the flag changes behavior for a comparative query, using two
+    subsystems whose own vocabulary only matches ONE side of the
+    comparison each (so a pooled, single-axis resolution would only ever
+    pick one winner, while decomposition should let each side land its
+    own file)."""
+    # "loadin" (from "loading") must appear as a contiguous substring to
+    # match via prefix-probing — "loading_strategy", not "load_strategy"
+    # (an underscore right after "load" breaks the substring, the same
+    # real gap found against the actual SQLAlchemy repo this session).
+    _write(tmp_path, "orm/strategies.py", "def loading_strategy():\n    pass\n")
+    _write(tmp_path, "orm/eager_helpers.py", "def eagerload_prefetch():\n    pass\n")
+    service, contract_store = _service()
+    query = "Explain how lazy loading differs from eagerload prefetching."
+
+    living_default = _seed_contract(contract_store, query)
+    _, default_resolution = await service.attach_code_intelligence(
+        living_default.contract_id, target_names=[], workspace_root=str(tmp_path)
+    )
+    assert "Multi-axis" not in default_resolution.resolution_reason
+
+    living_experimental = _seed_contract(contract_store, query)
+    _, experimental_resolution = await service.attach_code_intelligence(
+        living_experimental.contract_id,
+        target_names=[],
+        workspace_root=str(tmp_path),
+        enable_multi_axis_decomposition=True,
+    )
+    experimental_paths = {f.file_path for f in experimental_resolution.candidate_files}
+    assert "orm/strategies.py" in experimental_paths
+    assert "orm/eager_helpers.py" in experimental_paths
+    assert "Multi-axis query decomposition: 2 axes" in experimental_resolution.resolution_reason
+
+
+async def test_multi_axis_decomposition_has_no_effect_without_a_comparative_marker(
+    tmp_path: Path,
+) -> None:
+    _write(tmp_path, "orm/strategies.py", "def load_strategy():\n    pass\n")
+    service, contract_store = _service()
+    query = "Explain how loading strategies work internally."
+
+    living_default = _seed_contract(contract_store, query)
+    _, default_resolution = await service.attach_code_intelligence(
+        living_default.contract_id, target_names=[], workspace_root=str(tmp_path)
+    )
+    living_experimental = _seed_contract(contract_store, query)
+    _, experimental_resolution = await service.attach_code_intelligence(
+        living_experimental.contract_id,
+        target_names=[],
+        workspace_root=str(tmp_path),
+        enable_multi_axis_decomposition=True,
+    )
+
+    assert default_resolution.candidate_files == experimental_resolution.candidate_files
+
+
 async def test_symbol_resolved_request_is_not_touched_by_fallback(tmp_path: Path) -> None:
     _write(tmp_path, "auth.py", "def authenticate(user):\n    return True\n")
     _write(tmp_path, "package.json", '{"name": "demo"}')

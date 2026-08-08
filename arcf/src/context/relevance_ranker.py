@@ -21,7 +21,7 @@ pre-hardening weights below, unchanged.
 from collections import Counter
 from dataclasses import dataclass
 
-from domain.context_resolution import ContextResolutionResult
+from domain.context_resolution import ContextResolutionResult, EvidenceTier
 
 # "references:" is context/evidence_fallback.py's tag for a query-
 # referenced file (one the raw request itself named) — weighted one
@@ -32,6 +32,18 @@ from domain.context_resolution import ContextResolutionResult
 _REASON_WEIGHTS: dict[str, float] = {
     "defines": 1.0,
     "calls": 0.7,
+    # ARCF Issue #9 fix (2026-08-08): ContextResolver emits "called by X
+    # (hop N)" for transitive callees (see context_resolver.py's
+    # _expand_calls), whose first word is "called", not "calls" — this
+    # table had no entry for it, so every hop-N caller-chain file was
+    # silently scored at the generic default weight instead of the
+    # "calls" weight actually intended for call-graph relationships.
+    # Same value as "calls": both represent the same kind of evidence
+    # (a call-graph edge), just labelled by direction in the reason
+    # string. Found via real SQLAlchemy data (2026-08-08 Phase 6
+    # activation check) where this silently suppressed both canonical
+    # files' scores.
+    "called": 0.7,
     "extends": 0.6,
     "references:": 0.8,
 }
@@ -48,6 +60,11 @@ class RankedFile:
     reason: str
     language: str
     token_count: int
+    evidence_tier: EvidenceTier = EvidenceTier.PRIMARY
+    """Carried straight through from FileReference — see EvidenceTier's
+    own docstring. Drives ContextBudgetManager's compress-vs-keep-full
+    decision; relevance_score (ranking order) and evidence_tier
+    (compression policy) are deliberately independent axes."""
 
 
 class RelevanceRanker:
@@ -66,10 +83,12 @@ class RelevanceRanker:
                     entry_point_files,
                     impacted_counts,
                     profile,
+                    file_ref.anchor_confidence,
                 ),
                 reason=file_ref.reason,
                 language=file_ref.language,
                 token_count=file_ref.token_count,
+                evidence_tier=file_ref.evidence_tier,
             )
             for file_ref in result.candidate_files
         ]
@@ -82,6 +101,7 @@ class RelevanceRanker:
         entry_point_files: set[str],
         impacted_counts: Counter[str],
         profile: dict[str, float] | None,
+        anchor_confidence: float | None = None,
     ) -> float:
         weights = profile if profile is not None else _REASON_WEIGHTS
         verb = reason.split(" ", 1)[0]
@@ -89,4 +109,14 @@ class RelevanceRanker:
         entry_bonus = _ENTRY_POINT_BONUS if file_path in entry_point_files else 0.0
         impact_count = min(impacted_counts.get(file_path, 0), _IMPACT_BONUS_CAP)
         impact_bonus = impact_count / _IMPACT_BONUS_CAP * _IMPACT_BONUS_MAX
-        return round(min(base + entry_bonus + impact_bonus, 1.0), 4)
+        role_score = min(base + entry_bonus + impact_bonus, 1.0)
+        # ARCF Pre-Expansion Anchor Classification experiment
+        # (2026-08-08): final_score = anchor_confidence * role_score,
+        # only when a confidence was actually computed
+        # (`enable_confidence_propagation`) — `None` (every existing
+        # caller, and this flag off) multiplies by 1.0, i.e. no change
+        # to role_score at all. This is additive to the existing
+        # role-weight system, not a replacement of it: role_score above
+        # is computed exactly as before, unconditionally.
+        confidence_factor = anchor_confidence if anchor_confidence is not None else 1.0
+        return round(min(role_score * confidence_factor, 1.0), 4)

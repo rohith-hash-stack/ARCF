@@ -33,6 +33,7 @@ from domain.context_resolution import (
     CallEdge,
     ContextResolutionResult,
     DependencyEdge,
+    EvidenceTier,
     FileReference,
     SymbolReference,
     TokenEstimate,
@@ -80,12 +81,28 @@ class ContextResolver:
         target_names: list[str],
         traversal_depth: int | None = 1,
         max_expansion_tokens: int | None = None,
+        entry_point_tier: EvidenceTier = EvidenceTier.PRIMARY,
     ) -> ContextResolutionResult:
+        """`entry_point_tier` tags only the direct "defines {name}" match
+        for each resolved target name — evidence-preserving context
+        packaging's PRIMARY/SUPPORTING distinction (domain.
+        context_resolution.EvidenceTier). Defaults to PRIMARY: a caller
+        resolving confident, exact target names (e.g. SLM-1-extracted
+        entities) gets today's behavior unchanged. A caller recovering
+        from a lexical/prefix-substring symbol-name guess (context/
+        lexical_symbol_probe.py) should pass SUPPORTING instead — even
+        the file that directly defines a merely-probed name is a weaker
+        signal than an exact match. Every file reached via call-graph or
+        inheritance expansion below (_expand_calls/_expand_subclasses) is
+        unconditionally SUPPORTING regardless of this parameter: fan-out
+        is fan-out, however confident the entry point that produced it
+        was."""
         entry_point_symbols: list[Symbol] = []
         impacted_symbols: dict[str, Symbol] = {}
         candidate_files: set[str] = set()
         file_reasons: dict[str, str] = {}
         file_chains: dict[str, tuple[str, ...]] = {}
+        file_tiers: dict[str, EvidenceTier] = {}
         call_edges: list[CallEdge] = []
         max_hop_reached = 0
         ambiguous_targets: list[str] = []
@@ -117,9 +134,11 @@ class ContextResolver:
                     candidate_files,
                     file_reasons,
                     file_chains,
+                    file_tiers,
                     symbol.file_path,
                     f"defines {name}",
                     (f"defines {name}",),
+                    entry_point_tier,
                 )
                 if not expand_matches:
                     continue
@@ -135,6 +154,7 @@ class ContextResolver:
                             candidate_files,
                             file_reasons,
                             file_chains,
+                            file_tiers,
                             impacted_symbols,
                             call_edges,
                         ),
@@ -149,6 +169,7 @@ class ContextResolver:
                             candidate_files,
                             file_reasons,
                             file_chains,
+                            file_tiers,
                             impacted_symbols,
                         ),
                     )
@@ -196,6 +217,7 @@ class ContextResolver:
                     language=self._language_of(file_path),
                     token_count=self._index.token_counts.get(file_path, 0),
                     justification_chain=file_chains.get(file_path, ()),
+                    evidence_tier=file_tiers.get(file_path, EvidenceTier.SUPPORTING),
                 )
                 for file_path in sorted(candidate_files)
             ],
@@ -228,6 +250,7 @@ class ContextResolver:
         candidate_files: set[str],
         file_reasons: dict[str, str],
         file_chains: dict[str, tuple[str, ...]],
+        file_tiers: dict[str, EvidenceTier],
         impacted_symbols: dict[str, Symbol],
         call_edges: list[CallEdge],
     ) -> int:
@@ -250,11 +273,14 @@ class ContextResolver:
                     candidate_files,
                     file_reasons,
                     file_chains,
+                    file_tiers,
                     caller_file,
                     f"calls {name}",
                     (f"defines {name}", f"calls {name}"),
+                    EvidenceTier.SUPPORTING,
                 )
                 max_hop = max(max_hop, 1)
+                self._attach_call_site_symbols(caller_file, name, impacted_symbols)
 
         caller_hops = self._index.call_graph.transitive_caller_symbols_of(
             symbol.id, traversal_depth
@@ -283,9 +309,11 @@ class ContextResolver:
                 candidate_files,
                 file_reasons,
                 file_chains,
+                file_tiers,
                 caller_symbol.file_path,
                 f"calls {name} (hop {hop})",
                 chain,
+                EvidenceTier.SUPPORTING,
             )
             max_hop = max(max_hop, hop)
 
@@ -317,9 +345,11 @@ class ContextResolver:
                 candidate_files,
                 file_reasons,
                 file_chains,
+                file_tiers,
                 callee_symbol.file_path,
                 f"called by {name} (hop {hop})",
                 chain,
+                EvidenceTier.SUPPORTING,
             )
             max_hop = max(max_hop, hop)
 
@@ -333,11 +363,19 @@ class ContextResolver:
         candidate_files: set[str],
         file_reasons: dict[str, str],
         file_chains: dict[str, tuple[str, ...]],
+        file_tiers: dict[str, EvidenceTier],
         impacted_symbols: dict[str, Symbol],
     ) -> int:
         for subclass_file in self._index.candidate_selector.subclasses_of(name, traversal_depth):
             self._add_file(
-                candidate_files, file_reasons, file_chains, subclass_file, f"extends {name}", ()
+                candidate_files,
+                file_reasons,
+                file_chains,
+                file_tiers,
+                subclass_file,
+                f"extends {name}",
+                (),
+                EvidenceTier.SUPPORTING,
             )
         max_hop = 0
         for subclass_id in self._index.inheritance_graph.all_subclasses_of(
@@ -348,6 +386,66 @@ class ContextResolver:
                 impacted_symbols[subclass_id] = subclass_symbol
                 max_hop = max(max_hop, 1)
         return max_hop
+
+    def _attach_call_site_symbols(
+        self, file_path: str, callee_name: str, impacted_symbols: dict[str, Symbol]
+    ) -> None:
+        """Hop-1 module-level call sites (the loop above this method's
+        only call site) add a FILE via `_add_file`, but have no Symbol to
+        record in `impacted_symbols`. Without one, ContextBudgetManager's
+        `_symbols_by_file` has nothing to compress *around* for that
+        file, so it falls back to full-content-if-it-fits regardless of
+        EvidenceTier — a real, measured bug (a 34K-token file,
+        fastapi/applications.py, escaped compression this way testing
+        ARCF Phase 7's LSE spike, unrelated to LSE itself).
+
+        Two distinct real cases, both handled here — verified against the
+        actual repro before assuming either: candidate_selector.py's
+        `callers_of()` returns a file for TWO different reasons that
+        collapse into the same generic "calls {name}" reason string:
+
+        1. The file DEFINES a symbol also named `callee_name` (its own
+           "plus the file(s) defining it" clause, matched via
+           `find_by_name` independent of whichever specific same-named
+           symbol the entry point actually disambiguated to elsewhere in
+           `resolve()` — this is what fastapi/applications.py hit: it
+           defines its own `middleware` METHOD, unrelated to the
+           `middleware` symbol resolved as the actual entry point). A
+           real Symbol already exists here — reuse it directly, no need
+           to synthesize anything.
+        2. The file contains an actual module-level CALL to
+           `callee_name` (real recursion case for the module-level-call-
+           sites path this loop was originally written for). No declared
+           Symbol owns that call site, so one is synthesized at the
+           call's own real location — never a guess. `id` is prefixed
+           distinctly (`<call-site:...>`) so it can never be confused
+           with a real declared symbol if ever inspected; `kind=FUNCTION`
+           is the closest existing vocabulary fits (only affects
+           `_enrich_with_constructors`' METHOD-specific check elsewhere,
+           which a synthetic FUNCTION-kind entry never trips).
+        """
+        for symbol in self._index.symbol_index.by_file(file_path):
+            if symbol.name == callee_name:
+                impacted_symbols.setdefault(symbol.id, symbol)
+
+        analysis = self._index.file_analyses.get(file_path)
+        if analysis is None:
+            return
+        for call in analysis.calls:
+            if call.callee_name != callee_name:
+                continue
+            synthetic_id = f"{file_path}::<call-site:{callee_name}>#{call.location.start_line}"
+            impacted_symbols.setdefault(
+                synthetic_id,
+                Symbol(
+                    id=synthetic_id,
+                    name=callee_name,
+                    qualified_name=callee_name,
+                    kind=SymbolKind.FUNCTION,
+                    file_path=file_path,
+                    location=call.location,
+                ),
+            )
 
     def _enrich_with_constructors(
         self, impacted_symbols: dict[str, Symbol], entry_point_symbols: list[Symbol]
@@ -406,8 +504,16 @@ class ContextResolver:
         caller-direction chain, ("defines authenticate", "called by
         Service.login", "called by Controller.handle_login")."""
         path: list[str] = []
+        seen: set[str] = set()
         current = target_id
-        while current in hops:
+        # `seen` guard is defense in depth, not the primary fix (that's
+        # CallGraph._layered_bfs excluding `start` from its own frontier —
+        # see its docstring): a hops dict built correctly is already
+        # acyclic, but this walk has no other bound, so a future
+        # self- or mutually-referential edge slipping through upstream
+        # would otherwise still grow `path` without limit.
+        while current in hops and current not in seen:
+            seen.add(current)
             path.append(current)
             current = hops[current][1]
         path.reverse()
@@ -425,13 +531,23 @@ class ContextResolver:
         candidate_files: set[str],
         file_reasons: dict[str, str],
         file_chains: dict[str, tuple[str, ...]],
+        file_tiers: dict[str, EvidenceTier],
         file_path: str,
         reason: str,
         chain: tuple[str, ...],
+        tier: EvidenceTier,
     ) -> None:
         candidate_files.add(file_path)
         file_reasons.setdefault(file_path, reason)
         file_chains.setdefault(file_path, chain)
+        # PRIMARY always wins over SUPPORTING, regardless of which one this
+        # file was FIRST reached through — target_names iteration order is
+        # not a confidence ranking, so (unlike reason/chain above) this is
+        # a merge, not a first-write-wins default: a file some other,
+        # lower-confidence path also happened to reach via fan-out is
+        # still primary evidence if any confident match resolves to it.
+        if tier is EvidenceTier.PRIMARY or file_path not in file_tiers:
+            file_tiers[file_path] = tier
 
     def _to_symbol_reference(self, symbol: Symbol) -> SymbolReference:
         return SymbolReference(

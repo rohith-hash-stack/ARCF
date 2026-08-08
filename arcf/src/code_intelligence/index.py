@@ -22,6 +22,7 @@ from dataclasses import dataclass, field
 
 from code_intelligence.call_graph import CallGraph
 from code_intelligence.candidate_selector import CandidateFileSelector
+from code_intelligence.decorator_graph import DecoratorGraph
 from code_intelligence.dependency_graph import DependencyGraph
 from code_intelligence.import_graph import ImportGraph
 from code_intelligence.inheritance_graph import InheritanceGraph
@@ -40,6 +41,12 @@ class CodeIntelligenceIndex:
     inheritance_graph: InheritanceGraph
     call_graph: CallGraph
     candidate_selector: CandidateFileSelector
+    decorator_graph: DecoratorGraph
+    """ARCF Phase 7 spike (Language Semantic Enrichment) — populated for
+    every workspace (empty graph when no analyzed file has decorators),
+    kept separate from candidate_selector/ContextResolver's stable
+    retrieval path rather than wired into it; only
+    multi_hop_orchestrator.py reads this today."""
     skipped_files: list[str] = field(default_factory=list)
     """ARCF hardening §5/§13: files the scanner found but that were never
     analyzed — no registered LanguageAnalyzer handled the extension, or

@@ -22,8 +22,9 @@ fabricated.
 from dataclasses import dataclass
 from pathlib import Path
 
+from context.lexical_symbol_probe import shares_lexical_root
 from contracts.evidence_contract import EvidenceCategory, category_matches, match_evidence
-from domain.context_resolution import ContextResolutionResult, FileReference
+from domain.context_resolution import ContextResolutionResult, EvidenceTier, FileReference
 from infrastructure.cost import CostEstimator
 from shared.errors import WorkspacePathError
 from workspace.permissions import PermissionManager
@@ -158,6 +159,145 @@ def validate_sufficiency(
     return updated, EvidenceSufficiencyReport(satisfied=satisfied, missing=tuple(still_missing))
 
 
+_MAX_EXPERIMENTAL_SURVIVORS = 8
+"""Same order of magnitude as this codebase's other deterministic caps on
+a single widening tier (_QUERY_REFERENCE_MAX_FILES, _MAX_MATCHED_FILES in
+lexical_symbol_probe.py) — a relationship type surviving corroboration/
+relevance in more files than this is too broad a signal to trust without
+ranking, the same judgment call those existing caps already make."""
+
+
+@dataclass(frozen=True)
+class ExperimentalPruneReport:
+    proposed: int
+    """How many EvidenceTier.EXPERIMENTAL candidates were in `result`
+    before pruning."""
+    kept: tuple[str, ...]
+    pruned: tuple[str, ...]
+
+
+def prune_experimental_candidates(
+    result: ContextResolutionResult,
+    raw_request: str,
+    max_survivors: int = _MAX_EXPERIMENTAL_SURVIVORS,
+) -> tuple[ContextResolutionResult, ExperimentalPruneReport]:
+    """ARCF Phase 7 spike (Language Semantic Enrichment) — the inverse of
+    validate_sufficiency above: that function ADDS files to satisfy
+    missing evidence-contract coverage; this one REMOVES
+    EvidenceTier.EXPERIMENTAL candidates (files reached only via an LSE
+    graph — e.g. context/decorator_graph.py via multi_hop_orchestrator.py
+    — see domain.context_resolution.EvidenceTier's own docstring) that
+    don't earn their place, before they're ever allowed to expand further
+    or reach packaging. This is the piece that keeps multi-hop LSE
+    traversal from repeating this session's FastAPI fan-out blowup: it
+    must run BEFORE a survivor is allowed to seed another hop, not just
+    filter the final candidate set after the fact.
+
+    Stays inside ARCF's no-embeddings/no-scoring constraint — every check
+    here is a real structural fact already computed elsewhere in the
+    pipeline, not a new inference mechanism:
+
+    1. Independent-relationship corroboration: does this candidate also
+       sit in the same directory as an already-established
+       (non-EXPERIMENTAL) candidate, or connect to one via
+       `result.dependency_chain`? A file an LSE relationship alone
+       reached, with nothing else connecting it to anything ARCF's
+       stable pipeline already trusted, is exactly the shape of a
+       spurious match. Known limitation: directory-based corroboration
+       degenerates for root-level files (everything at "" trivially
+       "corroborates") — acceptable for this first spike, worth scoping
+       via workspace.repository_segmentation if this proves out.
+    2. Query-lexical relevance (`shares_lexical_root` — the exact
+       prefix-substring technique lexical_symbol_probe.py already uses
+       elsewhere in ARCF, reused rather than reimplemented) against the
+       candidate's `reason` string.
+
+    A candidate surviving EITHER check is kept; surviving neither is
+    pruned. Survivors are then capped at `max_survivors` (deterministic,
+    sorted by file_path) — even a corroborated/relevant relationship that
+    fires too broadly (a decorator used by every handler in the repo)
+    isn't a precise signal for THIS query.
+
+    Non-EXPERIMENTAL candidates (PRIMARY, SUPPORTING) are never touched —
+    this function's blast radius is exactly the LSE candidates it exists
+    to gate, nothing else in `result`.
+    """
+    experimental = [
+        ref for ref in result.candidate_files if ref.evidence_tier is EvidenceTier.EXPERIMENTAL
+    ]
+    if not experimental:
+        return result, ExperimentalPruneReport(proposed=0, kept=(), pruned=())
+
+    established = [
+        ref for ref in result.candidate_files if ref.evidence_tier is not EvidenceTier.EXPERIMENTAL
+    ]
+    established_dirs = {_directory_of(ref.file_path) for ref in established}
+    established_paths = {ref.file_path for ref in established}
+    connected_to_established = {
+        edge.from_file for edge in result.dependency_chain if edge.to_file in established_paths
+    } | {
+        edge.to_file for edge in result.dependency_chain if edge.from_file in established_paths
+    }
+
+    survivors: list[FileReference] = []
+    pruned: list[FileReference] = []
+    for candidate in experimental:
+        corroborated = (
+            _directory_of(candidate.file_path) in established_dirs
+            or candidate.file_path in connected_to_established
+        )
+        relevant = shares_lexical_root(candidate.reason, raw_request)
+        (survivors if corroborated or relevant else pruned).append(candidate)
+
+    if len(survivors) > max_survivors:
+        survivors = sorted(survivors, key=lambda ref: ref.file_path)
+        pruned.extend(survivors[max_survivors:])
+        survivors = survivors[:max_survivors]
+
+    if len(pruned) == 0:
+        return (
+            result,
+            ExperimentalPruneReport(
+                proposed=len(experimental),
+                kept=tuple(sorted(ref.file_path for ref in survivors)),
+                pruned=(),
+            ),
+        )
+
+    final_files = sorted([*established, *survivors], key=lambda ref: ref.file_path)
+    selected_tokens = sum(ref.token_count for ref in final_files)
+    raw_tokens = result.token_estimate.raw_context_tokens
+    compression_ratio = round(selected_tokens / raw_tokens, 4) if raw_tokens else 0.0
+    pruned_paths = tuple(sorted(ref.file_path for ref in pruned))
+
+    updated = result.model_copy(
+        update={
+            "candidate_files": final_files,
+            "token_estimate": result.token_estimate.model_copy(
+                update={
+                    "selected_context_tokens": selected_tokens,
+                    "compression_ratio": compression_ratio,
+                }
+            ),
+            "resolution_reason": (
+                f"{result.resolution_reason} LSE candidate pruning: "
+                f"{len(experimental)} experimental candidate(s) proposed, "
+                f"{len(pruned)} pruned for lacking corroboration or query "
+                f"relevance."
+            ),
+        }
+    )
+    return updated, ExperimentalPruneReport(
+        proposed=len(experimental),
+        kept=tuple(sorted(ref.file_path for ref in survivors)),
+        pruned=pruned_paths,
+    )
+
+
+def _directory_of(file_path: str) -> str:
+    return file_path.rsplit("/", 1)[0] if "/" in file_path else ""
+
+
 def _to_file_reference(
     relative_path: str,
     category_name: str,
@@ -173,4 +313,7 @@ def _to_file_reference(
         reason=f"evidence: {category_name}",
         language="unknown",
         token_count=token_estimator.count_tokens(content, _TOKEN_ESTIMATE_MODEL),
+        # Same reasoning as evidence_fallback.py's own "evidence: " tier:
+        # a completeness-guarantee addition, not primary evidence.
+        evidence_tier=EvidenceTier.SUPPORTING,
     )

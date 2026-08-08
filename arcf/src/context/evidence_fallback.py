@@ -51,7 +51,7 @@ from pathlib import Path
 from context.lexical_symbol_probe import probe_file_paths
 from contracts.evidence_contract import build_evidence_contract, match_evidence
 from domain.context_package import PackagedFile
-from domain.context_resolution import ContextResolutionResult, FileReference
+from domain.context_resolution import ContextResolutionResult, EvidenceTier, FileReference
 from infrastructure.cost import CostEstimator
 from shared.errors import WorkspacePathError
 from workspace.permissions import PermissionManager
@@ -211,7 +211,15 @@ def _match_query_referenced_files(
         if not any(token in path_lower or token == basename for token in tokens):
             continue
         ref = _to_file_reference(
-            file.relative_path, "references: query-referenced", permissions, token_estimator
+            file.relative_path,
+            "references: query-referenced",
+            permissions,
+            token_estimator,
+            # The raw request itself named this file — as close to an
+            # explicit, confident reference as this module ever produces,
+            # so it stays PRIMARY (full-file) evidence like a resolved
+            # target-name match, not SUPPORTING filler.
+            EvidenceTier.PRIMARY,
         )
         if ref is not None:
             refs.append(ref)
@@ -255,7 +263,15 @@ def _match_evidence_contract(
             if relative_path in seen:
                 continue
             ref = _to_file_reference(
-                relative_path, f"evidence: {category.name}", permissions, token_estimator
+                relative_path,
+                f"evidence: {category.name}",
+                permissions,
+                token_estimator,
+                # Generic per-task-type category filler (README/CI/test-
+                # config/dependency-manifest) — real, legitimate baseline
+                # context, but not what the request is actually about, so
+                # SUPPORTING rather than PRIMARY.
+                EvidenceTier.SUPPORTING,
             )
             if ref is None:
                 continue
@@ -273,7 +289,11 @@ def _root_level_fallback(
     refs: list[FileReference] = []
     for file in root_level[:_ROOT_LEVEL_FALLBACK_MAX_FILES]:
         ref = _to_file_reference(
-            file.relative_path, "evidence: repository tree", permissions, token_estimator
+            file.relative_path,
+            "evidence: repository tree",
+            permissions,
+            token_estimator,
+            EvidenceTier.SUPPORTING,
         )
         if ref is not None:
             refs.append(ref)
@@ -288,7 +308,13 @@ def _to_file_references(
 ) -> list[FileReference]:
     refs: list[FileReference] = []
     for relative_path in relative_paths:
-        ref = _to_file_reference(relative_path, reason, permissions, token_estimator)
+        # A lexical basename probe (layer 3, above) is a guess against
+        # real file names, not an explicit reference the query itself
+        # made — SUPPORTING, same footing as the evidence-contract tier
+        # it stands in for here.
+        ref = _to_file_reference(
+            relative_path, reason, permissions, token_estimator, EvidenceTier.SUPPORTING
+        )
         if ref is not None:
             refs.append(ref)
     return refs
@@ -299,6 +325,7 @@ def _to_file_reference(
     reason: str,
     permissions: PermissionManager,
     token_estimator: CostEstimator,
+    tier: EvidenceTier,
 ) -> FileReference | None:
     try:
         content = permissions.safe_read_text(relative_path)
@@ -309,6 +336,7 @@ def _to_file_reference(
         reason=reason,
         language=_language_of(relative_path),
         token_count=token_estimator.count_tokens(content, _TOKEN_ESTIMATE_MODEL),
+        evidence_tier=tier,
     )
 
 

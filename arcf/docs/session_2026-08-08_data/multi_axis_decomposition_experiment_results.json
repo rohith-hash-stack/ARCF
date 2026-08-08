@@ -1,0 +1,65 @@
+{
+  "query": "Explain how lazy loading differs from eager loading internally and what SQL each strategy generates.",
+  "axes": [
+    "Explain how lazy loading",
+    "eager loading internally and what SQL each strategy generates."
+  ],
+  "entities_extracted": [],
+  "max_tokens": 8000,
+  "canonical_files": [
+    "lib/sqlalchemy/orm/loading.py",
+    "lib/sqlalchemy/orm/strategies.py"
+  ],
+  "baseline": {
+    "label": "baseline (flags off)",
+    "phase5_candidate_count": 140,
+    "phase5_tokens": 1863292,
+    "packaged_file_count": 15,
+    "packaged_tokens": 7978,
+    "excluded_count": 125,
+    "canonical_rank": {
+      "lib/sqlalchemy/orm/loading.py": 125,
+      "lib/sqlalchemy/orm/strategies.py": 90
+    },
+    "canonical_score": {
+      "lib/sqlalchemy/orm/loading.py": 0.42,
+      "lib/sqlalchemy/orm/strategies.py": 0.46
+    },
+    "canonical_origin": {
+      "lib/sqlalchemy/orm/loading.py": "called by _unique_strategy (hop 1)",
+      "lib/sqlalchemy/orm/strategies.py": "called by _generate_cache_key (hop 1)"
+    },
+    "canonical_packaged": {
+      "lib/sqlalchemy/orm/loading.py": false,
+      "lib/sqlalchemy/orm/strategies.py": false
+    },
+    "resolution_reason": "No target names provided; nothing to resolve. Retrieval retry: symbol-based resolution found no candidate files, so search was expanded via the evidence contract, yielding 17 file(s). Lexical symbol probing matched 20 real symbol name(s) from the query's wording (_generate_cache_key, id_generator, InternalError, _internal_has_multi_table, _get_internal_temp_table_name...), adding 123 file(s) evidence-category matching missed.",
+    "total_latency_seconds": 35.933
+  },
+  "multi_axis": {
+    "label": "multi-axis decomposition",
+    "phase5_candidate_count": 19,
+    "phase5_tokens": 127022,
+    "packaged_file_count": 9,
+    "packaged_tokens": 7678,
+    "excluded_count": 10,
+    "canonical_rank": {
+      "lib/sqlalchemy/orm/loading.py": null,
+      "lib/sqlalchemy/orm/strategies.py": null
+    },
+    "canonical_score": {
+      "lib/sqlalchemy/orm/loading.py": null,
+      "lib/sqlalchemy/orm/strategies.py": null
+    },
+    "canonical_origin": {
+      "lib/sqlalchemy/orm/loading.py": null,
+      "lib/sqlalchemy/orm/strategies.py": null
+    },
+    "canonical_packaged": {
+      "lib/sqlalchemy/orm/loading.py": false,
+      "lib/sqlalchemy/orm/strategies.py": false
+    },
+    "resolution_reason": "No target names provided; nothing to resolve. Retrieval retry: symbol-based resolution found no candidate files, so search was expanded via the evidence contract, yielding 17 file(s). Multi-axis query decomposition: 2 axes. axis \"Explain how lazy loading\": 8 lexical match(es), quota 1, added lib/sqlalchemy/orm/session.py. axis \"eager loading internally and what SQL ea...\": 20 lexical match(es), quota 1, added examples/dogpile_caching/caching_query.py.",
+    "total_latency_seconds": 33.663
+  }
+}

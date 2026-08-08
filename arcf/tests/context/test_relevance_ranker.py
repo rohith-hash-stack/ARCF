@@ -136,6 +136,59 @@ def test_references_outranks_generic_evidence_default_weight() -> None:
     assert [r.file_path for r in ranked] == ["b.py", "a.py"]
 
 
+def test_called_by_scores_the_same_as_calls() -> None:
+    """ARCF Issue #9 fix (2026-08-08): ContextResolver emits "called by X
+    (hop N)" for transitive callees, not "calls X" — the reason-verb
+    table had no entry for "called", so these files silently fell to the
+    generic default weight instead of the "calls" weight intended for
+    call-graph relationships. Found via real SQLAlchemy data, where this
+    suppressed both canonical files' scores in the repository_explanation
+    profile."""
+    result = _result(
+        [
+            FileReference(
+                file_path="a.py", reason="calls foo", language="python", token_count=5
+            ),
+            FileReference(
+                file_path="b.py",
+                reason="called by foo (hop 1)",
+                language="python",
+                token_count=5,
+            ),
+        ]
+    )
+    ranked = RelevanceRanker().rank(result)
+    a_score = next(r.relevance_score for r in ranked if r.file_path == "a.py")
+    b_score = next(r.relevance_score for r in ranked if r.file_path == "b.py")
+    assert a_score == b_score
+
+
+def test_called_matches_calls_weight_in_every_profile() -> None:
+    """The actual invariant issue #9 requires: "called" and "calls" score
+    identically within any given profile — not that call-graph evidence
+    always beats the generic default, which some profiles (CI_CD:
+    "almost entirely evidence-contract-driven, not call-graph-driven")
+    deliberately weight call-graph relationships below."""
+    result = _result(
+        [
+            FileReference(
+                file_path="a.py", reason="calls foo", language="python", token_count=5
+            ),
+            FileReference(
+                file_path="b.py",
+                reason="called by foo (hop 2)",
+                language="python",
+                token_count=5,
+            ),
+        ]
+    )
+    for task_type in RetrievalTaskType:
+        ranked = RelevanceRanker().rank(result, profile=RANKING_PROFILES[task_type])
+        a_score = next(r.relevance_score for r in ranked if r.file_path == "a.py")
+        b_score = next(r.relevance_score for r in ranked if r.file_path == "b.py")
+        assert a_score == b_score, f"{task_type} scored 'called by' differently from 'calls'"
+
+
 def test_empty_candidates_returns_empty_list() -> None:
     result = _result([])
     assert RelevanceRanker().rank(result) == []

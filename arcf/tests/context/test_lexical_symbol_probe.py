@@ -1,5 +1,10 @@
 from code_intelligence.symbol_index import SymbolIndex
-from context.lexical_symbol_probe import probe_file_paths, probe_symbol_names
+from context.lexical_symbol_probe import (
+    probe_file_paths,
+    probe_symbol_names,
+    probe_symbol_names_ranked,
+    shares_lexical_root,
+)
 from domain.code_intelligence import SourceLocation, Symbol, SymbolKind
 from workspace.scanner import ScannedFile
 
@@ -82,6 +87,58 @@ def test_probe_symbol_names_allows_a_small_number_of_same_named_overloads() -> N
     assert matched == ["Depends"]
 
 
+def test_probe_symbol_names_ranked_prefers_multi_prefix_match_over_scan_order() -> None:
+    """ARCF candidate-ranking experiment (2026-08-08): real repro of the
+    SQLAlchemy localization run's failure — 25 noise symbols matching
+    only one query prefix precede, in scan order, a single symbol
+    matching two. The unranked cap (first-20-encountered) drops it;
+    ranked selection (more distinct prefixes matched wins) keeps it."""
+    noise = [_symbol(f"dependency_helper_{i}") for i in range(25)]
+    target = _symbol("dependency_handling_util")
+    index = SymbolIndex([*noise, target])
+    query = "Fix the dependency handling issue please"
+
+    unranked = probe_symbol_names(query, index)
+    ranked = probe_symbol_names_ranked(query, index)
+
+    assert "dependency_handling_util" not in unranked
+    assert "dependency_handling_util" in ranked
+
+
+def test_probe_symbol_names_ranked_still_excludes_wildly_ambiguous_names() -> None:
+    ambiguous = [_symbol("middleware", file_path=f"app_{i}/middleware.py") for i in range(10)]
+    precise = [_symbol("Dependant"), _symbol("Depends")]
+    index = SymbolIndex([*ambiguous, *precise])
+
+    matched = probe_symbol_names_ranked(
+        "Add a new middleware option for custom dependency handling", index
+    )
+
+    assert "middleware" not in matched
+    assert set(matched) == {"Dependant", "Depends"}
+
+
+def test_probe_symbol_names_ranked_respects_restrict_to_prefixes() -> None:
+    index = SymbolIndex(
+        [_symbol("load_strategy", file_path="orm/strategies.py"),
+         _symbol("apply_strategy_workaround", file_path="dialects/mssql.py")]
+    )
+
+    matched = probe_symbol_names_ranked(
+        "Explain the loading strategies used internally.",
+        index,
+        restrict_to_prefixes=("orm/",),
+    )
+
+    assert matched == ["load_strategy"]
+
+
+def test_probe_symbol_names_ranked_empty_request_returns_nothing() -> None:
+    index = SymbolIndex([_symbol("Dependant")])
+
+    assert probe_symbol_names_ranked("", index) == []
+
+
 def test_probe_file_paths_matches_basename_not_directory() -> None:
     files = [
         ScannedFile(relative_path="src/deps/dependency_resolver.py", extension=".py", size_bytes=1),
@@ -107,3 +164,15 @@ def test_probe_empty_request_returns_nothing() -> None:
 
     assert probe_symbol_names("", index) == []
     assert probe_file_paths("", files) == []
+
+
+def test_shares_lexical_root_matches_via_shared_prefix() -> None:
+    assert shares_lexical_root("app.middleware", "Explain the middleware pipeline") is True
+
+
+def test_shares_lexical_root_no_match_returns_false() -> None:
+    assert shares_lexical_root("app.get", "Explain how logging works") is False
+
+
+def test_shares_lexical_root_empty_request_returns_false() -> None:
+    assert shares_lexical_root("app.route", "") is False

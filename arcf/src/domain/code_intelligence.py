@@ -70,6 +70,34 @@ class CallReference(BaseModel):
     location: SourceLocation
 
 
+class DecoratorReference(BaseModel):
+    """ARCF Phase 7 spike (Language Semantic Enrichment): a decorator or
+    annotation applied to a Symbol — e.g. `@app.get("/users")` above a
+    FUNCTION, `@dataclass` above a CLASS. Deliberately mirrors
+    CallReference's own raw-text-now/resolve-later split: `decorator_name`
+    is the decorator's callable expression exactly as written (an
+    attribute path or bare identifier), never resolved to what it
+    actually does — that's DecoratorGraph's job, working purely off this
+    IR, same boundary CallGraph/InheritanceGraph already keep. Decorator
+    *arguments* (e.g. the route path "/users") are deliberately NOT
+    captured here — that would be framework-semantic interpretation
+    ("this string is a route path"), out of scope for a language-level
+    relationship; a decorator is a real syntactic fact regardless of what
+    framework (if any) gives it meaning."""
+
+    model_config = ConfigDict(frozen=True)
+
+    symbol_id: str
+    """id of the decorated Symbol (a FUNCTION, METHOD, or CLASS)."""
+    decorator_name: str
+    """Raw text of the decorator's callable expression as written (e.g.
+    "app.get" from `@app.get("/users")`, "dataclass" from `@dataclass`,
+    "app.route" from `@app.route(...)`) — never a resolved cross-file
+    reference, mirroring CallReference.callee_name and Symbol.base_names."""
+    file_path: str
+    location: SourceLocation
+
+
 class ImportReference(BaseModel):
     model_config = ConfigDict(frozen=True)
 
@@ -94,4 +122,10 @@ class FileAnalysis(BaseModel):
     symbols: list[Symbol] = Field(default_factory=list)
     calls: list[CallReference] = Field(default_factory=list)
     imports: list[ImportReference] = Field(default_factory=list)
+    decorators: list[DecoratorReference] = Field(default_factory=list)
+    """ARCF Phase 7 spike: empty for every analyzer except
+    PythonLanguageAnalyzer for now — additive, so existing analyzers and
+    every consumer of FileAnalysis that doesn't know about decorators yet
+    are unaffected (default empty list, same pattern calls/imports
+    already established)."""
     parse_errors: list[str] = Field(default_factory=list)

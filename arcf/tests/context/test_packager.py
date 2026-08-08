@@ -13,6 +13,7 @@ from context.understanding import ContextUnderstandingAnalyzer
 from domain.code_intelligence import SymbolKind
 from domain.context_resolution import (
     ContextResolutionResult,
+    EvidenceTier,
     FileReference,
     SymbolReference,
     TokenEstimate,
@@ -202,6 +203,104 @@ async def test_compressed_snippet_count_reflects_truncated_files(tmp_path: Path)
 
     assert package.compressed_snippet_count == sum(1 for f in package.relevant_files if f.truncated)
     assert package.compressed_snippet_count >= 0
+
+
+async def test_fastapi_style_large_supporting_file_is_compressed_not_dropped_or_kept_whole(
+    tmp_path: Path,
+) -> None:
+    """End-to-end regression for the real finding that motivated evidence-
+    preserving context packaging: testing the ARCF fix against FastAPI,
+    a lexically-probed symbol (request_response) happened to be defined
+    in routing.py, a huge central file — 49,172 of 87,170 total packaged
+    tokens (56%) — while the file that actually answered the question
+    (background.py, defining BackgroundTasks) was only 384 tokens.
+    Success criteria: the real answer file is retained in full, the large
+    supporting file is retained too (never silently dropped) but shrunk
+    to its relevant region, and total tokens used are far below the naive
+    sum of both files' full sizes."""
+    padding = "\n".join(f"    # padding line {i}" for i in range(1, 3000))
+    (tmp_path / "routing.py").write_text(
+        f"class APIRoute:\n{padding}\n    def request_response(self):\n        pass\n"
+    )
+    (tmp_path / "background.py").write_text(
+        "class BackgroundTasks:\n    def add_task(self, func):\n        ...\n"
+    )
+    routing_tokens = CostEstimator().count_tokens(
+        (tmp_path / "routing.py").read_text(), "gpt-4o-mini"
+    )
+    background_tokens = CostEstimator().count_tokens(
+        (tmp_path / "background.py").read_text(), "gpt-4o-mini"
+    )
+    assert routing_tokens > 10_000, "fixture must reproduce a genuinely large supporting file"
+
+    routing_symbol = SymbolReference(
+        symbol_id="routing.py::request_response",
+        name="request_response",
+        qualified_name="APIRoute.request_response",
+        kind=SymbolKind.METHOD,
+        file_path="routing.py",
+        start_line=3001,
+        end_line=3002,
+        parent_symbol_id="routing.py::APIRoute",
+    )
+    background_symbol = SymbolReference(
+        symbol_id="background.py::BackgroundTasks",
+        name="BackgroundTasks",
+        qualified_name="BackgroundTasks",
+        kind=SymbolKind.CLASS,
+        file_path="background.py",
+        start_line=1,
+        end_line=3,
+    )
+    result = ContextResolutionResult(
+        workspace_id=str(tmp_path),
+        contract_id="contract-1",
+        repository_root=str(tmp_path),
+        language="python",
+        candidate_files=[
+            FileReference(
+                file_path="routing.py",
+                reason="defines request_response",
+                language="python",
+                token_count=routing_tokens,
+                evidence_tier=EvidenceTier.SUPPORTING,
+            ),
+            FileReference(
+                file_path="background.py",
+                reason="defines BackgroundTasks",
+                language="python",
+                token_count=background_tokens,
+                evidence_tier=EvidenceTier.PRIMARY,
+            ),
+        ],
+        entry_points=[routing_symbol, background_symbol],
+        confidence=1.0,
+        token_estimate=TokenEstimate(
+            raw_context_tokens=routing_tokens + background_tokens,
+            selected_context_tokens=routing_tokens + background_tokens,
+            compression_ratio=1.0,
+        ),
+        resolution_reason="test",
+    )
+
+    package, _ = await _packager(with_understanding=False).package(
+        result, "Explain how background tasks get scheduled.", max_tokens=100_000
+    )
+
+    by_path = {f.file_path: f for f in package.relevant_files}
+    assert set(by_path) == {"routing.py", "background.py"}
+
+    assert by_path["background.py"].truncated is False
+    assert "class BackgroundTasks" in by_path["background.py"].content
+
+    assert by_path["routing.py"].truncated is True
+    assert "def request_response" in by_path["routing.py"].content
+    assert by_path["routing.py"].token_count < routing_tokens / 10, (
+        "the large supporting file must be cut down to its relevant region, "
+        "not kept whole just because it fit the budget"
+    )
+
+    assert package.budget_used_tokens < (routing_tokens + background_tokens) / 5
 
 
 async def test_diagnostic_log_line_correlated_by_context_resolution_id(

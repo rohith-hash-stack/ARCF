@@ -32,12 +32,56 @@ every subsequent contract version.
 """
 
 from datetime import datetime
+from enum import StrEnum
 from uuid import UUID, uuid4
 
 from pydantic import BaseModel, ConfigDict, Field
 
 from domain.code_intelligence import SymbolKind
 from shared.clock import utc_now
+
+
+class EvidenceTier(StrEnum):
+    """Evidence-preserving context packaging — how confidently a file was
+    matched, independent of `reason` (which explains *why* it matched).
+    Drives ContextBudgetManager's compress-vs-keep-full decision: PRIMARY
+    stays full whenever it fits the budget (today's behavior, unchanged);
+    SUPPORTING is compressed to its relevant symbol range whenever one is
+    known, regardless of whether it would've fit in full — a fan-out
+    match shouldn't spend the same budget as the thing actually being
+    asked about, however large the file it happens to live in is.
+
+    PRIMARY: a direct definition match from a *confident* target name
+    (an entity SLM-1 actually extracted, or a name the raw request
+    itself referenced — contracts/evidence_contract.py's tier-1 "query-
+    referenced" files), or the default for anything not explicitly
+    downgraded below.
+
+    SUPPORTING: reached via call-graph expansion, inheritance expansion,
+    lexical-probe recovery (a prefix/substring symbol-name guess, not an
+    exact match — see context/lexical_symbol_probe.py), or repository-
+    scope evidence-contract matching (README/CI/test-config/dependency-
+    manifest filler — context/evidence_fallback.py, context/
+    evidence_validator.py). All of these are real, legitimate signal —
+    they just don't warrant the same "assume it's all relevant" default
+    a direct, confident match gets.
+
+    EXPERIMENTAL: ARCF Phase 7 spike (Language Semantic Enrichment) —
+    reached via a deterministic-but-not-yet-core relationship graph
+    (decorator/annotation matching today; composition, DI-provider, etc.
+    if the spike proves out) rather than any of ARCF's established
+    graphs. Deliberately a THIRD value, not folded into SUPPORTING: the
+    LSE pruning validator (context/evidence_validator.py's
+    prune_experimental_candidates) must be able to target exactly and
+    only these candidates, never touching SUPPORTING evidence from
+    today's stable mechanisms. Compressed the same way SUPPORTING is by
+    ContextBudgetManager — EXPERIMENTAL is a provenance distinction for
+    pruning, not a different compression policy.
+    """
+
+    PRIMARY = "primary"
+    SUPPORTING = "supporting"
+    EXPERIMENTAL = "experimental"
 
 
 class FileReference(BaseModel):
@@ -61,6 +105,22 @@ class FileReference(BaseModel):
     authenticate", "called by Service.login", "called by
     Controller.handle_login") — empty for files added via a single-step
     relationship (`reason` alone already explains those)."""
+    evidence_tier: EvidenceTier = EvidenceTier.PRIMARY
+    """Evidence-preserving context packaging — see EvidenceTier's own
+    docstring. Defaults to PRIMARY (today's full-file-if-it-fits
+    behavior) so every construction site that doesn't explicitly reason
+    about tiering keeps its current behavior rather than silently
+    becoming over-compressed."""
+    anchor_confidence: float | None = None
+    """ARCF Pre-Expansion Anchor Classification experiment (2026-08-08,
+    context/anchor_classifier.py), only ever set when
+    `enable_confidence_propagation` is True: the originating anchor's
+    tier confidence (1.0/0.5/0.15), decayed once per traversal hop
+    (`anchor_classifier.decay_confidence`). `None` (the default) means
+    "not computed for this file" — every construction site that doesn't
+    opt into the experiment leaves this unset, and RelevanceRanker
+    treats `None` as a neutral 1.0 multiplier, so existing behavior is
+    byte-identical when the flag is off."""
 
 
 class SymbolReference(BaseModel):

@@ -9,7 +9,9 @@
         "--app-dir",
         "C:\\Users\\VasiganiRohitBabu\\Desktop\\Claude\\benchmark\\src",
         "--port",
-        "8010"
+        "8010",
+        "--env-file",
+        "C:\\Users\\VasiganiRohitBabu\\Desktop\\Claude\\benchmark\\.env"
       ],
       "port": 8010
     },

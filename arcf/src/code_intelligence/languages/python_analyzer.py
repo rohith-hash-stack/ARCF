@@ -38,6 +38,7 @@ from tree_sitter import Language, Node, Parser
 
 from domain.code_intelligence import (
     CallReference,
+    DecoratorReference,
     FileAnalysis,
     ImportReference,
     SourceLocation,
@@ -56,6 +57,7 @@ class _WalkContext:
     symbols: list[Symbol] = field(default_factory=list)
     calls: list[CallReference] = field(default_factory=list)
     imports: list[ImportReference] = field(default_factory=list)
+    decorators: list[DecoratorReference] = field(default_factory=list)
 
 
 class PythonLanguageAnalyzer:
@@ -90,6 +92,7 @@ class PythonLanguageAnalyzer:
             symbols=ctx.symbols,
             calls=ctx.calls,
             imports=ctx.imports,
+            decorators=ctx.decorators,
             parse_errors=parse_errors,
         )
 
@@ -124,6 +127,8 @@ class PythonLanguageAnalyzer:
                 new_scope = [*node_scope, symbol]
                 new_qualname = [*node_qualname, symbol.name]
                 stack.extend((c, new_scope, new_qualname) for c in reversed(node.children))
+            elif node.type == "decorated_definition":
+                self._handle_decorated_definition(node, node_scope, node_qualname, ctx, stack)
             elif node.type == "call":
                 self._record_call(node, node_scope, ctx)
                 stack.extend((c, node_scope, node_qualname) for c in reversed(node.children))
@@ -175,6 +180,75 @@ class PythonLanguageAnalyzer:
             location=location,
             parent_id=parent.id if parent else None,
         )
+
+    def _handle_decorated_definition(
+        self,
+        node: Node,
+        scope_stack: list[Symbol],
+        qualname_parts: list[str],
+        ctx: _WalkContext,
+        stack: list[tuple[Node, list[Symbol], list[str]]],
+    ) -> None:
+        """`decorated_definition`'s `decorator` children carry no field
+        name (verified empirically — see this module's own docstring
+        practice), only its `definition` field does; handled as one unit
+        (rather than letting `decorator`/`class_definition`/
+        `function_definition` fall through to their own stack-pushed
+        branches) so each DecoratorReference can be recorded against the
+        Symbol it actually decorates, built here, not guessed at from
+        traversal order."""
+        definition_node = node.child_by_field_name("definition")
+        decorator_nodes = [child for child in node.children if child.type == "decorator"]
+
+        if definition_node is None:
+            stack.extend((c, scope_stack, qualname_parts) for c in reversed(node.children))
+            return
+        if definition_node.type == "class_definition":
+            symbol = self._build_class_symbol(definition_node, scope_stack, qualname_parts, ctx)
+        elif definition_node.type == "function_definition":
+            symbol = self._build_function_symbol(
+                definition_node, scope_stack, qualname_parts, ctx
+            )
+        else:
+            # Grammar allows decorating other statement kinds we don't
+            # index as symbols; still walk into it so anything nested
+            # (calls, imports, further definitions) isn't silently lost.
+            stack.extend((c, scope_stack, qualname_parts) for c in reversed(node.children))
+            return
+
+        ctx.symbols.append(symbol)
+        for decorator_node in decorator_nodes:
+            self._record_decorator(decorator_node, symbol, ctx)
+
+        new_scope = [*scope_stack, symbol]
+        new_qualname = [*qualname_parts, symbol.name]
+        stack.extend((c, new_scope, new_qualname) for c in reversed(definition_node.children))
+
+    def _record_decorator(self, decorator_node: Node, symbol: Symbol, ctx: _WalkContext) -> None:
+        # decorator: '@' expression '\n' — the expression is the second
+        # named child (identifier, attribute, or call).
+        expr_node = next((c for c in decorator_node.children if c.is_named), None)
+        if expr_node is None:
+            return
+        decorator_name = self._decorator_callable_name(expr_node, ctx)
+        if decorator_name is None:
+            return
+        ctx.decorators.append(
+            DecoratorReference(
+                symbol_id=symbol.id,
+                decorator_name=decorator_name,
+                file_path=ctx.file_path,
+                location=self._location(decorator_node, ctx.file_path),
+            )
+        )
+
+    def _decorator_callable_name(self, expr_node: Node, ctx: _WalkContext) -> str | None:
+        if expr_node.type == "call":
+            func_node = expr_node.child_by_field_name("function")
+            return self._text(func_node, ctx) if func_node is not None else None
+        if expr_node.type in ("identifier", "attribute"):
+            return self._text(expr_node, ctx)
+        return None
 
     def _extract_base_names(self, class_node: Node, ctx: _WalkContext) -> list[str]:
         superclasses = class_node.child_by_field_name("superclasses")

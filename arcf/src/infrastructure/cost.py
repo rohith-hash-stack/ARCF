@@ -3,9 +3,10 @@ estimated cost exceeds budget.
 
 Token counting uses tiktoken against the actual prompt text, not a rough
 character estimate, so the guardrail is trustworthy rather than
-advisory. Pricing is a static table (USD per 1K tokens); unlisted models
-fall back to a conservative rate so an unrecognized model name fails
-safe (rejected) rather than silently bypassing the guardrail.
+advisory. Pricing is a static table (USD per 1M tokens, matching how
+OpenAI and most providers publish rates); unlisted models fall back to a
+conservative rate so an unrecognized model name fails safe (rejected)
+rather than silently bypassing the guardrail.
 """
 
 import tiktoken
@@ -13,7 +14,15 @@ from pydantic import BaseModel, ConfigDict
 
 from shared.errors import CostGuardrailExceededError
 
-# USD per 1K tokens: (prompt_price, completion_price)
+# USD per 1M tokens: (prompt_price, completion_price) — real OpenAI
+# rates (e.g. gpt-4o-mini: $0.15/$0.60 per 1M tokens). ARCF Issue #13
+# fix (2026-08-08): these values were always per-1M, but estimate() and
+# actual_cost() divided by 1,000 as if they were per-1K, inflating every
+# computed cost ~1000x — a real functional bug, not just a display one:
+# CostGuardrail.check() below rejects requests that exceed a max_cost_usd
+# budget, so a 1000x-inflated estimate could wrongly reject legitimate,
+# well-within-budget requests. Real billed API cost was never affected
+# (LiteLLMClient calls the provider directly), only this estimate.
 DEFAULT_PRICING: dict[str, tuple[float, float]] = {
     "gpt-4o-mini": (0.15, 0.60),
     "gpt-4o": (2.50, 10.00),
@@ -59,8 +68,8 @@ class CostEstimator:
     ) -> CostEstimate:
         prompt_tokens = self.count_tokens(prompt, model)
         prompt_price, completion_price = self._prices_for(model)
-        cost = (prompt_tokens / 1000) * prompt_price + (
-            assumed_completion_tokens / 1000
+        cost = (prompt_tokens / 1_000_000) * prompt_price + (
+            assumed_completion_tokens / 1_000_000
         ) * completion_price
         return CostEstimate(
             model=model,
@@ -71,7 +80,9 @@ class CostEstimator:
 
     def actual_cost(self, prompt_tokens: int, completion_tokens: int, model: str) -> float:
         prompt_price, completion_price = self._prices_for(model)
-        return (prompt_tokens / 1000) * prompt_price + (completion_tokens / 1000) * completion_price
+        return (prompt_tokens / 1_000_000) * prompt_price + (
+            completion_tokens / 1_000_000
+        ) * completion_price
 
 
 class CostGuardrail:

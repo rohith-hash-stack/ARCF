@@ -1,0 +1,118 @@
+{
+  "query": "Explain how lazy loading differs from eager loading internally and what SQL each strategy generates.",
+  "phase5_unranked_candidate_count": 140,
+  "phase5_unranked_tokens": 1863292,
+  "retrieval_task_type": "repository_explanation",
+  "by_budget": {
+    "8000": {
+      "packaged_file_count": 15,
+      "tokens_used": 7978,
+      "excluded_count": 125,
+      "canonical_files_retrieved": {
+        "lib/sqlalchemy/orm/loading.py": false,
+        "lib/sqlalchemy/orm/strategies.py": false
+      },
+      "noise_files_in_packaged": [
+        "lib/sqlalchemy/dialects/mssql/base.py",
+        "lib/sqlalchemy/dialects/mssql/provision.py",
+        "lib/sqlalchemy/dialects/oracle/base.py",
+        "lib/sqlalchemy/dialects/oracle/provision.py",
+        "test/__init__.py",
+        "test/aaa_profiling/__init__.py",
+        "test/conftest.py"
+      ],
+      "packaged_files_ranked_order": [
+        {
+          "file": "examples/dogpile_caching/caching_query.py",
+          "reason": "defines _generate_cache_key",
+          "score": 1.0,
+          "truncated": true
+        },
+        {
+          "file": "examples/sharding/asyncio.py",
+          "reason": "defines id_generator",
+          "score": 1.0,
+          "truncated": true
+        },
+        {
+          "file": "lib/sqlalchemy/dialects/mssql/base.py",
+          "reason": "defines _internal_has_multi_table",
+          "score": 1.0,
+          "truncated": true
+        },
+        {
+          "file": "lib/sqlalchemy/dialects/mssql/provision.py",
+          "reason": "defines generate_driver_url",
+          "score": 1.0,
+          "truncated": true
+        },
+        {
+          "file": "lib/sqlalchemy/dialects/oracle/base.py",
+          "reason": "defines _generate_numeric",
+          "score": 1.0,
+          "truncated": true
+        },
+        {
+          "file": "lib/sqlalchemy/dialects/oracle/provision.py",
+          "reason": "defines _oracle_generate_driver_url",
+          "score": 1.0,
+          "truncated": true
+        },
+        {
+          "file": "lib/sqlalchemy/engine/cursor.py",
+          "reason": "defines ResultFetchStrategy",
+          "score": 1.0,
+          "truncated": true
+        },
+        {
+          "file": "lib/sqlalchemy/exc.py",
+          "reason": "defines InternalError",
+          "score": 1.0,
+          "truncated": true
+        },
+        {
+          "file": ".github/workflows/create-wheels.yaml",
+          "reason": "evidence: CI/workflow files",
+          "score": 0.85,
+          "truncated": false
+        },
+        {
+          "file": ".github/workflows/run-on-pr.yaml",
+          "reason": "evidence: CI/workflow files",
+          "score": 0.85,
+          "truncated": false
+        },
+        {
+          "file": "test/__init__.py",
+          "reason": "evidence: test directories",
+          "score": 0.85,
+          "truncated": false
+        },
+        {
+          "file": "test/aaa_profiling/__init__.py",
+          "reason": "evidence: test directories",
+          "score": 0.85,
+          "truncated": false
+        },
+        {
+          "file": "test/conftest.py",
+          "reason": "evidence: test framework/configuration",
+          "score": 0.85,
+          "truncated": false
+        },
+        {
+          "file": "examples/sharding/separate_databases.py",
+          "reason": "calls id_generator",
+          "score": 0.62,
+          "truncated": true
+        },
+        {
+          "file": "examples/sharding/separate_tables.py",
+          "reason": "calls id_generator",
+          "score": 0.62,
+          "truncated": true
+        }
+      ]
+    }
+  }
+}

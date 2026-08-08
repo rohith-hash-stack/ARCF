@@ -154,10 +154,19 @@ TRAVERSAL_DEPTH: dict[RetrievalTaskType, int | None] = {
 # (mirrors relevance_ranker's previous module-level _DEFAULT_REASON_WEIGHT).
 # UNKNOWN is byte-identical to relevance_ranker's pre-hardening
 # _REASON_WEIGHTS/_DEFAULT_REASON_WEIGHT so untagged callers see no change.
+# Every profile's "called" key mirrors its "calls" value (ARCF Issue #9
+# fix, 2026-08-08): ContextResolver emits "called by X (hop N)" for
+# transitive callees — first word "called", not "calls" — and this table
+# had no matching entry, so every hop-N caller-chain file was silently
+# scored at the generic "*" default instead of the call-graph weight
+# each profile actually intended. Found via real SQLAlchemy data, where
+# this suppressed both canonical files' scores in the
+# repository_explanation profile specifically.
 RANKING_PROFILES: dict[RetrievalTaskType, dict[str, float]] = {
     RetrievalTaskType.UNKNOWN: {
         "defines": 1.0,
         "calls": 0.7,
+        "called": 0.7,
         "extends": 0.6,
         "references:": 0.8,
         "*": 0.3,
@@ -167,6 +176,7 @@ RANKING_PROFILES: dict[RetrievalTaskType, dict[str, float]] = {
     RetrievalTaskType.BUG_FIX: {
         "defines": 1.0,
         "calls": 0.95,
+        "called": 0.95,
         "imports": 0.7,
         "extends": 0.5,
         "references:": 0.85,
@@ -179,6 +189,7 @@ RANKING_PROFILES: dict[RetrievalTaskType, dict[str, float]] = {
         "extends": 1.0,
         "defines": 0.85,
         "calls": 0.9,
+        "called": 0.9,
         "imports": 0.8,
         "references:": 0.7,
         "evidence:": 0.3,
@@ -193,6 +204,7 @@ RANKING_PROFILES: dict[RetrievalTaskType, dict[str, float]] = {
         "references:": 0.7,
         "imports": 0.5,
         "calls": 0.4,
+        "called": 0.4,
         "extends": 0.4,
         "*": 0.4,
     },
@@ -206,6 +218,7 @@ RANKING_PROFILES: dict[RetrievalTaskType, dict[str, float]] = {
         "imports": 0.7,
         "references:": 0.6,
         "calls": 0.4,
+        "called": 0.4,
         "extends": 0.4,
         "*": 0.35,
     },
@@ -217,6 +230,7 @@ RANKING_PROFILES: dict[RetrievalTaskType, dict[str, float]] = {
         "defines": 0.5,
         "imports": 0.3,
         "calls": 0.2,
+        "called": 0.2,
         "extends": 0.2,
         "*": 0.4,
     },
@@ -225,6 +239,7 @@ RANKING_PROFILES: dict[RetrievalTaskType, dict[str, float]] = {
     RetrievalTaskType.PERFORMANCE: {
         "defines": 0.9,
         "calls": 1.0,
+        "called": 1.0,
         "imports": 0.6,
         "extends": 0.5,
         "references:": 0.7,

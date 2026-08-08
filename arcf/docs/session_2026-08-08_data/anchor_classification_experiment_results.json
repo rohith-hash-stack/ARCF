@@ -1,0 +1,59 @@
+{
+  "query": "Explain how lazy loading differs from eager loading internally and what SQL each strategy generates.",
+  "entities_extracted": [],
+  "max_tokens": 8000,
+  "canonical_files": [
+    "lib/sqlalchemy/orm/loading.py",
+    "lib/sqlalchemy/orm/strategies.py"
+  ],
+  "baseline": {
+    "label": "baseline (flags off)",
+    "phase5_candidate_count": 42,
+    "phase5_tokens": 298785,
+    "packaged_file_count": 17,
+    "packaged_tokens": 7930,
+    "excluded_count": 25,
+    "canonical_rank": {
+      "lib/sqlalchemy/orm/loading.py": null,
+      "lib/sqlalchemy/orm/strategies.py": null
+    },
+    "canonical_score": {
+      "lib/sqlalchemy/orm/loading.py": null,
+      "lib/sqlalchemy/orm/strategies.py": null
+    },
+    "canonical_origin": {
+      "lib/sqlalchemy/orm/loading.py": null,
+      "lib/sqlalchemy/orm/strategies.py": null
+    },
+    "canonical_packaged": {
+      "lib/sqlalchemy/orm/loading.py": false,
+      "lib/sqlalchemy/orm/strategies.py": false
+    },
+    "resolution_reason": "No target names provided; nothing to resolve. Retrieval retry: symbol-based resolution found no candidate files, so search was expanded via the evidence contract, yielding 17 file(s). Lexical symbol probing matched 20 real symbol name(s) from the query's wording (_generate_cache_key, id_generator, InternalError, _internal_has_multi_table, _get_internal_temp_table_name...), adding 25 file(s) evidence-category matching missed."
+  },
+  "anchor_classification": {
+    "label": "anchor classification + confidence propagation",
+    "phase5_candidate_count": 57,
+    "phase5_tokens": 450403,
+    "packaged_file_count": 8,
+    "packaged_tokens": 7977,
+    "excluded_count": 49,
+    "canonical_rank": {
+      "lib/sqlalchemy/orm/loading.py": 42,
+      "lib/sqlalchemy/orm/strategies.py": 1
+    },
+    "canonical_score": {
+      "lib/sqlalchemy/orm/loading.py": 0.266,
+      "lib/sqlalchemy/orm/strategies.py": 1.0
+    },
+    "canonical_origin": {
+      "lib/sqlalchemy/orm/loading.py": "references: tier4 incidental filename/path match",
+      "lib/sqlalchemy/orm/strategies.py": "defines _LazyLoader"
+    },
+    "canonical_packaged": {
+      "lib/sqlalchemy/orm/loading.py": false,
+      "lib/sqlalchemy/orm/strategies.py": true
+    },
+    "resolution_reason": "No target names provided; nothing to resolve. Retrieval retry: symbol-based resolution found no candidate files, so search was expanded via the evidence contract, yielding 17 file(s). Pre-expansion anchor classification: Tier 1 (exact match, confidence 1.0): 7 anchor(s) (_LazyLoader, _memoized_attr__simple_lazy_clause, _generate_lazy_clause, _invoke_raise_load, _load_for_state), 9 file(s) added. Tier 3 (lexical guess, confidence 0.5, budget-gated at 50000 tokens): 20 anchor(s), 24 file(s) added. Tier 4 (incidental, confidence 0.35, no graph expansion): 7 file(s) added."
+  }
+}

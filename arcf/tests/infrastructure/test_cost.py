@@ -33,9 +33,14 @@ def test_guardrail_rejects_expensive_request() -> None:
 
 
 def test_actual_cost_uses_real_usage_numbers() -> None:
+    # ARCF Issue #13 fix (2026-08-08): DEFAULT_PRICING is USD per 1M
+    # tokens (real OpenAI rates), not per 1K — this test's old expected
+    # value (0.15 + 0.60 == 0.75) asserted the bug itself (a 1000x-
+    # inflated cost for 1K prompt + 1K completion tokens). Correct
+    # value: 1,000 tokens is 1/1000th of the 1M-token rate.
     estimator = CostEstimator()
     cost = estimator.actual_cost(prompt_tokens=1000, completion_tokens=1000, model="gpt-4o-mini")
-    assert cost == pytest.approx(0.15 + 0.60)
+    assert cost == pytest.approx((0.15 + 0.60) / 1000)
 
 
 def test_count_tokens_handles_literal_special_token_text() -> None:

@@ -44,6 +44,7 @@ from pathlib import Path
 
 from code_intelligence.call_graph import CallGraph
 from code_intelligence.candidate_selector import CandidateFileSelector
+from code_intelligence.decorator_graph import DecoratorGraph
 from code_intelligence.dependency_graph import DependencyGraph
 from code_intelligence.import_graph import ImportGraph
 from code_intelligence.index import CodeIntelligenceIndex
@@ -53,7 +54,13 @@ from code_intelligence.reference_resolver import ReferenceResolver
 from code_intelligence.registry import LanguageRegistry
 from code_intelligence.symbol_index import SymbolIndex
 from code_intelligence.typescript_path_aliases import load_path_aliases, resolve_with_aliases
-from domain.code_intelligence import CallReference, FileAnalysis, ImportReference, Symbol
+from domain.code_intelligence import (
+    CallReference,
+    DecoratorReference,
+    FileAnalysis,
+    ImportReference,
+    Symbol,
+)
 from infrastructure.cost import CostEstimator
 from shared.errors import WorkspacePathError
 from workspace.permissions import PermissionManager
@@ -249,10 +256,12 @@ class CodeIntelligenceEngine:
         all_symbols: list[Symbol] = []
         all_calls: list[CallReference] = []
         all_imports: list[ImportReference] = []
+        all_decorators: list[DecoratorReference] = []
         for analysis in file_analyses.values():
             all_symbols.extend(analysis.symbols)
             all_calls.extend(analysis.calls)
             all_imports.extend(analysis.imports)
+            all_decorators.extend(analysis.decorators)
 
         symbol_index = SymbolIndex(all_symbols)
         resolver = ReferenceResolver(symbol_index)
@@ -263,6 +272,7 @@ class CodeIntelligenceEngine:
         candidate_selector = CandidateFileSelector(
             symbol_index, call_graph, inheritance_graph, dependency_graph
         )
+        decorator_graph = DecoratorGraph(all_decorators)
 
         return CodeIntelligenceIndex(
             file_analyses=file_analyses,
@@ -274,5 +284,6 @@ class CodeIntelligenceEngine:
             inheritance_graph=inheritance_graph,
             call_graph=call_graph,
             candidate_selector=candidate_selector,
+            decorator_graph=decorator_graph,
             skipped_files=skipped_files,
         )

@@ -1,0 +1,92 @@
+[
+  {
+    "repo": "flask",
+    "task": "Explain how Flask's CLI discovers and loads the application factory.",
+    "status": "success",
+    "input_tokens": 101098,
+    "latency_ms": 14332.824599929154,
+    "files_sent": 81,
+    "answer_preview": "To explain how Flask's CLI discovers and loads the application factory, we can summarize the key points based on the `cli.rst` file's content from the provided context. Here's an explanation based on that content:\n\n### Explanation\n\nFlask's CLI (Command Line Interface) automatically discovers and loads an application factory based on certain conventions and configurations. The process involves the "
+  },
+  {
+    "repo": "flask",
+    "task": "How are Jinja2 templates rendered and what context variables are available by default?",
+    "status": "success",
+    "input_tokens": 101102,
+    "latency_ms": 29970.054899924435,
+    "files_sent": 81,
+    "answer_preview": "To answer your question regarding how Jinja2 templates are rendered and the default context variables available, the information is included in the `docs/templating.rst` and `docs/api.rst` files.\n\nHere's a summary based on the provided context:\n\n### How Jinja2 Templates are Rendered\nJinja2 templates in Flask are rendered using the `render_template` function or similar functions like `render_templa"
+  },
+  {
+    "repo": "flask",
+    "task": "Explain how Flask's session cookie is signed and validated.",
+    "status": "success",
+    "input_tokens": 101097,
+    "latency_ms": 49305.65600004047,
+    "files_sent": 81,
+    "answer_preview": "To complete the task of explaining how Flask's session cookie is signed and validated, we'll need to extract relevant information from the provided context in the repository. Based on the examination of the `docs/api.rst`, specifically the \"Sessions\" section, we can provide an explanation.\n\nSince the instructions mentioned to provide the information as a modification or as code changes, we could a"
+  },
+  {
+    "repo": "fastapi",
+    "task": "How does FastAPI validate request bodies against Pydantic models?",
+    "status": "success",
+    "input_tokens": 104080,
+    "latency_ms": 24503.822600003332,
+    "files_sent": 256,
+    "answer_preview": "Based on the context provided, the following response explains how FastAPI validates request bodies against Pydantic models, as there is no need to modify any files for this inquiry.\n\n### How FastAPI Validates Request Bodies Against Pydantic Models\n\nFastAPI integrates with Pydantic for data validation and serialization of request bodies. Here's how this process works:\n\n1. **Defining a Pydantic Mod"
+  },
+  {
+    "repo": "fastapi",
+    "task": "Explain how FastAPI generates the OpenAPI schema for a path operation.",
+    "status": "success",
+    "input_tokens": 104081,
+    "latency_ms": 20228.660699911416,
+    "files_sent": 256,
+    "answer_preview": "To explain how FastAPI generates the OpenAPI schema for a path operation, we can summarize the process based on the context gathered from the provided files. Here\u2019s a detailed explanation:\n\n### Explanation of OpenAPI Schema Generation in FastAPI\n\n1. **Path Operation Decorators**: \n   FastAPI defines path operations using decorators like `@app.get()`, `@app.post()`, etc. Each of these decorators re"
+  },
+  {
+    "repo": "fastapi",
+    "task": "How does dependency injection resolve nested sub-dependencies in FastAPI?",
+    "status": "success",
+    "input_tokens": 104080,
+    "latency_ms": 37298.78389998339,
+    "files_sent": 256,
+    "answer_preview": "To address the task of understanding how dependency injection resolves nested sub-dependencies in FastAPI, let's focus on relevant concepts within the provided repository context.\n\nFastAPI uses a **dependency injection** system that allows for easy management of dependencies across route handlers. This includes resolving nested sub-dependencies, which can be particularly handy when using complex d"
+  },
+  {
+    "repo": "arcf",
+    "task": "Explain how the intent extraction stage builds a contract from a raw user request.",
+    "status": "success",
+    "input_tokens": 101037,
+    "latency_ms": 15848.638899973594,
+    "files_sent": 69,
+    "answer_preview": "Based on the provided context and your task request, here's a detailed explanation of how the intent extraction stage builds a contract from a raw user request within the existing repository.\n\n---\n\n### Explanation of Intent Extraction Stage in Contract Building\n\nThe intent extraction stage serves as a critical part of the overall pipeline, where a user's raw request is transformed into a structure"
+  },
+  {
+    "repo": "arcf",
+    "task": "How does evidence-preserving packaging decide whether to compress a file?",
+    "status": "success",
+    "input_tokens": 101035,
+    "latency_ms": 11618.680399958976,
+    "files_sent": 69,
+    "answer_preview": "To complete the task of determining how evidence-preserving packaging decides whether to compress a file, we need to modify the `ContextBudgetManager` class to ensure that it correctly identifies when files should be compressed based on the evidence tier and the remaining token budget. Here is the code change needed, presented as a unified diff:\n\n```diff\n--- src/context/budget_manager.py\n+++ src/c"
+  },
+  {
+    "repo": "arcf",
+    "task": "Trace how a benchmark comparison request flows from CLI to LLM call and back.",
+    "status": "success",
+    "input_tokens": 101038,
+    "latency_ms": 47749.03419998009,
+    "files_sent": 69,
+    "answer_preview": "To trace how a benchmark comparison request flows from the CLI to the LLM call and back, we can look into the key files and components in the repository that facilitate this process. Based on the context you've provided, here's an outline of the flow along with the relevant pieces of code:\n\n### Flow Overview:\n\n1. **CLI Command**: The benchmark comparison is initiated through a command line interfa"
+  },
+  {
+    "repo": "arcf",
+    "task": "What happens when JWT authentication fails in the API layer?",
+    "status": "success",
+    "input_tokens": 101033,
+    "latency_ms": 18437.34410009347,
+    "files_sent": 69,
+    "answer_preview": "To determine what happens when JWT authentication fails in the API layer, we'll focus on extending the `authentication` functionality within the `src/infrastructure/auth.py` file. Below are the changes needed to handle authentication failure scenarios.\n\nHere's an example of how you can implement error handling for JWT authentication failures:\n\n### File: `src/infrastructure/auth.py`\n\n```python\nfrom"
+  }
+]

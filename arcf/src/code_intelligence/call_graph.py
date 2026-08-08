@@ -80,7 +80,19 @@ class CallGraph:
         recorded as its parent, so the result never depends on Python's
         hash-randomized set ordering."""
         result: dict[str, tuple[int, str]] = {}
-        frontier: set[str] = set(edges.get(start, set()))
+        # Excludes `start` itself, matching the `neighbor != start` guard
+        # applied to every later hop below (line ~92) — without it, a
+        # symbol with a direct self-referential edge (e.g. a `super().
+        # method()` call an imprecise resolver links back to the same
+        # method, or genuine recursion) seeds the frontier with `start`,
+        # which then records `result[start] = (1, start)`: a hop whose
+        # parent is itself. `_chain_for`'s parent-pointer walk assumes the
+        # result is acyclic and has no other termination check, so that
+        # single self-parented entry made it loop forever, appending the
+        # same node until the process ran out of memory (real, reproduced
+        # failure: resolving a single real-world recursive-looking symbol
+        # in a 236-file repository).
+        frontier: set[str] = set(edges.get(start, set())) - {start}
         parents: dict[str, str] = dict.fromkeys(frontier, start)
         depth = 1
         while frontier and (max_depth is None or depth <= max_depth):

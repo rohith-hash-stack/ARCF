@@ -208,3 +208,53 @@ def test_syntax_error_recorded_but_partial_results_returned() -> None:
 def test_valid_source_has_no_parse_errors() -> None:
     result = _analyze("def foo():\n    pass\n")
     assert result.parse_errors == []
+
+
+def test_decorated_function_records_symbol_and_decorator_reference() -> None:
+    result = _analyze('@app.get("/users")\ndef list_users():\n    pass\n')
+
+    assert [s.name for s in result.symbols] == ["list_users"]
+    assert len(result.decorators) == 1
+    decorator = result.decorators[0]
+    assert decorator.decorator_name == "app.get"
+    assert decorator.symbol_id == result.symbols[0].id
+
+
+def test_bare_decorator_with_no_call_is_recorded() -> None:
+    result = _analyze("@dataclass\nclass Foo:\n    pass\n")
+
+    assert [s.name for s in result.symbols] == ["Foo"]
+    assert result.decorators[0].decorator_name == "dataclass"
+
+
+def test_decorated_method_inside_class_is_linked_to_the_method_not_the_class() -> None:
+    source = (
+        "class Router:\n"
+        '    @app.post("/login")\n'
+        "    async def login(self, request):\n"
+        "        return authenticate(request)\n"
+    )
+    result = _analyze(source)
+
+    login = next(s for s in result.symbols if s.name == "login")
+    assert login.kind is SymbolKind.METHOD
+    assert len(result.decorators) == 1
+    assert result.decorators[0].symbol_id == login.id
+    assert result.decorators[0].decorator_name == "app.post"
+    # the call inside the decorated method body must still be captured —
+    # decorator handling must not swallow the rest of the function body.
+    assert any(c.callee_name == "authenticate" for c in result.calls)
+
+
+def test_undecorated_function_has_no_decorator_references() -> None:
+    result = _analyze("def undecorated():\n    pass\n")
+    assert result.decorators == []
+
+
+def test_multiple_decorators_on_one_symbol_are_all_recorded() -> None:
+    source = "@first\n@second.third()\ndef handler():\n    pass\n"
+    result = _analyze(source)
+
+    names = {d.decorator_name for d in result.decorators}
+    assert names == {"first", "second.third"}
+    assert all(d.symbol_id == result.symbols[0].id for d in result.decorators)

@@ -106,10 +106,15 @@ def test_every_task_type_has_a_traversal_depth_and_ranking_profile() -> None:
 
 
 def test_unknown_ranking_profile_matches_pre_hardening_weights() -> None:
+    # "called" (ARCF Issue #9 fix, 2026-08-08) mirrors "calls" here too —
+    # relevance_ranker._REASON_WEIGHTS gained the same key for the same
+    # reason, so this profile is still byte-identical to that module's
+    # pre-hardening weights, just with both now current.
     profile = RANKING_PROFILES[RetrievalTaskType.UNKNOWN]
     assert profile == {
         "defines": 1.0,
         "calls": 0.7,
+        "called": 0.7,
         "extends": 0.6,
         "references:": 0.8,
         "*": 0.3,
