@@ -1,0 +1,87 @@
+{
+  "query": "How does SQLAlchemy decide whether to load a relationship immediately or wait until it's accessed?",
+  "repo": "sqlalchemy",
+  "language": "python",
+  "target_file": "lib/sqlalchemy/orm/strategies.py",
+  "results": {
+    "drp": {
+      "resolver": "drp+pmi",
+      "top_files": [
+        "lib/sqlalchemy/orm/strategies.py",
+        "lib/sqlalchemy/orm/strategy_options.py",
+        "lib/sqlalchemy/orm/loading.py",
+        "lib/sqlalchemy/orm/session.py",
+        "lib/sqlalchemy/orm/base.py",
+        "lib/sqlalchemy/orm/__init__.py",
+        "lib/sqlalchemy/orm/_orm_constructors.py",
+        "lib/sqlalchemy/orm/_typing.py",
+        "lib/sqlalchemy/orm/attributes.py",
+        "lib/sqlalchemy/orm/bulk_persistence.py",
+        "lib/sqlalchemy/orm/clsregistry.py",
+        "lib/sqlalchemy/orm/collections.py",
+        "lib/sqlalchemy/orm/context.py",
+        "lib/sqlalchemy/orm/decl_api.py",
+        "lib/sqlalchemy/orm/decl_base.py",
+        "lib/sqlalchemy/orm/dependency.py",
+        "lib/sqlalchemy/orm/descriptor_props.py",
+        "lib/sqlalchemy/orm/dynamic.py",
+        "lib/sqlalchemy/orm/evaluator.py",
+        "lib/sqlalchemy/orm/events.py"
+      ],
+      "candidate_count": 38,
+      "confidence": 0.039398220983291,
+      "resolver_latency_seconds": 0.0863,
+      "packaged_tokens": 7322,
+      "packaged_file_count": 3,
+      "graph_expansion_count": 33,
+      "top_subsystem": "lib/sqlalchemy/orm",
+      "top_community": "examples/adjacency_list/adjacency_list.py",
+      "subsystem_scores": [
+        [
+          "lib/sqlalchemy/orm",
+          0.8875000000000001
+        ],
+        [
+          "test/orm::test",
+          0.828193568049674
+        ],
+        [
+          "test/ext",
+          0.781663083434237
+        ],
+        [
+          "lib/sqlalchemy/dialects/mysql",
+          0.720660706277847
+        ],
+        [
+          "lib/sqlalchemy/ext",
+          0.7164451558870394
+        ],
+        [
+          "lib/sqlalchemy/sql",
+          0.6830601160444665
+        ],
+        [
+          "lib/sqlalchemy/dialects/mssql",
+          0.6159046913718622
+        ],
+        [
+          "lib/sqlalchemy/dialects/postgresql",
+          0.6071230316943822
+        ],
+        [
+          "lib/sqlalchemy/testing",
+          0.5981861325385592
+        ],
+        [
+          "lib/sqlalchemy/engine",
+          0.5709690224444808
+        ]
+      ],
+      "query_expansion": {},
+      "target_file": "lib/sqlalchemy/orm/strategies.py",
+      "retrieval_rank": 1,
+      "target_retrieved": true
+    }
+  }
+}

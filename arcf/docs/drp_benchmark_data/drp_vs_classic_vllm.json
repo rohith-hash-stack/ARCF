@@ -1,0 +1,78 @@
+{
+  "query": "How does vLLM decide which request to pause when it runs out of memory for the KV cache during batching?",
+  "repo": "vllm",
+  "language": "python",
+  "target_file": "vllm/v1/core/sched/scheduler.py",
+  "results": {
+    "drp": {
+      "resolver": "drp+pmi",
+      "top_files": [
+        "vllm/distributed/kv_transfer/kv_connector/v1/mooncake/store/worker.py",
+        "vllm/distributed/kv_transfer/kv_connector/v1/mooncake/store/connector.py",
+        "vllm/distributed/kv_transfer/kv_connector/v1/mooncake/mooncake_connector.py",
+        "vllm/distributed/kv_transfer/kv_connector/v1/mooncake/store/scheduler.py",
+        "vllm/distributed/kv_transfer/kv_connector/v1/mooncake/stats.py",
+        "vllm/distributed/kv_transfer/kv_connector/v1/mooncake/__init__.py",
+        "vllm/distributed/kv_transfer/kv_connector/v1/mooncake/mooncake_utils.py",
+        "vllm/distributed/kv_transfer/kv_connector/v1/mooncake/store/coordinator.py",
+        "vllm/distributed/kv_transfer/kv_connector/v1/mooncake/store/data.py",
+        "vllm/distributed/kv_transfer/kv_connector/v1/mooncake/store/metrics.py",
+        "vllm/distributed/kv_transfer/kv_connector/v1/mooncake/store/protocol.py"
+      ],
+      "candidate_count": 11,
+      "confidence": 0.004684752915780238,
+      "resolver_latency_seconds": 0.0835,
+      "packaged_tokens": 7949,
+      "packaged_file_count": 4,
+      "graph_expansion_count": 6,
+      "top_subsystem": "vllm/distributed/kv_transfer/kv_connector/v1/mooncake",
+      "top_community": ".buildkite/check-torch-abi.py",
+      "subsystem_scores": [
+        [
+          "vllm/distributed/kv_transfer/kv_connector/v1/mooncake",
+          0.9000000000000001
+        ],
+        [
+          "vllm/model_executor/layers/attention",
+          0.8506318405876069
+        ],
+        [
+          "vllm/distributed/kv_transfer/kv_connector/v1",
+          0.8176284814534074
+        ],
+        [
+          "tests/v1/core",
+          0.8011738650671005
+        ],
+        [
+          "tests/v1/kv_connector/unit::test",
+          0.7950840558960748
+        ],
+        [
+          "vllm/model_executor/models::extract",
+          0.7901349133063871
+        ],
+        [
+          "vllm/v1/core",
+          0.7508308597455924
+        ],
+        [
+          "vllm/v1/attention/backends",
+          0.748765056962949
+        ],
+        [
+          "vllm/v1/engine",
+          0.7413626094845935
+        ],
+        [
+          "benchmarks/kernels::benchmark",
+          0.723842607646519
+        ]
+      ],
+      "query_expansion": {},
+      "target_file": "vllm/v1/core/sched/scheduler.py",
+      "retrieval_rank": null,
+      "target_retrieved": false
+    }
+  }
+}

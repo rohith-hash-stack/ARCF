@@ -38,9 +38,12 @@ import json
 import logging
 import re
 from pathlib import Path
+from typing import Literal
 from uuid import UUID, uuid4
 
 from code_intelligence.context_resolver import ContextResolver
+from code_intelligence.drp.drp_index import DrpIndexBuilder
+from code_intelligence.drp.drp_resolver import DrpResolver
 from code_intelligence.engine import CodeIntelligenceEngine
 from code_intelligence.index import CodeIntelligenceIndex
 from code_intelligence.language_coverage import compute_language_coverage
@@ -163,6 +166,7 @@ class CodeIntelligenceContractService:
         enable_anchor_classification: bool = False,
         enable_confidence_propagation: bool = False,
         enable_multi_axis_decomposition: bool = False,
+        resolver_strategy: Literal["classic", "drp"] = "classic",
     ) -> tuple[LivingContract, ContextResolutionResult]:
         """`enable_subsystem_localization` — ARCF root-cause validation
         experiment (context/subsystem_localizer.py), defaulted to False:
@@ -223,7 +227,22 @@ class CodeIntelligenceContractService:
         file(s) (via the existing, unmodified RelevanceRanker) — instead
         of pooling every axis's candidates into one ranking, each axis
         gets a small guaranteed slot. A query with no comparative marker
-        decomposes to a single axis, so this flag has no effect on it."""
+        decomposes to a single axis, so this flag has no effect on it.
+
+        `resolver_strategy` — ARCF Issue #3 Dynamic Repository Profiling
+        (DRP) experiment (code_intelligence/drp/), defaulted to
+        `"classic"`: every existing caller and test gets today's exact
+        pipeline (everything documented above) unchanged. `"drp"` routes
+        the ENTIRE resolution through a completely separate, isolated
+        resolver (`code_intelligence.drp.drp_resolver.DrpResolver`) that
+        teaches itself the repository's directory taxonomy, per-
+        subsystem TF-IDF vocabulary, and import/call graph communities
+        instead of symbol-name matching — see `_resolve_drp`. Not
+        composable with any `enable_*` flag above: DRP bypasses
+        evidence-fallback, lexical probing, anchor classification, and
+        multi-axis decomposition entirely rather than plugging into any
+        of them, so `target_names`/`raw_request` are its only classic-
+        pipeline inputs."""
         latest = await asyncio.to_thread(self._contract_store.get_latest, contract_id)
         if latest is None:
             raise ContractNotFoundError(f"No contract found with id {contract_id}")
@@ -245,6 +264,7 @@ class CodeIntelligenceContractService:
             enable_anchor_classification,
             enable_confidence_propagation,
             enable_multi_axis_decomposition,
+            resolver_strategy,
         )
         self._log_retrieval_diagnostics(latest, result)
         await asyncio.to_thread(self._resolution_store.save, result)
@@ -267,9 +287,21 @@ class CodeIntelligenceContractService:
         enable_anchor_classification: bool = False,
         enable_confidence_propagation: bool = False,
         enable_multi_axis_decomposition: bool = False,
+        resolver_strategy: Literal["classic", "drp"] = "classic",
     ) -> ContextResolutionResult:
         if not root_path.is_dir():
             raise WorkspacePathError(f"{root_path} is not an existing directory")
+
+        if resolver_strategy == "drp":
+            # Priority-ordered, isolated branch — same precedent as
+            # enable_multi_axis_decomposition's priority over
+            # enable_anchor_classification below: checked first, and
+            # every enable_* flag on this method is simply irrelevant
+            # once DRP owns resolution. Nothing past this point (scan-
+            # driven scope/task classification, evidence-fallback,
+            # lexical probing, anchor classification, multi-axis
+            # decomposition) runs for this branch.
+            return self._resolve_drp(root_path, contract_id, target_names, raw_request)
 
         # ARCF hardening §12 (pipeline ordering): lightweight deterministic
         # checks — language/analyzer-coverage detection, repository
@@ -631,6 +663,39 @@ class CodeIntelligenceContractService:
                 "dynamic_dispatch_hints": dynamic_dispatch_hints,
                 "resolution_reason": resolution_reason,
             }
+        )
+        return result
+
+    def _resolve_drp(
+        self,
+        root_path: Path,
+        contract_id: str,
+        target_names: list[str],
+        raw_request: str,
+    ) -> ContextResolutionResult:
+        """ARCF Issue #3 Dynamic Repository Profiling (DRP) experiment —
+        a fully independent resolution path (code_intelligence/drp/),
+        isolated from every classic-pipeline mechanism in `_resolve`
+        above. `ContextResolver` is never constructed here; DRP builds
+        its own `DrpIndex` (directory taxonomy, per-subsystem TF-IDF,
+        import/call graph communities) on top of the same
+        `CodeIntelligenceIndex` and either finds its own subsystem match
+        or returns an honestly empty `ContextResolutionResult` — it never
+        falls back into evidence-fallback/lexical-probing/anchor-
+        classification/multi-axis decomposition. Diagnostics (subsystem/
+        community/latency breakdown) are discarded here; they exist for
+        `scripts/drp_benchmark.py`, which calls `DrpResolver` directly to
+        keep them."""
+        scan = RepositoryScanner().scan(root_path)
+        resolved_root = str(root_path.resolve())
+        index = self._engine.build_index(root_path, scan.files)
+        drp_index = DrpIndexBuilder.build(index, root_path)
+        result, _diagnostics = DrpResolver(index, drp_index).resolve(
+            resolved_root,
+            contract_id,
+            resolved_root,
+            raw_request,
+            target_names=target_names,
         )
         return result
 

@@ -1,0 +1,72 @@
+{
+  "query": "How does Consul add a new service instance to the catalog when an agent registers it?",
+  "repo": "consul",
+  "language": "go",
+  "target_file": "agent/consul/catalog_endpoint.go",
+  "results": {
+    "drp": {
+      "resolver": "drp+pmi",
+      "top_files": [
+        "agent/cache-types/catalog_service_list.go",
+        "agent/cache-types/catalog_services.go",
+        "agent/cache-types/catalog_list_services.go",
+        "agent/cache-types/catalog_datacenters.go",
+        "agent/cache-types/catalog_list_services_test.go"
+      ],
+      "candidate_count": 5,
+      "confidence": 0.005811879160769404,
+      "resolver_latency_seconds": 0.0405,
+      "packaged_tokens": 2639,
+      "packaged_file_count": 5,
+      "graph_expansion_count": 0,
+      "top_subsystem": "agent/cache-types::catalog",
+      "top_community": "acl/MockAuthorizer.go",
+      "subsystem_scores": [
+        [
+          "agent/cache-types::catalog",
+          0.9040510226056253
+        ],
+        [
+          "test/integration/consul-container/libs",
+          0.8480479460714169
+        ],
+        [
+          "agent/cache-types::service",
+          0.8400864185309036
+        ],
+        [
+          "connect",
+          0.8168275308190335
+        ],
+        [
+          "agent::agent",
+          0.7822383930279623
+        ],
+        [
+          "agent/grpc-internal",
+          0.7353388105195722
+        ],
+        [
+          "agent/consul/autopilotevents",
+          0.7338751938657627
+        ],
+        [
+          "agent/grpc-external/services/peerstream",
+          0.7329702400073045
+        ],
+        [
+          "agent/connect",
+          0.7159647653920211
+        ],
+        [
+          "command/connect",
+          0.7037209027432483
+        ]
+      ],
+      "query_expansion": {},
+      "target_file": "agent/consul/catalog_endpoint.go",
+      "retrieval_rank": null,
+      "target_retrieved": false
+    }
+  }
+}

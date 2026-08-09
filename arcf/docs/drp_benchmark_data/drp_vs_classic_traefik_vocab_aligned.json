@@ -1,0 +1,71 @@
+{
+  "query": "How does the ConfigurationWatcher apply new configuration changes from providers?",
+  "repo": "traefik_vocab_aligned",
+  "language": "go",
+  "target_file": "pkg/server/configurationwatcher.go",
+  "results": {
+    "drp": {
+      "resolver": "drp",
+      "top_files": [
+        "pkg/server/configurationwatcher.go",
+        "pkg/server/configurationwatcher_test.go",
+        "pkg/server/aggregator_test.go",
+        "pkg/server/server_entrypoint_listenconfig_other.go",
+        "pkg/server/router/udp/router_test.go"
+      ],
+      "candidate_count": 5,
+      "confidence": 0.057806715600390024,
+      "resolver_latency_seconds": 0.0069,
+      "packaged_tokens": 2852,
+      "packaged_file_count": 3,
+      "graph_expansion_count": 0,
+      "top_subsystem": "pkg/server",
+      "top_community": "cmd/configuration.go",
+      "subsystem_scores": [
+        [
+          "pkg/server",
+          0.8957798607155183
+        ],
+        [
+          "cmd",
+          0.8500000000000001
+        ],
+        [
+          "pkg/provider",
+          0.7575491947222919
+        ],
+        [
+          "pkg/config",
+          0.7197065034931052
+        ],
+        [
+          "pkg/middlewares",
+          0.5524708782556393
+        ],
+        [
+          "integration",
+          0.550650098540552
+        ],
+        [
+          "pkg/plugins",
+          0.5310012673048594
+        ],
+        [
+          "pkg/cli",
+          0.528649278038408
+        ],
+        [
+          "pkg/redactor",
+          0.4670182779452084
+        ],
+        [
+          "pkg/api",
+          0.4614101610855619
+        ]
+      ],
+      "target_file": "pkg/server/configurationwatcher.go",
+      "retrieval_rank": 1,
+      "target_retrieved": true
+    }
+  }
+}

@@ -1,0 +1,101 @@
+{
+  "query": "Explain how dynamic configuration updates propagate without restarting the server.",
+  "repo": "traefik_pmi",
+  "language": "go",
+  "target_file": "pkg/server/configurationwatcher.go",
+  "results": {
+    "drp": {
+      "resolver": "drp+pmi",
+      "top_files": [
+        "pkg/provider/ecs/label.go",
+        "pkg/provider/consulcatalog/label.go",
+        "pkg/provider/ecs/config.go",
+        "pkg/provider/traefik/internal_test.go",
+        "pkg/provider/consulcatalog/config.go"
+      ],
+      "candidate_count": 5,
+      "confidence": 0.05267113315987567,
+      "resolver_latency_seconds": 0.0044,
+      "packaged_tokens": 7207,
+      "packaged_file_count": 5,
+      "graph_expansion_count": 0,
+      "top_subsystem": "pkg/provider",
+      "top_community": "cmd/configuration.go",
+      "subsystem_scores": [
+        [
+          "pkg/provider",
+          0.776445627796943
+        ],
+        [
+          "pkg/config",
+          0.645502361051466
+        ],
+        [
+          "cmd",
+          0.6294973429361066
+        ],
+        [
+          "integration",
+          0.5976789647568628
+        ],
+        [
+          "pkg/server",
+          0.5870262741699327
+        ],
+        [
+          "pkg/redactor",
+          0.569450385995203
+        ],
+        [
+          "pkg/tcp",
+          0.5656699888478911
+        ],
+        [
+          "pkg/tls",
+          0.5190177533504405
+        ],
+        [
+          "pkg/middlewares",
+          0.5129849191392777
+        ],
+        [
+          "pkg/healthcheck",
+          0.5127117233946039
+        ]
+      ],
+      "query_expansion": {
+        "explain": [
+          [
+            "bugs",
+            5.2533
+          ],
+          [
+            "addressing",
+            5.2533
+          ],
+          [
+            "codebase",
+            5.2533
+          ]
+        ],
+        "restarting": [
+          [
+            "myconfigfile",
+            6.1696
+          ],
+          [
+            "searches",
+            6.1696
+          ],
+          [
+            "xdg",
+            6.1696
+          ]
+        ]
+      },
+      "target_file": "pkg/server/configurationwatcher.go",
+      "retrieval_rank": null,
+      "target_retrieved": false
+    }
+  }
+}

@@ -715,3 +715,74 @@ async def test_full_retrieval_completeness_metadata_end_to_end(tmp_path: Path) -
     assert "auth/controller_pb2.py" in resolution.generated_files
     assert "auth/session.py" in resolution.dynamic_dispatch_hints
     assert "requests" in resolution.unresolved_imports
+
+
+async def test_resolver_strategy_defaults_to_classic_and_is_unaffected_by_drp_existing(
+    tmp_path: Path,
+) -> None:
+    """ARCF Issue #3 Dynamic Repository Profiling (DRP) experiment —
+    proof that adding `resolver_strategy` did not change a single byte
+    of default behavior: identical to
+    test_repository_scoped_request_with_no_entities_still_gets_files's
+    own fixture/query, just re-run without passing resolver_strategy at
+    all, alongside the exact same call with resolver_strategy="classic"
+    made explicit."""
+    _write(tmp_path, "auth.py", "def authenticate(user):\n    return True\n")
+    service, contract_store = _service()
+
+    living_implicit = _seed_contract(contract_store, "Find the code that handles authenticate.")
+    _, implicit = await service.attach_code_intelligence(
+        living_implicit.contract_id, target_names=["authenticate"], workspace_root=str(tmp_path)
+    )
+
+    living_explicit = _seed_contract(contract_store, "Find the code that handles authenticate.")
+    _, explicit = await service.attach_code_intelligence(
+        living_explicit.contract_id,
+        target_names=["authenticate"],
+        workspace_root=str(tmp_path),
+        resolver_strategy="classic",
+    )
+
+    assert [f.file_path for f in implicit.candidate_files] == [
+        f.file_path for f in explicit.candidate_files
+    ]
+    assert implicit.confidence == explicit.confidence == 1.0
+
+
+async def test_resolver_strategy_drp_routes_through_the_isolated_drp_resolver(
+    tmp_path: Path,
+) -> None:
+    """`resolver_strategy="drp"` must reach code_intelligence/drp/'s own
+    DrpResolver — proven by a diffuse-structure query naming no real
+    symbol at all (so the classic pipeline's exact-match path has
+    nothing to resolve), landing on the correct subsystem via directory
+    taxonomy + TF-IDF + graph-community routing instead."""
+    _write(
+        tmp_path,
+        "pkg/server/configurationwatcher.py",
+        '"""Watches dynamic configuration and propagates updates without restarting."""\n'
+        "def watch_configuration():\n    return True\n",
+    )
+    _write(
+        tmp_path,
+        "pkg/provider/docker.py",
+        '"""Discovers containers via the Docker API."""\n'
+        "def discover_containers():\n    return []\n",
+    )
+    service, contract_store = _service()
+    living = _seed_contract(
+        contract_store,
+        "Explain how dynamic configuration updates propagate without restarting the server.",
+    )
+
+    _, resolution = await service.attach_code_intelligence(
+        living.contract_id,
+        target_names=[],
+        workspace_root=str(tmp_path),
+        resolver_strategy="drp",
+    )
+
+    assert "pkg/server/configurationwatcher.py" in {f.file_path for f in resolution.candidate_files}
+    assert "drp:" in resolution.resolution_reason.lower() or any(
+        f.reason.startswith("drp:") for f in resolution.candidate_files
+    )

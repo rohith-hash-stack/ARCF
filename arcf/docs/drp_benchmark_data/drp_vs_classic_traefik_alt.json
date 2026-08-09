@@ -1,0 +1,72 @@
+{
+  "query": "How does the ConfigurationWatcher apply new configuration changes from providers?",
+  "repo": "traefik_alt",
+  "language": "go",
+  "target_file": "pkg/server/configurationwatcher.go",
+  "results": {
+    "drp": {
+      "resolver": "drp",
+      "top_files": [
+        "pkg/server/configurationwatcher.go",
+        "pkg/server/aggregator.go",
+        "pkg/server/server_entrypoint_listenconfig_other.go",
+        "pkg/server/server.go",
+        "pkg/server/routerfactory.go"
+      ],
+      "candidate_count": 5,
+      "confidence": 0.02132335129894179,
+      "resolver_latency_seconds": 0.0098,
+      "packaged_tokens": 7921,
+      "packaged_file_count": 5,
+      "graph_expansion_count": 0,
+      "top_subsystem": "pkg/server",
+      "top_community": "cmd/configuration.go",
+      "subsystem_scores": [
+        [
+          "pkg/server",
+          0.8695993607579153
+        ],
+        [
+          "pkg/middlewares/snicheck",
+          0.8041338978158186
+        ],
+        [
+          "integration",
+          0.6874144137503118
+        ],
+        [
+          "pkg/config",
+          0.6788588429595402
+        ],
+        [
+          "pkg/provider/kubernetes/crd/generated/applyconfiguration",
+          0.6717127186950466
+        ],
+        [
+          "pkg/server/service",
+          0.6695709539328125
+        ],
+        [
+          "pkg/provider/kv",
+          0.6591290624173984
+        ],
+        [
+          "pkg/provider/file",
+          0.6354316547050899
+        ],
+        [
+          "pkg/cli",
+          0.6338039399115041
+        ],
+        [
+          "pkg/provider/aggregator",
+          0.6181926818229838
+        ]
+      ],
+      "query_expansion": null,
+      "target_file": "pkg/server/configurationwatcher.go",
+      "retrieval_rank": 1,
+      "target_retrieved": true
+    }
+  }
+}
