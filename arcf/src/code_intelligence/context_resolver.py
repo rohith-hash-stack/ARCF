@@ -29,6 +29,7 @@ from uuid import uuid4
 
 from code_intelligence.index import CodeIntelligenceIndex
 from code_intelligence.locality import (
+    locality_filtered_caller_files,
     locality_filtered_callers_of_name,
     locality_filtered_transitive_callees,
     locality_filtered_transitive_callers,
@@ -190,7 +191,6 @@ class ContextResolver:
                 unresolved_symbols.append(name)
             if disambiguation.ambiguous:
                 ambiguous_targets.append(name)
-            expand_matches = len(matches) <= _MAX_CANDIDATES_TO_EXPAND
             # Feature A (Tier-1 structural ambiguity decay): N is the raw
             # match count for THIS name, before any graph expansion runs —
             # a name matching many unrelated symbols (Go's bare `New`: 156
@@ -199,6 +199,9 @@ class ContextResolver:
             # match's role_score looks in isolation. N=1 keeps the
             # multiplier at exactly 1.0 (no penalty for an unambiguous
             # name), matching this field's None-is-neutral contract.
+            # Captured BEFORE Feature 4's truncation below -- ambiguity_
+            # confidence describes how ambiguous the raw resolution was,
+            # not how many candidates ended up seeded downstream.
             ambiguity_confidence = (
                 1.0 if len(matches) <= 1 else 1.0 / math.log2(len(matches) + 1)
             )
@@ -216,6 +219,40 @@ class ContextResolver:
             path_mask_confidence = (
                 0.15 if query_path_hints and not disambiguation.path_hint_matched else None
             )
+            # Feature 4 (Top-K entry-point seed ranking, 2026-08-11, Safe
+            # High-Efficiency Payload Optimization) -- SCOPED DOWN from
+            # the original "truncate to top 5" spec after it broke a
+            # documented invariant from a real 2026-08-07 MemoryError
+            # crash fix (see test_wildly_ambiguous_target_name_skips_
+            # expansion_but_keeps_all_files's own docstring: "every
+            # matching file should still be recorded, never silently
+            # dropped"). Explicit decision: rank, never drop. A bare,
+            # unguided ambiguous name (N > 5 matches, no path hint
+            # anywhere in the query) previously got expand_matches=False
+            # for ALL N uniformly -- real Consul example: "New" alone,
+            # 156 matches, none hop-expanded at all. Every one of the N
+            # still becomes a candidate file exactly as before; what
+            # changes is WHICH ones are worth the expensive per-symbol
+            # expansion -- ranked by caller centrality (real call-graph
+            # signal, only available here since ReferenceResolver has no
+            # CallGraph access and giving it one would create a circular
+            # dependency with CallGraph itself), the top
+            # _MAX_CANDIDATES_TO_EXPAND get real hop-expansion attempted;
+            # the rest stay flat entry points, same as every match did
+            # before this feature existed. Total expansion attempts per
+            # target name stays bounded at _MAX_CANDIDATES_TO_EXPAND
+            # either way, so the crash this threshold exists to prevent
+            # is unaffected. Skipped when a path hint exists anywhere in
+            # the query -- that's already a stronger, caller-provided
+            # narrowing signal (Feature 1), and this heuristic ranking
+            # shouldn't second-guess it.
+            expand_matches = len(matches) <= _MAX_CANDIDATES_TO_EXPAND
+            expand_eligible_ids: frozenset[str] = frozenset()
+            if not expand_matches and not query_path_hints:
+                ranked_for_expansion = self._rank_by_caller_centrality(matches)
+                expand_eligible_ids = frozenset(
+                    s.id for s in ranked_for_expansion[:_MAX_CANDIDATES_TO_EXPAND]
+                )
             for symbol in matches:
                 entry_point_symbols.append(symbol)
                 self._add_file(
@@ -232,7 +269,7 @@ class ContextResolver:
                     file_path_mask_confidence,
                     path_mask_confidence,
                 )
-                if not expand_matches:
+                if not expand_matches and symbol.id not in expand_eligible_ids:
                     continue
 
                 if symbol.kind in (SymbolKind.FUNCTION, SymbolKind.METHOD):
@@ -334,6 +371,40 @@ class ContextResolver:
             unresolved_symbols=tuple(unresolved_symbols),
             unresolved_imports=tuple(unresolved_imports),
         )
+
+    def _rank_by_caller_centrality(self, symbols: list[Symbol]) -> list[Symbol]:
+        """Feature 4's ranking signal: total recorded caller count
+        (symbol-owning callers + module-level call sites, the same two
+        sources CallGraph itself distinguishes) as the primary key, file
+        size (token count, a proxy for "how substantial is this
+        declaration" per the task spec's own "file line count" fallback)
+        as the tie-break. Deterministic (stable sort, ties broken by
+        symbol id last) -- same candidate set always ranks the same way.
+
+        Uses the LOCALITY-FILTERED caller functions (locality.py, hop
+        capped at 1 -- ranking only needs a direct-caller count, not a
+        full traversal), not CallGraph's raw caller_symbols_of/
+        caller_files_of directly. A first version of this method used
+        the raw counts and was caught failing its own real use case in
+        testing: when several same-named ambiguous candidates share one
+        real caller (an ambiguous call site resolves to ALL of them
+        equally, CallGraph's own documented fan-out), the raw count
+        credits every candidate identically, making it worthless for
+        telling the one with a REAL local caller apart from the rest --
+        exactly the corruption arcf_callgraph_locality_fix already
+        found and fixed once for hop-expansion; reusing that fix here
+        rather than reintroducing the same bug in a new place."""
+
+        def centrality(symbol: Symbol) -> tuple[int, int, str]:
+            caller_count = len(
+                locality_filtered_transitive_callers(
+                    self._index, self._index.call_graph, symbol.id, symbol.file_path, max_depth=1
+                )
+            ) + len(locality_filtered_caller_files(self._index, symbol.id, symbol.file_path))
+            file_size = self._index.token_counts.get(symbol.file_path, 0)
+            return (caller_count, file_size, symbol.id)
+
+        return sorted(symbols, key=centrality, reverse=True)
 
     def _expand_calls(
         self,

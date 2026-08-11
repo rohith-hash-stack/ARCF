@@ -456,21 +456,80 @@ def test_wildly_ambiguous_target_name_skips_expansion_but_keeps_all_files(
     identifier recurring in many unrelated files) previously spawned one
     independent call-graph traversal per match, which alone caused a
     MemoryError on a real 59k-symbol repository. Every matching file
-    should still be recorded (never silently dropped) — only the
-    expensive per-symbol expansion is skipped once the tie count crosses
-    _MAX_CANDIDATES_TO_EXPAND."""
+    should still be recorded (never silently dropped) — this core
+    invariant is unchanged.
+
+    Feature 4 (Top-K entry-point seed RANKING, 2026-08-11 -- explicitly
+    scoped down from the original "truncate to top 5" spec, which broke
+    this exact invariant) changes what "skips the expensive per-symbol
+    expansion" means: instead of skipping expansion for ALL 6 uniformly,
+    the top _MAX_CANDIDATES_TO_EXPAND by caller-centrality get real
+    expansion attempted. h0 is the only one of the 6 with any real
+    caller (1, vs. 0 for h1-h5), so it deterministically ranks first and
+    IS expanded -- correctly surfacing caller.py as a real hop-1
+    candidate, which the old all-or-nothing gate used to suppress
+    entirely just because 6 unrelated symbols happened to share a name.
+    Total expansion attempts still stays bounded at
+    _MAX_CANDIDATES_TO_EXPAND, so the crash this threshold exists to
+    prevent is unaffected.
+
+    Each helper lives in its OWN directory (pkg0/h.py, pkg1/h.py, ...) --
+    genuinely unrelated packages, matching what this test's own docstring
+    describes ("unrelated same-named symbols... in a large monorepo") and
+    what the real crash/real "New"-style ambiguity actually looks like
+    (scattered across many different packages, not co-located in one
+    directory). A flat single-directory fixture would trip locality.py's
+    own same-directory relatedness tier between the six "unrelated"
+    helpers themselves once Feature 4 lets more than one of them reach
+    real expansion -- a fixture-realism issue, not a Feature 4 bug."""
     for i in range(6):
-        (tmp_path / f"h{i}.py").write_text(f"def helper():\n    return {i}\n")
-    (tmp_path / "caller.py").write_text("import h0\n\ndef use():\n    return h0.helper()\n")
+        (tmp_path / f"pkg{i}").mkdir()
+        (tmp_path / f"pkg{i}" / "h.py").write_text(f"def helper():\n    return {i}\n")
+    (tmp_path / "pkg0" / "caller.py").write_text(
+        "from .h import helper\n\ndef use():\n    return helper()\n"
+    )
     index = _build_index(tmp_path)
 
     result = ContextResolver(index).resolve("ws1", "contract1", str(tmp_path), ["helper"])
 
     file_paths = {f.file_path for f in result.candidate_files}
-    assert file_paths == {f"h{i}.py" for i in range(6)}
-    assert "caller.py" not in file_paths
-    assert all(f.reason == "defines helper" for f in result.candidate_files)
+    assert file_paths == {f"pkg{i}/h.py" for i in range(6)} | {"pkg0/caller.py"}
+    assert all(
+        f.reason == "defines helper"
+        for f in result.candidate_files
+        if f.file_path != "pkg0/caller.py"
+    )
     assert result.ambiguous_targets == ("helper",)
+
+
+def test_top_k_ranking_prefers_symbols_with_more_real_local_callers(tmp_path: Path) -> None:
+    # 7 ambiguous "helper" symbols (N=7 > _MAX_CANDIDATES_TO_EXPAND=5):
+    # pkg0's has 2 real local callers, pkg1's has 1, pkg2-6's have none.
+    # The two with real callers must both win a spot in the ranked-top-5
+    # expansion set over the callerless ones.
+    for i in range(7):
+        (tmp_path / f"pkg{i}").mkdir()
+        (tmp_path / f"pkg{i}" / "h.py").write_text(f"def helper():\n    return {i}\n")
+    (tmp_path / "pkg0" / "caller_a.py").write_text(
+        "from .h import helper\n\ndef use_a():\n    return helper()\n"
+    )
+    (tmp_path / "pkg0" / "caller_b.py").write_text(
+        "from .h import helper\n\ndef use_b():\n    return helper()\n"
+    )
+    (tmp_path / "pkg1" / "caller.py").write_text(
+        "from .h import helper\n\ndef use():\n    return helper()\n"
+    )
+    index = _build_index(tmp_path)
+
+    result = ContextResolver(index).resolve("ws1", "contract1", str(tmp_path), ["helper"])
+
+    file_paths = {f.file_path for f in result.candidate_files}
+    # Core invariant unchanged: every one of the 7 definitions stays a
+    # candidate, plus the real callers that expansion correctly surfaced.
+    assert file_paths >= {f"pkg{i}/h.py" for i in range(7)}
+    assert "pkg0/caller_a.py" in file_paths
+    assert "pkg0/caller_b.py" in file_paths
+    assert "pkg1/caller.py" in file_paths
 
 
 def test_unambiguous_entry_point_gets_no_ambiguity_penalty(tmp_path: Path) -> None:
