@@ -73,6 +73,12 @@ class RankedFile:
     """Carried straight through from FileReference.path_mask_confidence
     (Payload Optimization Feature 1) purely for traceability — already
     folded into relevance_score by `_score` below."""
+    justification_chain: tuple[str, ...] = ()
+    """Carried straight through from FileReference.justification_chain.
+    Not folded into relevance_score -- ContextBudgetManager's Feature 2
+    (Two-Tier AST Snippet Rendering) reads this directly to detect a
+    hop-1 (directly call-graph-linked) secondary candidate, which keeps
+    its full body even when it isn't the focal (rank-1) candidate."""
 
 
 class RelevanceRanker:
@@ -101,6 +107,7 @@ class RelevanceRanker:
                 evidence_tier=file_ref.evidence_tier,
                 ambiguity_confidence=file_ref.ambiguity_confidence,
                 path_mask_confidence=file_ref.path_mask_confidence,
+                justification_chain=file_ref.justification_chain,
             )
             for file_ref in result.candidate_files
         ]

@@ -19,6 +19,7 @@ def _ranked(
     token_count: int,
     score: float = 0.9,
     evidence_tier: EvidenceTier = EvidenceTier.PRIMARY,
+    justification_chain: tuple[str, ...] = (),
 ) -> RankedFile:
     return RankedFile(
         file_path=file_path,
@@ -27,6 +28,7 @@ def _ranked(
         language="python",
         token_count=token_count,
         evidence_tier=evidence_tier,
+        justification_chain=justification_chain,
     )
 
 
@@ -502,6 +504,89 @@ def test_primary_evidence_compression_still_uses_plain_extract(tmp_path: Path) -
     content = packaged[0].content
     assert "import os" not in content
     assert "line 200" in content
+
+
+def _fn_symbol(file_path: str, name: str, start: int, end: int) -> SymbolReference:
+    return SymbolReference(
+        symbol_id=f"{file_path}::{name}",
+        name=name,
+        qualified_name=name,
+        kind=SymbolKind.FUNCTION,
+        file_path=file_path,
+        start_line=start,
+        end_line=end,
+    )
+
+
+def test_focal_supporting_candidate_keeps_full_body(tmp_path: Path) -> None:
+    (tmp_path / "focal.py").write_text(
+        "def handler():\n    do_real_work()\n    return 1\n"
+    )
+    manager = _manager(tmp_path)
+    ranked = [_ranked("focal.py", token_count=10, score=0.9, evidence_tier=EvidenceTier.SUPPORTING)]
+    result = _empty_result(entry_points=[_fn_symbol("focal.py", "handler", 1, 3)])
+
+    packaged, used, excluded = manager.select(ranked, result, max_tokens=10_000)
+
+    assert "do_real_work" in packaged[0].content
+    assert "implementation omitted" not in packaged[0].content
+
+
+def test_second_supporting_candidate_gets_skeleton_only(tmp_path: Path) -> None:
+    (tmp_path / "focal.py").write_text("def handler():\n    do_real_work()\n")
+    (tmp_path / "secondary.py").write_text(
+        "def helper():\n    unrelated_body_content()\n    return 2\n"
+    )
+    manager = _manager(tmp_path)
+    ranked = [
+        _ranked("focal.py", token_count=10, score=0.9, evidence_tier=EvidenceTier.SUPPORTING),
+        _ranked("secondary.py", token_count=10, score=0.8, evidence_tier=EvidenceTier.SUPPORTING),
+    ]
+    result = _empty_result(
+        entry_points=[
+            _fn_symbol("focal.py", "handler", 1, 2),
+            _fn_symbol("secondary.py", "helper", 1, 3),
+        ]
+    )
+
+    packaged, used, excluded = manager.select(ranked, result, max_tokens=10_000)
+
+    by_path = {p.file_path: p for p in packaged}
+    assert "do_real_work" in by_path["focal.py"].content
+    assert "unrelated_body_content" not in by_path["secondary.py"].content
+    assert "implementation omitted" in by_path["secondary.py"].content
+
+
+def test_hop_one_linked_secondary_candidate_keeps_full_body(tmp_path: Path) -> None:
+    # Feature 2 safety fallback: a secondary candidate reached via a
+    # direct (hop-1) call-graph edge is exempted from skeletonization.
+    (tmp_path / "focal.py").write_text("def handler():\n    do_real_work()\n")
+    (tmp_path / "linked.py").write_text(
+        "def caller():\n    linked_body_content()\n    return 3\n"
+    )
+    manager = _manager(tmp_path)
+    ranked = [
+        _ranked("focal.py", token_count=10, score=0.9, evidence_tier=EvidenceTier.SUPPORTING),
+        _ranked(
+            "linked.py",
+            token_count=10,
+            score=0.8,
+            evidence_tier=EvidenceTier.SUPPORTING,
+            justification_chain=("defines handler", "called by caller"),
+        ),
+    ]
+    result = _empty_result(
+        entry_points=[
+            _fn_symbol("focal.py", "handler", 1, 2),
+            _fn_symbol("linked.py", "caller", 1, 3),
+        ]
+    )
+
+    packaged, used, excluded = manager.select(ranked, result, max_tokens=10_000)
+
+    by_path = {p.file_path: p for p in packaged}
+    assert "linked_body_content" in by_path["linked.py"].content
+    assert "implementation omitted" not in by_path["linked.py"].content
 
 
 def test_falloff_gate_is_a_noop_for_a_single_candidate(tmp_path: Path) -> None:

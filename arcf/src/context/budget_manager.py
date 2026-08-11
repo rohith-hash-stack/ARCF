@@ -70,6 +70,23 @@ there, budget remaining or not, rather than continuing to spend it on
 long-tail noise. This is independent of, and runs before, every
 budget/compression decision above: a candidate can lose to relevance
 falloff without ever reaching the "does it fit" question at all.
+
+Two-Tier AST Snippet Rendering, Feature 2 (2026-08-11, Safe High-
+Efficiency Payload Optimization): Feature C's `extract_with_ast_scope`
+gives every SUPPORTING/EXPERIMENTAL candidate a full implementation
+body. Measured cost: for a query with several secondary matches, most
+of those bodies are never what the query is actually about — the
+FIRST (highest-ranked) SUPPORTING candidate encountered, in
+`ranked_files`' already-sorted order, is the FOCAL one and keeps the
+full body; every one after it gets `extract_skeleton_only` instead
+(signature/type contract only, body stripped) UNLESS its own
+`justification_chain` shows it's directly (hop-1) call-graph-linked to
+whatever entry point it was reached from — a secondary file that's one
+hop from the real answer plausibly needs its own body to make sense of
+that link, so it's exempted from skeletonization rather than risking a
+genuinely load-bearing body being cut to chase a token number (same
+"don't guess wrong" posture as the boilerplate-truncation carve-out
+above).
 """
 
 from collections import defaultdict
@@ -111,6 +128,13 @@ _BOILERPLATE_FILLER_MAX_TOKENS = 150
 # budget with it. See this module's own docstring for the full rationale.
 _RELATIVE_FALLOFF_GAMMA = 0.45
 
+# Feature 2 (Two-Tier AST Snippet Rendering): a compress-first candidate
+# reached at hop 1 has a 2-element justification_chain -- ("defines X",
+# "calls X") for a module-level caller, or ("defines X", "called by
+# Y")/("defines X", "calls Y") for a symbol-owning one at hop 1. Anything
+# longer is hop 2+.
+_HOP_ONE_CHAIN_LENGTH = 2
+
 
 class ContextBudgetManager:
     def __init__(
@@ -146,6 +170,12 @@ class ContextBudgetManager:
         top_score = ranked_files[0].relevance_score if ranked_files else 0.0
         falloff_threshold = _RELATIVE_FALLOFF_GAMMA * top_score
 
+        # Feature 2: counts only compress-eligible (SUPPORTING/
+        # EXPERIMENTAL-with-symbols) candidates actually reached below --
+        # PRIMARY files don't compete for "focal" rank, since they
+        # already get full-body treatment regardless.
+        compress_first_seen = 0
+
         for index, ranked in enumerate(ranked_files):
             if ranked.relevance_score < falloff_threshold:
                 # Every remaining candidate is sorted lower still, so all
@@ -179,9 +209,26 @@ class ContextBudgetManager:
                 # task spec means -- PRIMARY's doesn't-fit-in-full path
                 # below keeps the plain extract() unchanged, since that's
                 # a confident direct match, not fan-out noise.
-                compressed = self._compress(
-                    ranked, symbols_in_file, remaining, extract=self._compressor.extract_with_ast_scope
+                #
+                # Feature 2 (Two-Tier AST Snippet Rendering): only the
+                # FIRST (focal, highest-ranked) compress-eligible
+                # candidate, or one directly (hop-1) call-graph-linked to
+                # its own entry point, gets the full body -- see this
+                # module's own docstring.
+                is_focal = compress_first_seen == 0
+                # An EMPTY chain means "no provenance info available",
+                # not "hop 1" -- must be non-empty as well as short, or
+                # every candidate with unset justification_chain would
+                # wrongly count as hop-1-linked and skeletonization would
+                # never trigger at all.
+                is_hop_one_linked = 0 < len(ranked.justification_chain) <= _HOP_ONE_CHAIN_LENGTH
+                compress_first_seen += 1
+                extract_fn = (
+                    self._compressor.extract_with_ast_scope
+                    if is_focal or is_hop_one_linked
+                    else self._compressor.extract_skeleton_only
                 )
+                compressed = self._compress(ranked, symbols_in_file, remaining, extract=extract_fn)
                 if compressed is not None:
                     packaged.append(compressed)
                     used += compressed.token_count
