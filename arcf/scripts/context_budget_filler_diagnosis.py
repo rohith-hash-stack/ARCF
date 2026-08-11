@@ -98,7 +98,6 @@ def _full_registry() -> LanguageRegistry:
 async def _diagnose_one(
     service: CodeIntelligenceContractService,
     contract_store: InMemoryContractStore,
-    index_cache: dict,
     root: Path,
     query: str,
     entities: list[str],
@@ -121,7 +120,6 @@ async def _diagnose_one(
         resolver_strategy="classic",
         enable_anchor_classification=True,
         enable_confidence_propagation=True,
-        index_cache=index_cache,
     )
 
     scope = RepositoryScopeClassifier().classify(query)
@@ -171,7 +169,6 @@ async def main() -> None:
     service = CodeIntelligenceContractService(
         engine, contract_store, InMemoryContextResolutionStore()
     )
-    index_cache: dict = {}
 
     results = []
     for repo_name, query, entities in stored_queries:
@@ -179,7 +176,7 @@ async def main() -> None:
         if not root.is_dir():
             print(f"SKIP {repo_name}: not cloned at {root}")
             continue
-        r = await _diagnose_one(service, contract_store, index_cache, root, query, entities)
+        r = await _diagnose_one(service, contract_store, root, query, entities)
         r["repo"] = repo_name
         results.append(r)
         print(

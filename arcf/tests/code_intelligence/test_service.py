@@ -13,6 +13,7 @@ from unittest.mock import patch
 
 import pytest
 
+from code_intelligence.drp.drp_index import DrpIndexBuilder
 from code_intelligence.engine import CodeIntelligenceEngine
 from code_intelligence.languages.python_analyzer import PythonLanguageAnalyzer
 from code_intelligence.registry import LanguageRegistry
@@ -789,13 +790,16 @@ async def test_resolver_strategy_drp_routes_through_the_isolated_drp_resolver(
     )
 
 
-async def test_index_cache_defaults_to_none_and_rebuilds_every_call(tmp_path: Path) -> None:
-    """`index_cache` benchmark-script optimization (arcf-repo-sweep-50):
-    every existing caller passes no `index_cache`, so `build_index` must
-    keep re-parsing on every call — the exact behavior every other test
-    in this file already implicitly relies on. Proven directly here via
-    call-count, not just "results looked right", since a stale-index bug
-    would still produce plausible-looking results on an unchanged fixture."""
+async def test_index_is_cached_automatically_across_calls_no_caller_opt_in_needed(
+    tmp_path: Path,
+) -> None:
+    """arcf-persistent-safe-index-cache (2026-08-11): replaces the
+    earlier opt-in `index_cache` parameter (removed) with automatic,
+    service-lifetime caching — no caller plumbing required. Repeated
+    calls against the SAME unchanged workspace, through the SAME service
+    instance, must reuse the built index (only the first call actually
+    parses) — the exact benefit `index_cache` used to require explicit
+    opt-in for, now the default for every caller including the live API."""
     _write(tmp_path, "auth.py", "def authenticate(user):\n    return True\n")
     service, contract_store = _service()
 
@@ -812,59 +816,98 @@ async def test_index_cache_defaults_to_none_and_rebuilds_every_call(tmp_path: Pa
             living_b.contract_id, target_names=["authenticate"], workspace_root=str(tmp_path)
         )
 
-    assert spy.call_count == 2
+    assert spy.call_count == 2  # build_index itself is still called each time...
+    # ...but the SECOND call must have been handed the first result as
+    # previous_index (proving real reuse, not just "called twice with no
+    # sharing") — confirmed via the incremental-reuse contract itself:
+    # an unchanged file's FileAnalysis object is reused by identity.
+    first_call_kwargs = spy.call_args_list[0].kwargs
+    second_call_kwargs = spy.call_args_list[1].kwargs
+    assert second_call_kwargs.get("previous_index") is not None
+    assert first_call_kwargs.get("previous_index") is None
 
 
-async def test_index_cache_reused_across_calls_and_both_resolver_strategies(
+async def test_changed_file_between_calls_is_correctly_re_analyzed_not_stale(
     tmp_path: Path,
 ) -> None:
-    """Opt-in `index_cache`: a caller (e.g. the 50-repo sweep's
-    repo_query_answer.py, which otherwise re-parses the same immutable
-    cloned repo once per query AND once per resolver_strategy) can pass
-    a shared dict to skip redundant `build_index` calls against the same
-    root — `_resolve` (classic) and `_resolve_drp` both call
-    `_build_index_cached` independently, so this must hold across BOTH
-    strategies, not just repeat classic calls. Results must stay
-    byte-identical to the uncached path (same fixture/query as
-    test_resolver_strategy_defaults_to_classic_and_is_unaffected_by_drp_existing
-    for classic; same DRP fixture pattern as
-    test_resolver_strategy_drp_routes_through_the_isolated_drp_resolver)."""
+    """The core safety property the automatic cache must have that the
+    earlier opt-in `index_cache` explicitly did NOT (its own docstring:
+    "only safe when the caller knows the workspace root's files won't
+    change between calls"). A real workspace CAN change between live API
+    requests — this proves an edited file is picked up, not silently
+    served stale."""
     _write(tmp_path, "auth.py", "def authenticate(user):\n    return True\n")
     service, contract_store = _service()
-    shared_cache: dict = {}
 
-    living_classic = _seed_contract(contract_store, "Find the code that handles authenticate.")
-    living_classic_again = _seed_contract(
-        contract_store, "Find the code that handles authenticate."
+    living_before = _seed_contract(contract_store, "Find the code that handles login_v2.")
+    _, before = await service.attach_code_intelligence(
+        living_before.contract_id, target_names=["login_v2"], workspace_root=str(tmp_path)
     )
-    living_drp = _seed_contract(contract_store, "Find the code that handles authenticate.")
+    assert before.candidate_files == []  # login_v2 doesn't exist yet
 
-    with patch.object(
-        service._engine, "build_index", wraps=service._engine.build_index
-    ) as spy:
-        _, first = await service.attach_code_intelligence(
-            living_classic.contract_id,
-            target_names=["authenticate"],
-            workspace_root=str(tmp_path),
-            index_cache=shared_cache,
-        )
-        _, second = await service.attach_code_intelligence(
-            living_classic_again.contract_id,
-            target_names=["authenticate"],
-            workspace_root=str(tmp_path),
-            index_cache=shared_cache,
-        )
-        _, drp_result = await service.attach_code_intelligence(
-            living_drp.contract_id,
-            target_names=["authenticate"],
+    _write(tmp_path, "auth.py", "def authenticate(user):\n    return True\n\ndef login_v2():\n    pass\n")
+    living_after = _seed_contract(contract_store, "Find the code that handles login_v2.")
+    _, after = await service.attach_code_intelligence(
+        living_after.contract_id, target_names=["login_v2"], workspace_root=str(tmp_path)
+    )
+
+    assert "auth.py" in {f.file_path for f in after.candidate_files}
+
+
+async def test_drp_index_is_cached_across_calls_and_rebuilt_when_base_index_changes(
+    tmp_path: Path,
+) -> None:
+    """DrpIndexBuilder.build (community detection + TF-IDF, confirmed via
+    a real gvisor re-run to spike DRP latency up to 56s even with the
+    base index already cached) must ALSO be cached automatically, and
+    only rebuilt when the base index actually changed — not on every
+    call regardless."""
+    _write(
+        tmp_path,
+        "pkg/server/configurationwatcher.py",
+        '"""Watches dynamic configuration and propagates updates without restarting."""\n'
+        "def watch_configuration():\n    return True\n",
+    )
+    service, contract_store = _service()
+
+    living_first = _seed_contract(
+        contract_store, "Explain how dynamic configuration updates propagate."
+    )
+    living_second = _seed_contract(
+        contract_store, "Explain how dynamic configuration updates propagate."
+    )
+
+    with patch.object(DrpIndexBuilder, "build", wraps=DrpIndexBuilder.build) as spy:
+        await service.attach_code_intelligence(
+            living_first.contract_id,
+            target_names=[],
             workspace_root=str(tmp_path),
             resolver_strategy="drp",
-            index_cache=shared_cache,
+        )
+        await service.attach_code_intelligence(
+            living_second.contract_id,
+            target_names=[],
+            workspace_root=str(tmp_path),
+            resolver_strategy="drp",
         )
 
-    assert spy.call_count == 1
-    assert [f.file_path for f in first.candidate_files] == [
-        f.file_path for f in second.candidate_files
-    ]
-    assert str(Path(tmp_path).resolve()) in shared_cache
-    assert drp_result is not None
+    assert spy.call_count == 1  # second call reused the cached DrpIndex
+
+    # Now change a file — the base index changes, so DrpIndex must rebuild.
+    _write(
+        tmp_path,
+        "pkg/server/configurationwatcher.py",
+        '"""Watches dynamic configuration and propagates updates without restarting."""\n'
+        "def watch_configuration():\n    return True\n\ndef new_symbol():\n    pass\n",
+    )
+    living_third = _seed_contract(
+        contract_store, "Explain how dynamic configuration updates propagate."
+    )
+    with patch.object(DrpIndexBuilder, "build", wraps=DrpIndexBuilder.build) as spy2:
+        await service.attach_code_intelligence(
+            living_third.contract_id,
+            target_names=[],
+            workspace_root=str(tmp_path),
+            resolver_strategy="drp",
+        )
+    assert spy2.call_count == 1  # rebuilt, not stale-reused

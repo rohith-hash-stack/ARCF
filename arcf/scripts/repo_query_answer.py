@@ -74,21 +74,17 @@ Usage:
         [--resolver classic|drp|both] [--skip-direct]
 
 `--query` is repeatable (`--query "Q1" --query "Q2" ...`) to run several
-queries against the same already-cloned repo in one process. This isn't
-just convenience: `_resolve_and_answer` builds a `CodeIntelligenceEngine`/
-`CodeIntelligenceIndex` per call, and both `resolver_strategy` values
-independently re-parse the whole repo (service.py's `_resolve` and
-`_resolve_drp` each call `build_index`) — against an immutable clone,
-every one of those parses after the first is redundant work, not a
-different answer. `main()` now builds one `service`/`index_cache` for
-the whole process and passes the SAME `index_cache` dict into every
-`attach_code_intelligence` call (both resolver strategies, every query),
-so only the first resolution against a given root actually parses;
-everything after reuses it via the opt-in `index_cache` parameter
-(defaulted to `None` everywhere else — see its docstring on
-`CodeIntelligenceContractService.attach_code_intelligence`). Per-query
-output files and their JSON shape are unchanged — one file per query,
-same keys — so this doesn't affect anything already reading
+queries against the same already-cloned repo in one process — useful for
+sharing one `service` instance across all of a repo's queries.
+`CodeIntelligenceContractService` (2026-08-11) now caches its own built
+`CodeIntelligenceIndex`/`DrpIndex` automatically, for its own lifetime,
+keyed by resolved workspace root and safe against files changing between
+calls (see the service's own docstring) — so as long as this script's
+`service` object is reused across queries/strategies (it is: built once
+in `main()`), redundant re-parsing is already avoided with no explicit
+cache plumbing needed on this script's end anymore. Per-query output
+files and their JSON shape are unchanged — one file per query, same
+keys — so this doesn't affect anything already reading
 `docs/repo_query_answers/*.json`.
 """
 
@@ -319,7 +315,6 @@ async def _resolve_and_answer(
     resolver_strategy: str,
     service: CodeIntelligenceContractService,
     contract_store: InMemoryContractStore,
-    index_cache: dict,
 ) -> dict:
     living = LivingContract(contract=Contract(intent=intent))
     contract_store.save(living)
@@ -340,7 +335,6 @@ async def _resolve_and_answer(
         target_names=entities,
         workspace_root=str(root),
         resolver_strategy=resolver_strategy,
-        index_cache=index_cache,
         **classic_flags,
     )
     resolve_elapsed = asyncio.get_event_loop().time() - start
@@ -396,7 +390,6 @@ async def _run_one_query(
     client: LiteLLMClient,
     service: CodeIntelligenceContractService,
     contract_store: InMemoryContractStore,
-    index_cache: dict,
 ) -> None:
     extractor = IntentExtractor(client, model=GENERATION_MODEL)
     raw, _ = await extractor.extract(query)
@@ -426,7 +419,7 @@ async def _run_one_query(
     for strategy in strategies:
         try:
             results[strategy] = await _resolve_and_answer(
-                root, query, entities, intent, client, strategy, service, contract_store, index_cache
+                root, query, entities, intent, client, strategy, service, contract_store
             )
         except Exception as exc:  # noqa: BLE001 - recorded, not swallowed silently
             results[strategy] = {
@@ -495,18 +488,17 @@ async def main() -> None:
     client = LiteLLMClient(max_retries=3, base_delay_seconds=0.5)
 
     # Built ONCE for the whole process (all queries, both resolver
-    # strategies) — `index_cache` is the opt-in cache `_resolve`/
-    # `_resolve_drp` (service.py) key by resolved workspace root, so the
-    # first resolution against this (immutable, already-cloned) root
-    # parses it and every later call this process makes reuses that
-    # parse. See this module's docstring for why that redundant work
-    # existed before this change.
+    # strategies) — service.py's CodeIntelligenceContractService now
+    # caches its own built index/DrpIndex automatically for its own
+    # lifetime, keyed by resolved workspace root, so reusing this one
+    # `service` object across every query/strategy is what makes only
+    # the first resolution against this (immutable, already-cloned) root
+    # actually parse. See this module's docstring for detail.
     engine = CodeIntelligenceEngine(_full_registry(), CostEstimator())
     contract_store = InMemoryContractStore()
     service = CodeIntelligenceContractService(
         engine, contract_store, InMemoryContextResolutionStore()
     )
-    index_cache: dict = {}
 
     for query in args.query:
         await _run_one_query(
@@ -519,7 +511,6 @@ async def main() -> None:
             client,
             service,
             contract_store,
-            index_cache,
         )
 
 
