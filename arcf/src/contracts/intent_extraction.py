@@ -31,7 +31,13 @@ by the request. Each entity MUST be either:
 "parse_config", "MAX_RETRIES"; or
   (b) a path-qualified hint written as a slash-separated path -- e.g. "agent/cache" or \
 "agent/cache/cache.go" -- when the request names or clearly implies a specific package, \
-directory, or file.
+directory, or file; or
+  (c) a dotted qualified reference EXACTLY as the request itself writes it -- e.g. \
+"Catalog.Register", "AuthService.login" -- whenever the request uses that dotted \
+Type.Member form. NEVER split a dotted reference the request gave you into two separate \
+entities ("Catalog.Register" must stay one entity, not become "Catalog" and "Register" \
+separately) -- the qualified form resolves far more precisely than either half alone, and \
+splitting it throws that precision away.
   Do NOT extract descriptive English noun phrases, plurals, or generic words as entities \
 (e.g. never "service check listeners", "the New function", "configuration struct", \
 "binding rule endpoint") -- if the request only describes something in prose without a \
