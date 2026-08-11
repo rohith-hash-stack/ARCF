@@ -27,16 +27,24 @@ is scoped there and not into `resolve()` itself (this module's whole
 discipline: extend the opt-in target-name lookup, never the shared
 edges CallGraph/InheritanceGraph depend on).
 
-(1) `path_hint`: when the caller has a directory/path signal for a
-name (ContextResolver splits it out of a path-qualified entity like
-"agent/cache" before calling this), candidates outside that path are
+(1) `path_hints`: when the caller has directory/path signals for a
+name (ContextResolver splits them out of path-qualified entities like
+"agent/cache" before calling this), candidates outside every hint are
 dropped from the returned population itself — a deliberate departure
 from `resolved`'s "always the full match set" contract above, but a
 narrower, more trustworthy signal than locality scoring: the caller
 told us the directory, we didn't have to guess it from already-resolved
-files. Falls back to the unfiltered set if the hint matches nothing (a
-hint that doesn't help shouldn't have the power to make an otherwise-
-resolvable name un-resolve).
+files. A candidate matching ANY hint in the set passes (union, not
+intersection) — deliberately permissive, since hints usually come from
+different entities in the same query describing different concepts,
+not multiple constraints on the same one. Falls back to the unfiltered
+set if no hint matches anything (a hint that doesn't help shouldn't
+have the power to make an otherwise-resolvable name un-resolve);
+`path_hint_matched` on the result records whether the hard filter
+actually took effect, so a caller doing query-wide masking (2026-08-11,
+Feature 1, Real-Time Payload Optimization) can fall back to a soft
+score penalty instead of treating a failed-to-help hint as if it never
+existed.
 
 (2) Identifier-permutation fallback: when `resolve()` finds nothing at
 all AND the raw name looks like prose (contains a space — a clean
@@ -133,6 +141,13 @@ class DisambiguationResult:
     (the overwhelmingly common case) or nothing resolved at all. Purely
     for auditability, matching this project's justification_chain-style
     "never a silent black box" discipline."""
+    path_hint_matched: bool = False
+    """True when `path_hints` was non-empty AND at least one candidate
+    satisfied it, i.e. the hard filter actually narrowed `resolved`.
+    False whenever no hints were given, or hints were given but matched
+    nothing (the unfiltered-fallback case) -- the caller needs to
+    distinguish these to know whether a soft penalty should apply to
+    off-hint candidates it kept."""
 
 
 class ReferenceResolver:
@@ -154,7 +169,7 @@ class ReferenceResolver:
         kinds: tuple[SymbolKind, ...] | None = None,
         context_files: frozenset[str] = frozenset(),
         import_graph: ImportGraph | None = None,
-        path_hint: str | None = None,
+        path_hints: frozenset[str] = frozenset(),
     ) -> DisambiguationResult:
         """Like `resolve()`, but when the name resolves to more than one
         candidate, deterministically narrows it using locality relative to
@@ -166,14 +181,14 @@ class ReferenceResolver:
         False; otherwise every tied candidate remains and `ambiguous` is
         True. Never invents a symbol that isn't a real name match — this
         only orders/narrows what `resolve()` already found (except
-        `path_hint`, a deliberate exception — see this module's own
+        `path_hints`, a deliberate exception — see this module's own
         docstring).
 
-        `path_hint`, when given, is applied FIRST: candidates outside it
-        are dropped from the population entirely, before either the
-        empty-result permutation fallback or locality scoring ever runs
-        (a caller-provided directory is stronger evidence than anything
-        this method could infer on its own)."""
+        `path_hints`, when given, is applied FIRST: candidates matching
+        none of the hints are dropped from the population entirely,
+        before either the empty-result permutation fallback or locality
+        scoring ever runs (caller-provided directories are stronger
+        evidence than anything this method could infer on its own)."""
         candidates = self.resolve(raw_name, kinds=kinds)
         permutation_matched: str | None = None
 
@@ -185,10 +200,15 @@ class ReferenceResolver:
                     permutation_matched = candidate_name
                     break
 
-        if path_hint is not None:
-            path_filtered = [c for c in candidates if c.file_path.startswith(path_hint)]
+        path_hint_matched = False
+        if path_hints:
+            path_filtered = [
+                c for c in candidates
+                if any(c.file_path.startswith(hint) for hint in path_hints)
+            ]
             if path_filtered:
                 candidates = path_filtered
+                path_hint_matched = True
 
         if len(candidates) <= 1:
             return DisambiguationResult(
@@ -196,6 +216,7 @@ class ReferenceResolver:
                 ambiguous=False,
                 preferred=candidates[0] if candidates else None,
                 permutation_matched=permutation_matched,
+                path_hint_matched=path_hint_matched,
             )
 
         scored = [
@@ -211,10 +232,12 @@ class ReferenceResolver:
                 ambiguous=False,
                 preferred=best_candidates[0],
                 permutation_matched=permutation_matched,
+                path_hint_matched=path_hint_matched,
             )
         return DisambiguationResult(
             resolved=candidates, ambiguous=True, preferred=None,
             permutation_matched=permutation_matched,
+            path_hint_matched=path_hint_matched,
         )
 
     @staticmethod

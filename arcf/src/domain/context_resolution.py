@@ -140,6 +140,20 @@ class FileReference(BaseModel):
     relevant from long-tail noise without invalidating what
     resolve_with_disambiguation itself already decided (both are correct
     Symbol matches; this only weights ranking, never drops a match)."""
+    path_mask_confidence: float | None = None
+    """Safe High-Efficiency Payload Optimization, Feature 1 (2026-08-11):
+    0.15 when this file's entry point failed to match ANY of the
+    query-wide path hints collected from every target name in the same
+    request (ReferenceResolver.resolve_with_disambiguation's
+    path_hint_matched=False), while at least one hint existed somewhere
+    in the query. Same opt-in-multiplier shape as ambiguity_confidence
+    above: `None` when no path hints exist in the query at all, or when
+    this file's own candidate DID match one (already the intended,
+    stronger signal there). This is the safety fallback for a
+    legitimate cross-package query (e.g. "how does agent/cache talk to
+    Catalog.Register?") where a hard path filter would otherwise have
+    zero candidates to fall back on for the off-path entity — soft
+    de-prioritizes instead of ever silently dropping a real match."""
 
 
 class SymbolReference(BaseModel):

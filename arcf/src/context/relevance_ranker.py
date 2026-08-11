@@ -69,6 +69,10 @@ class RankedFile:
     """Carried straight through from FileReference.ambiguity_confidence
     (Feature A) purely for traceability — already folded into
     relevance_score by `_score` below, same as anchor_confidence."""
+    path_mask_confidence: float | None = None
+    """Carried straight through from FileReference.path_mask_confidence
+    (Payload Optimization Feature 1) purely for traceability — already
+    folded into relevance_score by `_score` below."""
 
 
 class RelevanceRanker:
@@ -89,12 +93,14 @@ class RelevanceRanker:
                     profile,
                     file_ref.anchor_confidence,
                     file_ref.ambiguity_confidence,
+                    file_ref.path_mask_confidence,
                 ),
                 reason=file_ref.reason,
                 language=file_ref.language,
                 token_count=file_ref.token_count,
                 evidence_tier=file_ref.evidence_tier,
                 ambiguity_confidence=file_ref.ambiguity_confidence,
+                path_mask_confidence=file_ref.path_mask_confidence,
             )
             for file_ref in result.candidate_files
         ]
@@ -109,6 +115,7 @@ class RelevanceRanker:
         profile: dict[str, float] | None,
         anchor_confidence: float | None = None,
         ambiguity_confidence: float | None = None,
+        path_mask_confidence: float | None = None,
     ) -> float:
         weights = profile if profile is not None else _REASON_WEIGHTS
         verb = reason.split(" ", 1)[0]
@@ -132,4 +139,8 @@ class RelevanceRanker:
         # classified file that also happens to be one of N ambiguous
         # same-named matches gets both penalties, not just one.
         ambiguity_factor = ambiguity_confidence if ambiguity_confidence is not None else 1.0
-        return round(min(role_score * confidence_factor * ambiguity_factor, 1.0), 4)
+        # Feature 1 (2026-08-11, Safe High-Efficiency Payload
+        # Optimization): same independent-multiplier shape, stacks with
+        # the two factors above rather than replacing either.
+        path_mask_factor = path_mask_confidence if path_mask_confidence is not None else 1.0
+        return round(min(role_score * confidence_factor * ambiguity_factor * path_mask_factor, 1.0), 4)

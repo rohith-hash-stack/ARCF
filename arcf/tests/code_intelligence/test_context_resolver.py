@@ -395,6 +395,59 @@ def test_path_qualified_target_name_resolves_the_directory_collision(tmp_path: P
     assert {f.file_path for f in result.candidate_files} == {"pkg_b/cache/store.py"}
 
 
+def test_query_wide_path_hint_applies_regardless_of_entity_order(tmp_path: Path) -> None:
+    # Feature 1 (query-wide spatial masking): real Consul regression --
+    # SLM-1 returned the same two entities in a DIFFERENT order between
+    # two identical, temperature=0.0 runs, which used to change the
+    # result because the old per-entity path_hint only ever filtered the
+    # entity that carried it. "helper" is ambiguous (both packages
+    # define it) and carries no path hint of its own; "pkg_b/cache" is
+    # the path-qualified entity. Both orderings must resolve "helper" to
+    # the SAME (pkg_b) file.
+    (tmp_path / "pkg_a" / "cache").mkdir(parents=True)
+    (tmp_path / "pkg_b" / "cache").mkdir(parents=True)
+    (tmp_path / "pkg_a" / "cache" / "store.py").write_text(
+        "class cache:\n    pass\n\ndef helper():\n    return 1\n"
+    )
+    (tmp_path / "pkg_b" / "cache" / "store.py").write_text(
+        "class cache:\n    pass\n\ndef helper():\n    return 2\n"
+    )
+    index = _build_index(tmp_path)
+
+    helper_first = ContextResolver(index).resolve(
+        "ws1", "contract1", str(tmp_path), ["helper", "pkg_b/cache"]
+    )
+    path_hint_first = ContextResolver(index).resolve(
+        "ws1", "contract1", str(tmp_path), ["pkg_b/cache", "helper"]
+    )
+
+    assert {f.file_path for f in helper_first.candidate_files} == {"pkg_b/cache/store.py"}
+    assert {f.file_path for f in path_hint_first.candidate_files} == {"pkg_b/cache/store.py"}
+    assert helper_first.ambiguous_targets == ()
+    assert path_hint_first.ambiguous_targets == ()
+
+
+def test_path_mask_soft_penalty_for_legitimate_cross_package_entity(tmp_path: Path) -> None:
+    # Feature 1 safety fallback: a genuinely unrelated entity in the same
+    # query as a path-qualified one must never be hard-dropped just
+    # because it doesn't live under that path -- it gets soft-
+    # deprioritized (path_mask_confidence) instead, staying a real
+    # candidate.
+    (tmp_path / "pkg_a" / "cache").mkdir(parents=True)
+    (tmp_path / "pkg_a" / "cache" / "store.py").write_text("class cache:\n    pass\n")
+    (tmp_path / "unrelated.py").write_text("def Register():\n    pass\n")
+    index = _build_index(tmp_path)
+
+    result = ContextResolver(index).resolve(
+        "ws1", "contract1", str(tmp_path), ["Register", "pkg_a/cache"]
+    )
+
+    register_ref = next(f for f in result.candidate_files if f.file_path == "unrelated.py")
+    assert register_ref.path_mask_confidence == 0.15
+    cache_ref = next(f for f in result.candidate_files if f.file_path == "pkg_a/cache/store.py")
+    assert cache_ref.path_mask_confidence is None
+
+
 def test_wildly_ambiguous_target_name_skips_expansion_but_keeps_all_files(
     tmp_path: Path,
 ) -> None:
