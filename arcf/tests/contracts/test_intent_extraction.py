@@ -106,3 +106,23 @@ async def test_requests_json_object_response_format(monkeypatch: pytest.MonkeyPa
     await extractor.extract("fix the login bug")
 
     assert captured["response_format"] == {"type": "json_object"}
+
+
+async def test_requests_deterministic_temperature(monkeypatch: pytest.MonkeyPatch) -> None:
+    """arcf-slm1-entity-extraction (2026-08-11,
+    scripts/slm1_determinism_experiment.py): SLM-1's entities were
+    confirmed non-deterministic at the provider's default temperature —
+    the SAME query's entities varied run to run. Structured extraction,
+    not creative generation, so temperature=0.0 must reach every call,
+    not just the first attempt."""
+    captured: dict[str, object] = {}
+
+    async def fake_acompletion(**kwargs: object) -> SimpleNamespace:
+        captured.update(kwargs)
+        return _fake_response(json.dumps(_VALID_PAYLOAD))
+
+    monkeypatch.setattr(litellm, "acompletion", fake_acompletion)
+    extractor = _extractor()
+    await extractor.extract("fix the login bug")
+
+    assert captured["temperature"] == 0.0

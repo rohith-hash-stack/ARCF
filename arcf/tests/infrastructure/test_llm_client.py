@@ -82,3 +82,40 @@ async def test_non_retryable_error_fails_immediately(monkeypatch: pytest.MonkeyP
     with pytest.raises(LLMInvocationError):
         await client.complete("hi", "gpt-4o-mini")
     assert calls["count"] == 1
+
+
+async def test_temperature_unset_by_default_not_forwarded(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Every existing caller omits `temperature` — must keep getting the
+    provider's own default (no `temperature` kwarg at all), not a
+    silently-injected 0.0 or 1.0."""
+    seen_kwargs: dict[str, object] = {}
+
+    async def fake_acompletion(**kwargs: object) -> SimpleNamespace:
+        seen_kwargs.update(kwargs)
+        return _fake_response("hello", 10, 5)
+
+    monkeypatch.setattr(litellm, "acompletion", fake_acompletion)
+    client = LiteLLMClient(max_retries=1, base_delay_seconds=0.01, sleep=_no_sleep)
+    await client.complete("hi", "gpt-4o-mini")
+
+    assert "temperature" not in seen_kwargs
+
+
+async def test_temperature_forwarded_when_given(monkeypatch: pytest.MonkeyPatch) -> None:
+    """arcf-slm1-entity-extraction (2026-08-11): a caller that DOES pass
+    `temperature` (e.g. IntentExtractor, temperature=0.0 for
+    deterministic structured extraction — see
+    scripts/slm1_determinism_experiment.py) must have it actually reach
+    `litellm.acompletion`, including the falsy 0.0 case (a naive
+    `if temperature:` guard would silently drop it)."""
+    seen_kwargs: dict[str, object] = {}
+
+    async def fake_acompletion(**kwargs: object) -> SimpleNamespace:
+        seen_kwargs.update(kwargs)
+        return _fake_response("hello", 10, 5)
+
+    monkeypatch.setattr(litellm, "acompletion", fake_acompletion)
+    client = LiteLLMClient(max_retries=1, base_delay_seconds=0.01, sleep=_no_sleep)
+    await client.complete("hi", "gpt-4o-mini", temperature=0.0)
+
+    assert seen_kwargs["temperature"] == 0.0
