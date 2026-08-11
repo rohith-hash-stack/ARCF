@@ -121,6 +121,25 @@ class FileReference(BaseModel):
     opt into the experiment leaves this unset, and RelevanceRanker
     treats `None` as a neutral 1.0 multiplier, so existing behavior is
     byte-identical when the flag is off."""
+    ambiguity_confidence: float | None = None
+    """Real-Time Token & Latency Optimization, Feature A (2026-08-11,
+    ContextResolver.resolve's target-name loop): 1 / log2(N + 1), where N
+    is the raw ReferenceResolver.resolve_with_disambiguation match count
+    for the target name this file's entry point was resolved from (N=1 ->
+    1.0, no penalty). Only ever set on the direct "defines {name}" entry-
+    point FileReference for that name — never on files reached via
+    subsequent call/inheritance hop expansion, which already carry their
+    own SUPPORTING-tier weight independent of this. Same opt-in-factor
+    shape as `anchor_confidence` above (independent axis, multiplied in
+    by RelevanceRanker, `None` is a neutral 1.0): a common name like Go's
+    `New` resolving to 156 same-named candidates repo-wide currently
+    gives every one of them the same undamped role_score as a single
+    unambiguous match, which is what let confidence=1.000 candidate sets
+    balloon to the whole repository (see arcf_callgraph_locality_fix
+    memory) — this both distinguishes what remains genuinely likely-
+    relevant from long-tail noise without invalidating what
+    resolve_with_disambiguation itself already decided (both are correct
+    Symbol matches; this only weights ranking, never drops a match)."""
 
 
 class SymbolReference(BaseModel):

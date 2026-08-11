@@ -388,3 +388,128 @@ def test_fastapi_style_scenario_keeps_small_primary_file_and_shrinks_large_suppo
     assert "def request_response" in by_path["routing.py"].content
     assert used < 49_000 + 20, "total tokens used must be far below the two files' full size"
     assert excluded == 0
+
+
+def test_falloff_gate_excludes_candidate_below_gamma_of_top_score(tmp_path: Path) -> None:
+    (tmp_path / "a.py").write_text("def foo():\n    pass\n")
+    (tmp_path / "b.py").write_text("def bar():\n    pass\n")
+    manager = _manager(tmp_path)
+    # 0.4 < 0.45 * 1.0, so b.py should be pruned even though plenty of
+    # budget remains.
+    ranked = [_ranked("a.py", token_count=10, score=1.0), _ranked("b.py", token_count=10, score=0.4)]
+
+    packaged, used, excluded = manager.select(ranked, _empty_result(), max_tokens=10_000)
+
+    assert {p.file_path for p in packaged} == {"a.py"}
+    assert excluded == 1
+
+
+def test_falloff_gate_keeps_candidate_at_or_above_gamma_of_top_score(tmp_path: Path) -> None:
+    (tmp_path / "a.py").write_text("def foo():\n    pass\n")
+    (tmp_path / "b.py").write_text("def bar():\n    pass\n")
+    manager = _manager(tmp_path)
+    # 0.45 == 0.45 * 1.0 exactly -- the gate is >=, not >, so this stays.
+    ranked = [_ranked("a.py", token_count=10, score=1.0), _ranked("b.py", token_count=10, score=0.45)]
+
+    packaged, used, excluded = manager.select(ranked, _empty_result(), max_tokens=10_000)
+
+    assert {p.file_path for p in packaged} == {"a.py", "b.py"}
+
+
+def test_falloff_gate_halts_rather_than_skips_once_triggered(tmp_path: Path) -> None:
+    # A pathological case where a LATER candidate would individually still
+    # clear the threshold on its own score, but the gate halts at the
+    # first failure rather than resuming -- ranked_files being sorted
+    # descending means this shouldn't occur from real RelevanceRanker
+    # output, but the halt behavior itself (not a per-item skip) is the
+    # documented contract and must hold regardless of input order.
+    (tmp_path / "a.py").write_text("def foo():\n    pass\n")
+    (tmp_path / "b.py").write_text("def mid():\n    pass\n")
+    (tmp_path / "c.py").write_text("def bar():\n    pass\n")
+    manager = _manager(tmp_path)
+    ranked = [
+        _ranked("a.py", token_count=10, score=1.0),
+        _ranked("b.py", token_count=10, score=0.1),
+        _ranked("c.py", token_count=10, score=0.9),
+    ]
+
+    packaged, used, excluded = manager.select(ranked, _empty_result(), max_tokens=10_000)
+
+    assert {p.file_path for p in packaged} == {"a.py"}
+    assert excluded == 2
+
+
+def test_supporting_evidence_compression_uses_ast_scope_not_plain_margin(
+    tmp_path: Path,
+) -> None:
+    # Feature C wiring: SUPPORTING ("secondary") candidates route through
+    # extract_with_ast_scope, not the plain extract() -- proven here by
+    # two things plain extract() (margin_lines=2 default) could never
+    # produce: the leading import header riding along, and a margin wide
+    # enough to be 5 (not 2) lines around the symbol.
+    lines = ["import os", "from pkg import thing", ""]
+    lines += [f"line {i}" for i in range(4, 300)]
+    (tmp_path / "routing.py").write_text("\n".join(lines) + "\n")
+    manager = _manager(tmp_path)
+    symbol = SymbolReference(
+        symbol_id="routing.py::handler",
+        name="handler",
+        qualified_name="handler",
+        kind=SymbolKind.FUNCTION,
+        file_path="routing.py",
+        start_line=200,
+        end_line=200,
+    )
+    ranked = [_ranked("routing.py", token_count=15_000, evidence_tier=EvidenceTier.SUPPORTING)]
+    result = _empty_result(entry_points=[symbol])
+
+    packaged, used, excluded = manager.select(ranked, result, max_tokens=100_000)
+
+    assert len(packaged) == 1
+    content = packaged[0].content
+    assert "import os" in content
+    assert "from pkg import thing" in content
+    assert "line 195" in content  # 200 - 5, the AST-scope margin
+    assert "line 198" in content  # would already be inside a plain-margin-2 range too
+    assert excluded == 0
+
+
+def test_primary_evidence_compression_still_uses_plain_extract(tmp_path: Path) -> None:
+    # The doesn't-fit-in-full PRIMARY path is deliberately untouched by
+    # Feature C -- same file/symbol shape as the SUPPORTING case above,
+    # but PRIMARY, and forced to compress by a tight budget rather than
+    # the evidence-tier trigger. No header should ride along, since plain
+    # extract() only ever takes a margin around the symbol itself.
+    lines = ["import os", "from pkg import thing", ""]
+    lines += [f"line {i}" for i in range(4, 300)]
+    (tmp_path / "routing.py").write_text("\n".join(lines) + "\n")
+    manager = _manager(tmp_path)
+    symbol = SymbolReference(
+        symbol_id="routing.py::handler",
+        name="handler",
+        qualified_name="handler",
+        kind=SymbolKind.FUNCTION,
+        file_path="routing.py",
+        start_line=200,
+        end_line=200,
+    )
+    ranked = [_ranked("routing.py", token_count=100_000, evidence_tier=EvidenceTier.PRIMARY)]
+    result = _empty_result(entry_points=[symbol])
+
+    packaged, used, excluded = manager.select(ranked, result, max_tokens=200)
+
+    assert len(packaged) == 1
+    content = packaged[0].content
+    assert "import os" not in content
+    assert "line 200" in content
+
+
+def test_falloff_gate_is_a_noop_for_a_single_candidate(tmp_path: Path) -> None:
+    (tmp_path / "a.py").write_text("def foo():\n    pass\n")
+    manager = _manager(tmp_path)
+    ranked = [_ranked("a.py", token_count=10, score=0.05)]
+
+    packaged, used, excluded = manager.select(ranked, _empty_result(), max_tokens=10_000)
+
+    assert {p.file_path for p in packaged} == {"a.py"}
+    assert excluded == 0

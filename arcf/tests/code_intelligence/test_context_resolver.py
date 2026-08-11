@@ -1,3 +1,4 @@
+import math
 from pathlib import Path
 
 from code_intelligence.context_resolver import ContextResolver
@@ -390,6 +391,44 @@ def test_wildly_ambiguous_target_name_skips_expansion_but_keeps_all_files(
     assert "caller.py" not in file_paths
     assert all(f.reason == "defines helper" for f in result.candidate_files)
     assert result.ambiguous_targets == ("helper",)
+
+
+def test_unambiguous_entry_point_gets_no_ambiguity_penalty(tmp_path: Path) -> None:
+    (tmp_path / "auth.py").write_text("def authenticate(user):\n    return True\n")
+    index = _build_index(tmp_path)
+    result = ContextResolver(index).resolve("ws1", "contract1", str(tmp_path), ["authenticate"])
+
+    auth_ref = next(f for f in result.candidate_files if f.file_path == "auth.py")
+    assert auth_ref.ambiguity_confidence == 1.0
+
+
+def test_ambiguous_entry_point_gets_log2_decay_matching_raw_match_count(
+    tmp_path: Path,
+) -> None:
+    for i in range(6):
+        (tmp_path / f"h{i}.py").write_text(f"def helper():\n    return {i}\n")
+    index = _build_index(tmp_path)
+    result = ContextResolver(index).resolve("ws1", "contract1", str(tmp_path), ["helper"])
+
+    expected = 1.0 / math.log2(6 + 1)
+    for f in result.candidate_files:
+        assert f.ambiguity_confidence == expected
+
+
+def test_ambiguity_penalty_never_applied_to_hop_expanded_files(tmp_path: Path) -> None:
+    # Only the direct "defines {name}" entry point gets a decay value —
+    # files reached via call-graph expansion keep ambiguity_confidence
+    # unset (None), same "opt-in, first-write-wins" contract as
+    # anchor_confidence.
+    (tmp_path / "auth.py").write_text("def authenticate(user):\n    return True\n")
+    (tmp_path / "login.py").write_text(
+        "from .auth import authenticate\n\ndef login(user):\n    return authenticate(user)\n"
+    )
+    index = _build_index(tmp_path)
+    result = ContextResolver(index).resolve("ws1", "contract1", str(tmp_path), ["authenticate"])
+
+    login_ref = next(f for f in result.candidate_files if f.file_path == "login.py")
+    assert login_ref.ambiguity_confidence is None
 
 
 def test_selected_method_pulls_in_its_class_constructor(tmp_path: Path) -> None:
