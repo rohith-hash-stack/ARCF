@@ -35,6 +35,24 @@ generated text, not a retrieval-rank number. It therefore:
   outright) proves nothing about whether ARCF's retrieved context is
   actually doing any work. Mirrors direct_vs_arcf_conceptual_query.py's
   `_direct_llm`.
+- Also runs a "light" arm (2026-08-11, added after the user pushed back
+  on "direct" as a stand-in for a real coding assistant): "direct" with
+  zero context is the correct control for "does grounding help at all",
+  but it's NOT a fair proxy for a lightweight IDE assistant (VSCode
+  Copilot/Cursor-style), which does have SOME context — just not ARCF's
+  full retrieval pipeline. "light" fills the SAME `MAX_TOKENS_CONTEXT`
+  budget as classic/drp, but selects files via naive keyword-count
+  grepping (`_naive_keyword_rank`) instead of symbol graphs, TF-IDF, or
+  any of ARCF's resolution machinery — deliberately NOT reusing
+  `context/lexical_symbol_probe.py` or any other ARCF-smart component,
+  since the point is to isolate "does ARCF's retrieval SOPHISTICATION
+  add value over simple keyword search at the same token cost", not to
+  build a second real resolver. Feeds through the SAME
+  ContextGoalComposer/FinalGenerationRunner pipeline as classic/drp (only
+  file selection differs), so the three arms are apples-to-apples on
+  prompt structure and hold budget constant — the delta between "light"
+  and "classic"/"drp" isolates retrieval quality; the delta between
+  "direct" and "light" isolates whether having ANY context helps at all.
 - Uses ARCF's REAL production packaging/prompting classes
   (`context.packager.ContextPackager`, `execution.context_goal_composer.
   ContextGoalComposer`, `execution.final_generation.FinalGenerationRunner`)
@@ -79,9 +97,10 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import re
 import traceback
 from pathlib import Path
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from code_intelligence.engine import CodeIntelligenceEngine
 from code_intelligence.languages.cpp_analyzer import CppLanguageAnalyzer
@@ -101,6 +120,8 @@ from contracts.intent_extraction import IntentExtractor
 from contracts.repository_scope_classifier import RepositoryScopeClassifier
 from contracts.task_classifier import TaskClassifier
 from domain.contract import Contract
+from domain.context_package import ContextPackage, PackagedFile
+from domain.context_resolution import ContextResolutionResult, TokenEstimate
 from domain.enums import ArtifactKind
 from domain.intent import UserIntent
 from domain.versioning import LivingContract
@@ -110,9 +131,23 @@ from infrastructure.context_resolution_store import InMemoryContextResolutionSto
 from infrastructure.contract_store import InMemoryContractStore
 from infrastructure.cost import CostEstimator
 from infrastructure.llm_client import LiteLLMClient
+from shared.errors import WorkspacePathError
+from workspace.permissions import PermissionManager
+from workspace.scanner import RepositoryScanner
 
 GENERATION_MODEL = "gpt-4o-mini"
 MAX_TOKENS_CONTEXT = 8000
+
+_NAIVE_STOPWORDS = frozenset(
+    {
+        "the", "a", "an", "and", "or", "but", "for", "with", "without", "from", "that",
+        "this", "these", "those", "into", "onto", "not", "are", "was", "were", "been",
+        "has", "have", "had", "how", "why", "what", "when", "where", "does", "add",
+        "explain", "summarize", "debug", "trace", "investigate", "refactor", "path",
+    }
+)
+_NAIVE_WORD_RE = re.compile(r"[A-Za-z][A-Za-z0-9_]{2,}")
+_NAIVE_READ_ERRORS: tuple[type[Exception], ...] = (OSError, WorkspacePathError)
 MAX_TOKENS_ANSWER = 1200
 RESULTS_DIR = Path(__file__).resolve().parent.parent / "docs" / "repo_query_answers"
 
@@ -128,6 +163,131 @@ async def _direct_llm(client: LiteLLMClient, repo_name: str, query: str) -> dict
         "prompt_tokens": response.prompt_tokens,
         "completion_tokens": response.completion_tokens,
         "total_tokens": response.total_tokens,
+    }
+
+
+def _naive_keyword_rank(root: Path, query: str) -> list[tuple[str, int]]:
+    """Deliberately dumb: lowercase word-split the query (minus a small
+    fixed stopword list, no stemming/synonyms/symbol awareness), then
+    count case-insensitive substring hits per repository file. This is
+    what a keyword grep — not ARCF's symbol graphs/TF-IDF/anchor
+    classification — would give you. Returns (relative_path, hit_count)
+    for every file with at least one hit, ranked by hit count desc, ties
+    broken by path for determinism."""
+    keywords = sorted(
+        {
+            w.lower()
+            for w in _NAIVE_WORD_RE.findall(query)
+            if w.lower() not in _NAIVE_STOPWORDS
+        }
+    )
+    if not keywords:
+        return []
+
+    scan = RepositoryScanner().scan(root)
+    permissions = PermissionManager(root)
+    hits: list[tuple[str, int]] = []
+    for file in scan.files:
+        try:
+            text = permissions.safe_read_text(file.relative_path).lower()
+        except _NAIVE_READ_ERRORS:
+            continue
+        count = sum(text.count(kw) for kw in keywords)
+        if count > 0:
+            hits.append((file.relative_path, count))
+
+    hits.sort(key=lambda pair: (-pair[1], pair[0]))
+    return hits
+
+
+async def _naive_context_and_answer(
+    root: Path,
+    query: str,
+    intent: UserIntent,
+    client: LiteLLMClient,
+) -> dict:
+    """The "light" arm — see this module's docstring for why this exists
+    alongside "direct". Same token budget as classic/drp
+    (`MAX_TOKENS_CONTEXT`), same real ContextGoalComposer/
+    FinalGenerationRunner generation pipeline; only file SELECTION
+    differs (naive keyword count instead of ARCF's resolution)."""
+    start = asyncio.get_event_loop().time()
+    ranked = await asyncio.to_thread(_naive_keyword_rank, root, query)
+    permissions = PermissionManager(root)
+    token_estimator = CostEstimator()
+
+    packaged: list[PackagedFile] = []
+    used = 0
+    excluded = 0
+    for relative_path, hit_count in ranked:
+        try:
+            content = permissions.safe_read_text(relative_path)
+        except _NAIVE_READ_ERRORS:
+            continue
+        tokens = token_estimator.count_tokens(content, GENERATION_MODEL)
+        remaining = MAX_TOKENS_CONTEXT - used
+        if tokens > remaining:
+            excluded += 1
+            continue
+        packaged.append(
+            PackagedFile(
+                file_path=relative_path,
+                content=content,
+                relevance_score=min(1.0, hit_count / 10),
+                reason=f"light: keyword match ({hit_count} hits)",
+                token_count=tokens,
+                truncated=False,
+            )
+        )
+        used += tokens
+    resolve_elapsed = asyncio.get_event_loop().time() - start
+
+    resolution = ContextResolutionResult(
+        workspace_id="light-baseline",
+        contract_id="light-baseline",
+        repository_root=str(root),
+        language="unknown",
+        confidence=0.0,
+        token_estimate=TokenEstimate(
+            raw_context_tokens=used, selected_context_tokens=used, compression_ratio=1.0
+        ),
+        resolution_reason=f"light: naive keyword-grep baseline, {len(ranked)} file(s) matched",
+    )
+    package = ContextPackage(
+        contract_id="light-baseline",
+        workspace_id="light-baseline",
+        context_resolution_id=resolution.id,
+        relevant_files=packaged,
+        budget_max_tokens=MAX_TOKENS_CONTEXT,
+        budget_used_tokens=used,
+        prompt_compression_ratio=1.0,
+        excluded_file_count=excluded,
+    )
+    contract = Contract(id=uuid4(), intent=intent)
+
+    runner = FinalGenerationRunner(
+        ContextGoalComposer(), client, GENERATION_MODEL, max_tokens=MAX_TOKENS_ANSWER
+    )
+    gen_start = asyncio.get_event_loop().time()
+    artifact, completion = await runner.generate(
+        contract, package, resolution, kind=ArtifactKind.EXPLANATION
+    )
+    gen_elapsed = asyncio.get_event_loop().time() - gen_start
+
+    return {
+        "resolver_strategy": "light",
+        "answer": artifact.content,
+        "prompt_tokens": completion.prompt_tokens,
+        "completion_tokens": completion.completion_tokens,
+        "total_tokens": completion.total_tokens,
+        "candidate_count": len(ranked),
+        "packaged_file_count": len(packaged),
+        "packaged_tokens": used,
+        "excluded_count": excluded,
+        "packaged_files": [f.file_path for f in packaged],
+        "resolve_latency_seconds": round(resolve_elapsed, 3),
+        "generation_latency_seconds": round(gen_elapsed, 3),
+        "resolution_reason": resolution.resolution_reason,
     }
 
 
@@ -232,6 +392,7 @@ async def _run_one_query(
     query: str,
     resolver: str,
     skip_direct: bool,
+    skip_light: bool,
     client: LiteLLMClient,
     service: CodeIntelligenceContractService,
     contract_store: InMemoryContractStore,
@@ -257,6 +418,11 @@ async def _run_one_query(
             results["direct"] = await _direct_llm(client, repo_name, query)
         except Exception as exc:  # noqa: BLE001 - recorded, not swallowed silently
             results["direct"] = {"error": f"{type(exc).__name__}: {exc}", "traceback": traceback.format_exc()}
+    if not skip_light:
+        try:
+            results["light"] = await _naive_context_and_answer(root, query, intent, client)
+        except Exception as exc:  # noqa: BLE001 - recorded, not swallowed silently
+            results["light"] = {"error": f"{type(exc).__name__}: {exc}", "traceback": traceback.format_exc()}
     for strategy in strategies:
         try:
             results[strategy] = await _resolve_and_answer(
@@ -317,6 +483,12 @@ async def main() -> None:
     )
     parser.add_argument("--resolver", choices=["classic", "drp", "both"], default="both")
     parser.add_argument("--skip-direct", action="store_true")
+    parser.add_argument(
+        "--skip-light",
+        action="store_true",
+        help="Skip the naive-keyword-grep baseline (same token budget as classic/drp, "
+        "no ARCF retrieval) added to stand in for a lightweight IDE assistant.",
+    )
     args = parser.parse_args()
     root = Path(args.repo_path)
 
@@ -343,6 +515,7 @@ async def main() -> None:
             query,
             args.resolver,
             args.skip_direct,
+            args.skip_light,
             client,
             service,
             contract_store,
