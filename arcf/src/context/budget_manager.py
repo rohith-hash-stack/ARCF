@@ -25,6 +25,32 @@ above unchanged — this is strictly an additional, earlier trigger for
 compression, not a replacement of the existing one, and reuses the same
 SymbolRangeCompressor either way.
 
+Boilerplate evidence-category head-truncation (2026-08-11, ARCF
+sweep cost investigation — see docs/repo_query_answers/SWEEP_REPORT.md
+and scripts/context_budget_filler_diagnosis.py, the falsification
+experiment this is based on): a SUPPORTING evidence file with NO known
+symbol location (so the trigger above can't compress it — there's no
+range to extract) still gets the plain full-if-it-fits treatment today,
+even when its evidence category is machine-generated boilerplate that
+was never going to explain the codebase's actual behavior regardless of
+size — a 6,393-token `.github/workflows/build.yml` spends the SAME
+budget as real source whether or not it fits. Measured against the real
+12-query sweep: 3 of 12 packaged results were 96-100% boilerplate filler
+by token count (all real content excluded for lack of remaining budget)
+purely because a CI config or dependency-manifest file happened to be
+large. Fix is deliberately narrow: only categories whose patterns are
+config/build/CI filenames (never long-form prose — see
+`_BOILERPLATE_EVIDENCE_CATEGORIES`'s own comment for the exact list and
+why) are head-truncated to `_BOILERPLATE_FILLER_MAX_TOKENS`; "project
+structure" (README*) and "test directories" are deliberately excluded
+from this list — the same diagnosis found a real case (gvisor: "Explain
+how gVisor separates application syscalls from the host kernel") where
+README content was the actual basis for a correct, well-grounded
+answer, so blanket-truncating every no-symbol SUPPORTING file would
+have risked cutting genuinely load-bearing content to chase a token
+number. This is a targeted trim of never-prose boilerplate, not a
+general "shrink all filler" policy.
+
 Resolution and packaging can happen as two separate API calls, so a
 file present at resolution time may be gone (or unreadable) by the time
 packaging runs — that's a real race, not a hypothetical, and is treated
@@ -44,6 +70,25 @@ from workspace.permissions import PermissionManager
 
 _TOKEN_ESTIMATE_MODEL = "gpt-4o-mini"
 _READ_ERRORS: tuple[type[Exception], ...] = (OSError, WorkspacePathError)
+
+# Evidence categories (contracts/evidence_contract.py) whose patterns are
+# ALL specific config/build/CI filenames (package.json, pyproject.toml,
+# Makefile, Dockerfile, .github/workflows/*, pytest.ini, ...) — never
+# long-form prose a full-file read could plausibly need. Deliberately
+# excludes "project structure" (README*, src/**) and "test directories"
+# (tests/**, ...), which can and do carry genuine explanatory content or
+# real source — see this module's docstring for the real case that
+# motivated keeping those two out.
+_BOILERPLATE_EVIDENCE_CATEGORIES = frozenset(
+    {
+        "dependency manifest",
+        "project metadata",
+        "build/workspace configuration",
+        "CI/workflow files",
+        "test framework/configuration",
+    }
+)
+_BOILERPLATE_FILLER_MAX_TOKENS = 150
 
 
 class ContextBudgetManager:
@@ -98,6 +143,26 @@ class ContextBudgetManager:
                     excluded += 1
                 continue
 
+            # No symbol location to compress around (the trigger above
+            # doesn't apply), but a boilerplate evidence category never
+            # needed the full file in the first place — see this
+            # module's docstring. Truncated regardless of remaining
+            # budget, same "compress before checking full-fit"
+            # discipline as the symbol-anchored trigger above.
+            if (
+                ranked.evidence_tier in compress_first_tiers
+                and not symbols_in_file
+                and ranked.reason.removeprefix("evidence: ") in _BOILERPLATE_EVIDENCE_CATEGORIES
+                and ranked.token_count > _BOILERPLATE_FILLER_MAX_TOKENS
+            ):
+                truncated = self._truncate_boilerplate(ranked, remaining)
+                if truncated is not None:
+                    packaged.append(truncated)
+                    used += truncated.token_count
+                else:
+                    excluded += 1
+                continue
+
             if ranked.token_count <= remaining:
                 try:
                     content = self._permissions.safe_read_text(ranked.file_path)
@@ -142,6 +207,41 @@ class ContextBudgetManager:
 
         excerpt_tokens = self._token_estimator.count_tokens(excerpt, _TOKEN_ESTIMATE_MODEL)
         if excerpt_tokens > remaining:
+            return None
+
+        return PackagedFile(
+            file_path=ranked.file_path,
+            content=excerpt,
+            relevance_score=ranked.relevance_score,
+            reason=ranked.reason,
+            token_count=excerpt_tokens,
+            truncated=True,
+        )
+
+    def _truncate_boilerplate(self, ranked: RankedFile, remaining: int) -> PackagedFile | None:
+        """A no-symbol boilerplate evidence file (see
+        `_BOILERPLATE_EVIDENCE_CATEGORIES`) head-truncated to
+        `_BOILERPLATE_FILLER_MAX_TOKENS` — there's no symbol range to
+        extract, so unlike `_compress` this just keeps the file's start
+        (its filename plus the first fragment already signals "this is a
+        CI/build/dependency file", which is all this category ever
+        contributed). `None` (excluded) only if even the truncated cap
+        doesn't fit what's left of the budget or the file can't be read."""
+        cap = min(_BOILERPLATE_FILLER_MAX_TOKENS, remaining)
+        if cap <= 0:
+            return None
+        try:
+            content = self._permissions.safe_read_text(ranked.file_path)
+        except _READ_ERRORS:
+            return None
+
+        chars_per_token = len(content) / ranked.token_count if ranked.token_count else 4.0
+        excerpt = content[: int(cap * chars_per_token)]
+        excerpt_tokens = self._token_estimator.count_tokens(excerpt, _TOKEN_ESTIMATE_MODEL)
+        while excerpt_tokens > cap and excerpt:
+            excerpt = excerpt[: max(1, int(len(excerpt) * 0.9))]
+            excerpt_tokens = self._token_estimator.count_tokens(excerpt, _TOKEN_ESTIMATE_MODEL)
+        if not excerpt:
             return None
 
         return PackagedFile(

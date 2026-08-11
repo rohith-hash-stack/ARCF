@@ -266,6 +266,78 @@ def test_supporting_evidence_with_no_symbol_location_falls_back_to_full_file(
     assert excluded == 0
 
 
+def _boilerplate_ranked(file_path: str, token_count: int, category: str) -> RankedFile:
+    return RankedFile(
+        file_path=file_path,
+        relevance_score=0.5,
+        reason=f"evidence: {category}",
+        language="yaml",
+        token_count=token_count,
+        evidence_tier=EvidenceTier.SUPPORTING,
+    )
+
+
+def test_boilerplate_evidence_category_is_head_truncated_not_kept_full(tmp_path: Path) -> None:
+    """arcf-repo-sweep-50 cost investigation (scripts/
+    context_budget_filler_diagnosis.py): a large CI-workflow file has no
+    symbol location, so the symbol-anchored compression trigger can't
+    touch it — before this fix it fell all the way through to
+    full-if-fits, which is how 3 of 12 real sweep queries ended up
+    96-100% boilerplate by packaged token count. 'CI/workflow files' is
+    in `_BOILERPLATE_EVIDENCE_CATEGORIES`, so it must now be truncated
+    to the small cap regardless of how much budget remains."""
+    (tmp_path / "build.yml").write_text("name: CI\n" + ("  - run: echo noop\n" * 2000))
+    manager = _manager(tmp_path)
+    ranked = [_boilerplate_ranked("build.yml", token_count=6393, category="CI/workflow files")]
+
+    packaged, used, excluded = manager.select(ranked, _empty_result(), max_tokens=100_000)
+
+    assert len(packaged) == 1
+    assert packaged[0].truncated is True
+    assert used < 200, "boilerplate should be capped near _BOILERPLATE_FILLER_MAX_TOKENS, not kept full"
+    assert excluded == 0
+
+
+def test_readme_category_is_explicitly_exempt_from_boilerplate_truncation(tmp_path: Path) -> None:
+    """The same diagnosis (see this file's other boilerplate test) found
+    a real case — gvisor, 'Explain how gVisor separates application
+    syscalls from the host kernel' — where 'project structure' (README)
+    content was the actual grounding for a correct answer. Truncating
+    every no-symbol SUPPORTING file indiscriminately would have risked
+    that case, so 'project structure' must stay OUT of
+    `_BOILERPLATE_EVIDENCE_CATEGORIES` and keep the plain
+    full-if-it-fits behavior, same as before this fix existed."""
+    (tmp_path / "README.md").write_text("# Architecture\n" + ("Real explanatory prose. " * 400))
+    manager = _manager(tmp_path)
+    ranked = [_boilerplate_ranked("README.md", token_count=2000, category="project structure")]
+
+    packaged, used, excluded = manager.select(ranked, _empty_result(), max_tokens=100_000)
+
+    assert len(packaged) == 1
+    assert packaged[0].truncated is False
+    assert used == 2000
+    assert excluded == 0
+
+
+def test_boilerplate_truncation_frees_budget_for_other_files(tmp_path: Path) -> None:
+    """Functional proof the recovered budget actually gets used: without
+    truncation a single large CI file would exhaust a small budget and
+    exclude everything ranked after it; with truncation, a real file
+    ranked second now fits too."""
+    (tmp_path / "build.yml").write_text("name: CI\n" + ("  - run: echo noop\n" * 2000))
+    (tmp_path / "real.py").write_text("def handles_auth():\n    return True\n")
+    manager = _manager(tmp_path)
+    ranked = [
+        _boilerplate_ranked("build.yml", token_count=6393, category="CI/workflow files"),
+        _ranked("real.py", token_count=200, score=0.8),
+    ]
+
+    packaged, used, excluded = manager.select(ranked, _empty_result(), max_tokens=6500)
+
+    assert {p.file_path for p in packaged} == {"build.yml", "real.py"}
+    assert excluded == 0
+
+
 def test_fastapi_style_scenario_keeps_small_primary_file_and_shrinks_large_supporting_one(
     tmp_path: Path,
 ) -> None:
