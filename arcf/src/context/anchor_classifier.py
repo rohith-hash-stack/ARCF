@@ -33,9 +33,19 @@ brief excludes; tier numbering matches the brief's, not sequential):
     like "request" or "service" can be a real identifier in dozens of
     unrelated files) — see `_is_precise_match`'s own docstring.
   Tier 3 (LEXICAL, confidence 0.5) — reuses lexical_symbol_probe.
-    probe_symbol_names() exactly as-is (prefix/substring/camelCase/
-    snake_case overlap), just tagged with a fixed confidence instead of
-    being merged in as undifferentiated SUPPORTING evidence.
+    probe_symbol_names_ranked() (prefix/substring/camelCase/snake_case
+    overlap, same eligibility/ambiguity rules as the unranked
+    probe_symbol_names), just tagged with a fixed confidence instead of
+    being merged in as undifferentiated SUPPORTING evidence. Uses the
+    RANKED selection rule, not scan order (2026-08-10 fix — a real
+    FlatBuffers run found Tier 3's original probe_symbol_names call
+    dropped a query-relevant class in favor of unrelated same-rooted
+    names purely because of incidental symbol-scan order, the exact
+    failure mode probe_symbol_names_ranked was already built and
+    validated to fix elsewhere in this codebase, on a real SQLAlchemy
+    regression, but had never been wired into Tier 3 itself — only into
+    a separate, off-by-default ranked-seed-selection experiment that
+    `enable_anchor_classification` (this module) bypasses entirely).
   Tier 4 (INCIDENTAL, confidence 0.35 — recalibrated, see TIER_CONFIDENCE's
     own comment) — filename/path matches only
     (lexical_symbol_probe.probe_file_paths). The brief also lists
@@ -58,7 +68,7 @@ from dataclasses import dataclass
 from enum import IntEnum
 
 from code_intelligence.symbol_index import SymbolIndex
-from context.lexical_symbol_probe import probe_file_paths, probe_symbol_names
+from context.lexical_symbol_probe import probe_file_paths, probe_symbol_names_ranked
 from workspace.scanner import ScannedFile
 
 
@@ -277,7 +287,7 @@ def classify_symbol_anchors(raw_request: str, symbol_index: SymbolIndex) -> list
 
     tier3 = [
         SymbolAnchor(name, AnchorTier.LEXICAL, TIER_CONFIDENCE[AnchorTier.LEXICAL])
-        for name in probe_symbol_names(raw_request, symbol_index)
+        for name in probe_symbol_names_ranked(raw_request, symbol_index)
         if name not in seen
     ]
     return [*tier1, *tier3]

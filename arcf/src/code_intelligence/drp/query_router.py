@@ -101,9 +101,15 @@ class DrpRouting:
     subsystem_path — index 0 is the winner."""
     winning_subsystem: str = ""
     winning_confidence: float = 0.0
-    """combined_score of the winner, normalized by the sum of every
-    subsystem's combined_score (0.0 when every subsystem scored zero —
-    an honestly "found nothing" result, not a fabricated confidence)."""
+    """How decisively the winner beat the RUNNER-UP (see
+    `_margin_confidence`'s own docstring for why this replaced an
+    earlier total-score-share formula) — 0.0 when every subsystem
+    scored zero (an honestly "found nothing" result, not a fabricated
+    confidence), 1.0 when there was no competing subsystem at all,
+    otherwise the normalized gap between the top two scores. This is
+    the SAME quantity `_NEAR_TIE_MARGIN` below already gates on — a
+    low `winning_confidence` and a non-empty `near_tied_subsystems`
+    are two views of one fact, not two separate signals."""
     top_community_id: str | None = None
     entry_files: list[str] = field(default_factory=list)
     expansion: dict[str, tuple[int, str]] = field(default_factory=dict)
@@ -122,6 +128,58 @@ class DrpRouting:
     `expansion`) — the goal is giving a close runner-up's best files a
     chance to appear as candidates at all, not a second full expansion
     pass."""
+
+
+def _margin_confidence(subsystem_scores: list[SubsystemScore]) -> float:
+    """Replaces an earlier formula (`winner.combined_score / sum(every
+    subsystem's combined_score)`) that reported the winner's SHARE OF
+    TOTAL SCORE MASS across the whole taxonomy — a number that scales
+    with how many subsystems the repository happens to have, not with
+    how decisively the winner beat its closest competitor. A large
+    repository with hundreds of subsystem nodes divided a landslide win
+    across so many denominators that the reported "confidence" stayed
+    near zero regardless of whether the pick was excellent or wrong;
+    verified against a real 2026-08-10 repo sweep, where DRP's best and
+    worst answers on the same repository were numerically
+    indistinguishable by that metric (both ~0.00).
+
+    This instead measures the normalized gap between the top two
+    subsystems' own combined_score — decisiveness, not repository size.
+    Falsification-tested against the DRP Issue #3 experiment's 5
+    ground-truth benchmark repos (docs/drp_benchmark_data/*.json):
+    Django (the one unambiguous, correctly-resolved case) scored 0.125,
+    8x higher than every other repo including three confirmed-wrong
+    resolutions — the old formula ranked one of those wrong resolutions
+    (Traefik, 0.023) ABOVE Django (0.011), i.e. backwards. SQLAlchemy
+    (correct, but a genuinely close call between the ORM code and its
+    own paired test directory) scored low despite being right — that is
+    intended, not a miss: this metric reports the resolver's own
+    internal decisiveness, not a prediction of correctness, so an
+    honestly-ambiguous case scoring low even when it happens to land
+    right is the desired behavior, not a bug.
+
+    Does not attempt to detect "nothing in the repository matched the
+    query at all" as numerically distinct from "the top pick barely beat
+    the second one" — `combined_score` is itself built from scores
+    already normalized to the observed maximum (see `_normalize`), so
+    the winner's raw combined_score stays in a narrow high band
+    (~0.85-0.93 across every repo checked) regardless of whether the
+    underlying match is actually strong, only ever collapsing to exactly
+    zero when literally every subsystem scored zero. A genuine "weak
+    signal everywhere" case is not distinguishable from "one clear
+    signal" by this metric alone — that would need the pre-normalization
+    scores (SubsystemScore.tfidf_score et al.), not combined_score, and
+    is explicitly out of scope here; do not assume this metric covers it
+    without a separate, dedicated validation."""
+    if not subsystem_scores:
+        return 0.0
+    top1 = subsystem_scores[0].combined_score
+    if top1 <= 0:
+        return 0.0
+    if len(subsystem_scores) == 1:
+        return 1.0
+    top2 = subsystem_scores[1].combined_score
+    return max(0.0, (top1 - top2) / top1)
 
 
 def _top_k_mean(scores: list[float], k: int) -> float:
@@ -323,12 +381,9 @@ def route_query(
     if not subsystem_scores:
         return routing
 
-    total_combined = sum(s.combined_score for s in subsystem_scores)
     winner = subsystem_scores[0]
     routing.winning_subsystem = winner.subsystem_path
-    routing.winning_confidence = (
-        winner.combined_score / total_combined if total_combined > 0 else 0.0
-    )
+    routing.winning_confidence = _margin_confidence(subsystem_scores)
 
     subsystem_files = taxonomy.files_in(winner.subsystem_path)
     entry_files = _rank_entry_files(subsystem_files, file_scores, subsystem_graph)

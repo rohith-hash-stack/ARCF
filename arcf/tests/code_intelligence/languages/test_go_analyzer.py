@@ -185,6 +185,43 @@ def test_import_resolves_to_a_file_in_workspace_package_directory() -> None:
     assert result.imports[0].resolved_file_path == "myapp/auth/service.go"
 
 
+def test_import_resolves_when_module_qualified() -> None:
+    # A real Go import is module-qualified (`github.com/org/repo/pkg/
+    # auth`), not workspace-relative (`pkg/auth`) — the module's own
+    # prefix (from go.mod, never read by this analyzer) doesn't appear
+    # in workspace_files at all. A real Traefik scan found this meant
+    # ZERO of 5,931 imports ever resolved before this fix, including
+    # genuinely local ones.
+    workspace_files = frozenset({"pkg/config/dynamic/config.go"})
+    result = _analyze(
+        'package main\n\nimport "github.com/traefik/traefik/v3/pkg/config/dynamic"\n',
+        workspace_files=workspace_files,
+    )
+    assert result.imports[0].resolved_file_path == "pkg/config/dynamic/config.go"
+
+
+def test_import_resolution_prefers_the_longest_matching_suffix() -> None:
+    # Two workspace directories could each match a DIFFERENT suffix of
+    # the same import path ("dynamic" alone, and "config/dynamic") —
+    # the longer, more specific suffix should win, not whichever the
+    # shorter one happens to match first.
+    workspace_files = frozenset({"config/dynamic/other.go", "pkg/config/dynamic/config.go"})
+    result = _analyze(
+        'package main\n\nimport "github.com/traefik/traefik/v3/pkg/config/dynamic"\n',
+        workspace_files=workspace_files,
+    )
+    assert result.imports[0].resolved_file_path == "pkg/config/dynamic/config.go"
+
+
+def test_stdlib_and_third_party_imports_still_unresolved_when_module_qualified() -> None:
+    workspace_files = frozenset({"pkg/config/dynamic/config.go"})
+    source = (
+        'package main\n\nimport (\n\t"context"\n\t"github.com/rs/zerolog"\n)\n'
+    )
+    result = _analyze(source, workspace_files=workspace_files)
+    assert all(imp.resolved_file_path is None for imp in result.imports)
+
+
 def test_syntax_error_recorded_but_partial_results_returned() -> None:
     result = _analyze("package main\n\nfunc foo( {\n")
     assert result.parse_errors != []

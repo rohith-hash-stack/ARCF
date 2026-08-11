@@ -11,11 +11,13 @@ from pathlib import Path
 from fastapi import FastAPI
 
 from code_intelligence.engine import CodeIntelligenceEngine
+from code_intelligence.languages.cpp_analyzer import CppLanguageAnalyzer
 from code_intelligence.languages.csharp_analyzer import CSharpLanguageAnalyzer
 from code_intelligence.languages.go_analyzer import GoLanguageAnalyzer
 from code_intelligence.languages.java_analyzer import JavaLanguageAnalyzer
 from code_intelligence.languages.kotlin_analyzer import KotlinLanguageAnalyzer
 from code_intelligence.languages.python_analyzer import PythonLanguageAnalyzer
+from code_intelligence.languages.rust_analyzer import RustLanguageAnalyzer
 from code_intelligence.languages.typescript_analyzer import TypeScriptLanguageAnalyzer
 from code_intelligence.registry import LanguageRegistry
 from code_intelligence.service import CodeIntelligenceContractService
@@ -111,6 +113,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 JavaLanguageAnalyzer(),
                 CSharpLanguageAnalyzer(),
                 KotlinLanguageAnalyzer(),
+                CppLanguageAnalyzer(),
+                RustLanguageAnalyzer(),
             ]
         ),
         token_estimator=CostEstimator(),

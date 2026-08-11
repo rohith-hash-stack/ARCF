@@ -1,0 +1,346 @@
+[
+  {
+    "repo": "consul",
+    "category": "original",
+    "query": "How does Consul add a new service instance to the catalog when an agent registers it?",
+    "target": "agent/consul/catalog_endpoint.go",
+    "retained_fraction": 0.4833333333333333,
+    "A_baseline": {
+      "flat_rank": 27,
+      "flat_total": 2370,
+      "flat_score": 0.46331813189472054,
+      "winning_subsystem": "agent::agent",
+      "target_subsystem": "agent/consul::catalog",
+      "subsystem_rank": 23,
+      "subsystem_total": 394,
+      "target_combined": 0.6188990065597576,
+      "winner_combined": 0.9062500000000001,
+      "in_final_candidates": false
+    },
+    "B_no_dampening": {
+      "flat_rank": 34,
+      "flat_total": 2370,
+      "flat_score": 0.9585892384028701,
+      "winning_subsystem": "agent::agent",
+      "target_subsystem": "agent/consul::catalog",
+      "subsystem_rank": 5,
+      "subsystem_total": 394,
+      "target_combined": 0.7485335742519358,
+      "winner_combined": 0.9062500000000001,
+      "in_final_candidates": false
+    },
+    "C_no_aggregation": {
+      "flat_rank": 27,
+      "flat_total": 2370,
+      "flat_score": 0.46331813189472054,
+      "top1": false
+    },
+    "D_neither": {
+      "flat_rank": 34,
+      "flat_total": 2370,
+      "flat_score": 0.9585892384028701,
+      "top1": false
+    }
+  },
+  {
+    "repo": "consul",
+    "category": "gossip/membership",
+    "query": "When a node joins the LAN gossip pool, what code on the server handles that join event?",
+    "target": "agent/consul/server_serf.go",
+    "retained_fraction": 0.18000000000000002,
+    "A_baseline": {
+      "flat_rank": 29,
+      "flat_total": 2370,
+      "flat_score": 0.43741764441843184,
+      "winning_subsystem": "agent/consul::helper",
+      "target_subsystem": "agent/consul::server",
+      "subsystem_rank": 3,
+      "subsystem_total": 394,
+      "target_combined": 0.7198504735829672,
+      "winner_combined": 0.8666666666666668,
+      "in_final_candidates": false
+    },
+    "B_no_dampening": {
+      "flat_rank": 1,
+      "flat_total": 2370,
+      "flat_score": 2.4300980245468433,
+      "winning_subsystem": "agent/consul::server",
+      "target_subsystem": "agent/consul::server",
+      "subsystem_rank": 1,
+      "subsystem_total": 394,
+      "target_combined": 0.9000000000000001,
+      "winner_combined": 0.9000000000000001,
+      "in_final_candidates": true
+    },
+    "C_no_aggregation": {
+      "flat_rank": 29,
+      "flat_total": 2370,
+      "flat_score": 0.43741764441843184,
+      "top1": false
+    },
+    "D_neither": {
+      "flat_rank": 1,
+      "flat_total": 2370,
+      "flat_score": 2.4300980245468433,
+      "top1": true
+    }
+  },
+  {
+    "repo": "consul",
+    "category": "service discovery/DNS",
+    "query": "How does Consul turn a DNS query like myservice.service.consul into actual A/SRV records for healthy instances?",
+    "target": "agent/dns.go",
+    "retained_fraction": 0.08333333333333333,
+    "A_baseline": {
+      "flat_rank": 3,
+      "flat_total": 2370,
+      "flat_score": 0.8364703441102342,
+      "winning_subsystem": "test/integration/consul-container/libs",
+      "target_subsystem": "agent::dns",
+      "subsystem_rank": 2,
+      "subsystem_total": 394,
+      "target_combined": 0.8336057971925005,
+      "winner_combined": 0.8954545454545455,
+      "in_final_candidates": false
+    },
+    "B_no_dampening": {
+      "flat_rank": 2,
+      "flat_total": 2370,
+      "flat_score": 1.5376431620750606,
+      "winning_subsystem": "agent::dns",
+      "target_subsystem": "agent::dns",
+      "subsystem_rank": 1,
+      "subsystem_total": 394,
+      "target_combined": 0.890909090909091,
+      "winner_combined": 0.890909090909091,
+      "in_final_candidates": true
+    },
+    "C_no_aggregation": {
+      "flat_rank": 3,
+      "flat_total": 2370,
+      "flat_score": 0.8364703441102342,
+      "top1": false
+    },
+    "D_neither": {
+      "flat_rank": 2,
+      "flat_total": 2370,
+      "flat_score": 1.5376431620750606,
+      "top1": false
+    }
+  },
+  {
+    "repo": "consul",
+    "category": "leader election/raft",
+    "query": "What does a Consul server do right after it wins a Raft leadership election?",
+    "target": "agent/consul/leader.go",
+    "retained_fraction": 0.0,
+    "A_baseline": {
+      "flat_rank": 84,
+      "flat_total": 2370,
+      "flat_score": 0.18494894734557335,
+      "winning_subsystem": "agent/consul::helper",
+      "target_subsystem": "agent/consul::leader",
+      "subsystem_rank": 7,
+      "subsystem_total": 394,
+      "target_combined": 0.6299620247335359,
+      "winner_combined": 0.9142857142857144,
+      "in_final_candidates": false
+    },
+    "B_no_dampening": {
+      "flat_rank": 4,
+      "flat_total": 2370,
+      "flat_score": 0.9410343157198403,
+      "winning_subsystem": "api::agent",
+      "target_subsystem": "agent/consul::leader",
+      "subsystem_rank": 5,
+      "subsystem_total": 394,
+      "target_combined": 0.7080687544844926,
+      "winner_combined": 0.8500000000000001,
+      "in_final_candidates": false
+    },
+    "C_no_aggregation": {
+      "flat_rank": 84,
+      "flat_total": 2370,
+      "flat_score": 0.18494894734557335,
+      "top1": false
+    },
+    "D_neither": {
+      "flat_rank": 4,
+      "flat_total": 2370,
+      "flat_score": 0.9410343157198403,
+      "top1": false
+    }
+  },
+  {
+    "repo": "vllm",
+    "category": "tokenization",
+    "query": "How does vLLM pick which tokenizer implementation to instantiate for a given model?",
+    "target": "vllm/tokenizers/registry.py",
+    "retained_fraction": 0.15,
+    "A_baseline": {
+      "flat_rank": 1093,
+      "flat_total": 4116,
+      "flat_score": 0.06740097843173867,
+      "winning_subsystem": "vllm/model_executor/models::utils",
+      "target_subsystem": "vllm/tokenizers",
+      "subsystem_rank": 3,
+      "subsystem_total": 517,
+      "target_combined": 0.822368784430066,
+      "winner_combined": 0.860065112993306,
+      "in_final_candidates": false
+    },
+    "B_no_dampening": {
+      "flat_rank": 115,
+      "flat_total": 4116,
+      "flat_score": 0.44933985621159117,
+      "winning_subsystem": "tests/parser",
+      "target_subsystem": "vllm/tokenizers",
+      "subsystem_rank": 38,
+      "subsystem_total": 517,
+      "target_combined": 0.5113112613007409,
+      "winner_combined": 0.8455884615399664,
+      "in_final_candidates": false
+    },
+    "C_no_aggregation": {
+      "flat_rank": 1093,
+      "flat_total": 4116,
+      "flat_score": 0.06740097843173867,
+      "top1": false
+    },
+    "D_neither": {
+      "flat_rank": 115,
+      "flat_total": 4116,
+      "flat_score": 0.44933985621159117,
+      "top1": false
+    }
+  },
+  {
+    "repo": "vllm",
+    "category": "distributed execution",
+    "query": "How does vLLM set up the tensor-parallel and pipeline-parallel process groups across GPUs at startup?",
+    "target": "vllm/distributed/parallel_state.py",
+    "retained_fraction": 0.04000000000000001,
+    "A_baseline": {
+      "flat_rank": 49,
+      "flat_total": 4116,
+      "flat_score": 0.519888760493322,
+      "winning_subsystem": "vllm/model_executor/models::midashenglm",
+      "target_subsystem": "vllm/distributed",
+      "subsystem_rank": 11,
+      "subsystem_total": 517,
+      "target_combined": 0.573488285609758,
+      "winner_combined": 0.8650000000000001,
+      "in_final_candidates": false
+    },
+    "B_no_dampening": {
+      "flat_rank": 3,
+      "flat_total": 4116,
+      "flat_score": 1.782097215503886,
+      "winning_subsystem": "tests/distributed",
+      "target_subsystem": "vllm/distributed",
+      "subsystem_rank": 2,
+      "subsystem_total": 517,
+      "target_combined": 0.8599189078612038,
+      "winner_combined": 0.8754019809436069,
+      "in_final_candidates": true
+    },
+    "C_no_aggregation": {
+      "flat_rank": 49,
+      "flat_total": 4116,
+      "flat_score": 0.519888760493322,
+      "top1": false
+    },
+    "D_neither": {
+      "flat_rank": 3,
+      "flat_total": 4116,
+      "flat_score": 1.782097215503886,
+      "top1": false
+    }
+  },
+  {
+    "repo": "vllm",
+    "category": "API server entry point",
+    "query": "Where does vLLM's OpenAI-compatible HTTP server actually start up and begin serving requests?",
+    "target": "vllm/entrypoints/openai/api_server.py",
+    "retained_fraction": 0.1,
+    "A_baseline": {
+      "flat_rank": 1210,
+      "flat_total": 4116,
+      "flat_score": 0.058539945591900316,
+      "winning_subsystem": "examples/pooling",
+      "target_subsystem": "vllm/entrypoints/openai",
+      "subsystem_rank": 3,
+      "subsystem_total": 517,
+      "target_combined": 0.7135156755812768,
+      "winner_combined": 0.8500000000000001,
+      "in_final_candidates": false
+    },
+    "B_no_dampening": {
+      "flat_rank": 140,
+      "flat_total": 4116,
+      "flat_score": 0.5853994559190031,
+      "winning_subsystem": "examples/pooling",
+      "target_subsystem": "vllm/entrypoints/openai",
+      "subsystem_rank": 13,
+      "subsystem_total": 517,
+      "target_combined": 0.7074887928970106,
+      "winner_combined": 0.8500000000000001,
+      "in_final_candidates": false
+    },
+    "C_no_aggregation": {
+      "flat_rank": 1210,
+      "flat_total": 4116,
+      "flat_score": 0.058539945591900316,
+      "top1": false
+    },
+    "D_neither": {
+      "flat_rank": 140,
+      "flat_total": 4116,
+      "flat_score": 0.5853994559190031,
+      "top1": false
+    }
+  },
+  {
+    "repo": "django",
+    "category": "URL routing",
+    "query": "When a request comes in, how does Django walk through nested URLconfs to find the view that matches the path?",
+    "target": "django/urls/resolvers.py",
+    "retained_fraction": 0.06999999999999999,
+    "A_baseline": {
+      "flat_rank": 8,
+      "flat_total": 2928,
+      "flat_score": 0.4529911029199316,
+      "winning_subsystem": "django/views",
+      "target_subsystem": "django/urls",
+      "subsystem_rank": 14,
+      "subsystem_total": 480,
+      "target_combined": 0.5443236429784338,
+      "winner_combined": 0.862654444037691,
+      "in_final_candidates": false
+    },
+    "B_no_dampening": {
+      "flat_rank": 32,
+      "flat_total": 2928,
+      "flat_score": 0.6730944013354652,
+      "winning_subsystem": "tests/urlpatterns_reverse",
+      "target_subsystem": "django/urls",
+      "subsystem_rank": 4,
+      "subsystem_total": 480,
+      "target_combined": 0.6679520033379923,
+      "winner_combined": 0.8325359229357256,
+      "in_final_candidates": false
+    },
+    "C_no_aggregation": {
+      "flat_rank": 8,
+      "flat_total": 2928,
+      "flat_score": 0.4529911029199316,
+      "top1": false
+    },
+    "D_neither": {
+      "flat_rank": 32,
+      "flat_total": 2928,
+      "flat_score": 0.6730944013354652,
+      "top1": false
+    }
+  }
+]

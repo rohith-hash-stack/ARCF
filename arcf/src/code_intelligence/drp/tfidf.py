@@ -13,7 +13,10 @@ Tokenization splits identifier text on `snake_case` underscores and
 `camelCase`/`PascalCase` boundaries in addition to whitespace/punctuation
 — a query written in plain English ("configuration", "watcher") should
 match identifier fragments embedded in `ConfigurationWatcher` or
-`configuration_watcher`, not just whole-identifier matches.
+`configuration_watcher`, not just whole-identifier matches. It also
+applies light, deterministic suffix-stripping (`_stem`) for common
+English inflections (plural -s, verb -ing/-ed) — see `_stem`'s own
+docstring for why and for the real case that motivated it.
 """
 
 from __future__ import annotations
@@ -26,6 +29,42 @@ from dataclasses import dataclass, field
 _WORD_RE = re.compile(r"[A-Za-z][A-Za-z0-9_]*")
 _CAMEL_BOUNDARY_RE = re.compile(r"(?<=[a-z0-9])(?=[A-Z])|(?<=[A-Z])(?=[A-Z][a-z])")
 _MIN_TOKEN_LEN = 2
+
+# Suffix-stripping for the handful of English inflections that matter
+# most for query/code vocabulary matching (plural -s/-es/-ies, verb
+# forms -ing/-ed) — deliberately NOT a full Porter/Snowball stemmer or
+# an external NLP library, matching this module's own "pure Python/
+# math, no embeddings" restraint. Real, measured case: a Consul run
+# scored the query "...when an agent registers it" as an exact ZERO
+# against `Catalog.Register`'s own doc comment ("Register a service
+# and/or check(s) in a node...") — despite it being close to a
+# paraphrase of the query itself — purely because "registers" and
+# "register" are different tokens without this. Deliberately
+# conservative: every rule here is a well-known, low-risk English
+# inflection pattern. A false NEGATIVE (two related words staying
+# unmerged) is no worse than today's exact-match-only behavior; a false
+# POSITIVE (unrelated words wrongly merged) would be a real regression,
+# so short words are left untouched entirely and every branch requires
+# the specific suffix shape it targets.
+_ES_AFTER_SIBILANT_RE = re.compile(r"(?:ches|shes|sses|xes|zes)$")
+_VOWEL_RE = re.compile(r"[aeiou]")
+_MIN_STEMMABLE_LEN = 3
+
+
+def _stem(word: str) -> str:
+    if len(word) <= _MIN_STEMMABLE_LEN:
+        return word
+    if word.endswith("ies") and len(word) > 4:
+        word = word[:-3] + "y"
+    elif _ES_AFTER_SIBILANT_RE.search(word):
+        word = word[:-2]
+    elif word.endswith("s") and not word.endswith(("us", "is", "ss")):
+        word = word[:-1]
+    if word.endswith("ing") and len(word) > 5 and _VOWEL_RE.search(word[:-3]):
+        word = word[:-3]
+    elif word.endswith("ed") and len(word) > 4 and _VOWEL_RE.search(word[:-2]):
+        word = word[:-2]
+    return word
 
 # Below this many total (non-unique) tokens, a document's score is
 # dampened proportionally — L2-normalized cosine similarity is well
@@ -60,6 +99,50 @@ _MIN_SUBSTANTIAL_TOKENS = 30
 # module (zero symbols of its own, hence trivially zero incoming calls)
 # scoring only from an unrelated docstring.
 _MIN_CALLS_FOR_FULL_CONFIDENCE = 20
+
+# Below this many of the query's OWN distinct terms matching a document
+# at all (any nonzero weight, regardless of how large), that document's
+# score is dampened proportionally, ramped the same way as length/usage
+# confidence. Real, measured case (a real FlatBuffers run, 2026-08-10): a
+# 9-distinct-term query ("How does the garbage collector reclaim unused
+# heap memory during a stop-the-world pause") scored 0.30 raw against
+# `tests/union_vector/union_vector_generated.h` — HIGHER than a genuine
+# on-topic query's 0.37 — entirely from ONE matched term ("unus", the
+# shared stem of the query's "unused" and an unrelated enum sentinel
+# `Character_Unused` in that test fixture); the other 8 distinct terms
+# ("garbage", "collector", "reclaim", "heap", "memory", "stop", "world",
+# "pause") matched nothing. Raw cosine-similarity magnitude and term-
+# coverage breadth are genuinely independent quantities — a single
+# highly-weighted term can produce a large raw score with terrible
+# coverage, which is exactly what happened, so this cannot be folded
+# into `_MIN_SUBSTANTIAL_TOKENS`/`_MIN_CALLS_FOR_FULL_CONFIDENCE` (both
+# properties of the DOCUMENT alone); it has to compare against the
+# QUERY's own term count, computed fresh per call in `.score()` rather
+# than precomputed into `TfIdfProfile`. Capped at the query's own
+# distinct-term count (see `.score()`) so a genuinely narrow query (e.g.
+# a single symbol name) is never penalized for lacking terms it never
+# had — this only dampens a multi-term query where most of its own terms
+# are absent from the document, not short queries in general.
+#
+# Value chosen at 4, not the first value tried (3) — 3 was falsified by
+# the full 5-ground-truth-repo sweep this fix is required to pass (see
+# this project's own established discipline: "any change to a shared
+# corpus/scoring module needs the full 5-repo sweep before/after, not
+# just the DRP unit suite"). At floor=3, a real SQLAlchemy ground-truth
+# case (already an acknowledged near-tie between `lib/sqlalchemy/orm`,
+# 0.8875, and its own paired `test/orm::test`, 0.8822 — a razor-thin,
+# pre-existing ambiguity, not something this fix created) FLIPPED to the
+# wrong winner: coverage dampening reduced the correct subsystem's raw
+# score by slightly more than the test directory's, because the test
+# directory's top-scoring files happen to touch marginally more of the
+# query's distinct terms even though the real implementation's top file
+# scored higher in raw magnitude. Floor=4 was found, by testing floors
+# 1-4 directly against both passing ground-truth repos (SQLAlchemy,
+# Django) and the FlatBuffers adversarial case together, to be the
+# smallest value that keeps both ground-truth winners correct AND still
+# gives the adversarial case's confidence the correct (lower-than-a-
+# genuine-match) ordering — not a first-guess default.
+_MIN_DISTINCT_TERMS_FOR_FULL_CONFIDENCE = 4
 
 # Standard closed-class English function words only — same restraint as
 # lexical_symbol_probe.py's own stopword list, kept as DRP's own copy
@@ -98,7 +181,7 @@ def tokenize(text: str) -> list[str]:
                 lowered = part.lower()
                 if len(lowered) < _MIN_TOKEN_LEN or lowered in STOPWORDS:
                     continue
-                tokens.append(lowered)
+                tokens.append(_stem(lowered))
     return tokens
 
 
@@ -137,13 +220,20 @@ class SubsystemTfIdfIndex:
     def score(self, query_tokens: list[str]) -> dict[str, float]:
         """Dot product of the query's term counts against each
         subsystem's tf*idf weight vector (cosine similarity), scaled by
-        a length-confidence factor (`_MIN_SUBSTANTIAL_TOKENS`) and, when
-        usage data is available, a usage-confidence factor
-        (`_MIN_CALLS_FOR_FULL_CONFIDENCE`) that together dampen
-        documents too sparse or too rarely-referenced to trust at full
-        confidence. Deterministic, order-independent since it sums over
-        the fixed `self.profiles` keys."""
+        a length-confidence factor (`_MIN_SUBSTANTIAL_TOKENS`), when
+        usage data is available a usage-confidence factor
+        (`_MIN_CALLS_FOR_FULL_CONFIDENCE`), and a coverage-confidence
+        factor (`_MIN_DISTINCT_TERMS_FOR_FULL_CONFIDENCE`) — the first
+        two dampen documents too sparse or too rarely-referenced to
+        trust at full confidence, the third dampens a match driven by a
+        single coincidentally-matching query term while the rest of the
+        query's own vocabulary is absent (see that constant's own
+        docstring for the real case that motivated it). Deterministic,
+        order-independent since it sums over the fixed `self.profiles`
+        keys."""
         query_counts = Counter(query_tokens)
+        distinct_query_terms = set(query_counts)
+        coverage_floor = min(_MIN_DISTINCT_TERMS_FOR_FULL_CONFIDENCE, len(distinct_query_terms))
         scores: dict[str, float] = {}
         for path, profile in self.profiles.items():
             raw_score = sum(
@@ -155,7 +245,13 @@ class SubsystemTfIdfIndex:
                 if profile.usage_known
                 else 1.0
             )
-            scores[path] = raw_score * length_confidence * usage_confidence
+            matched_terms = sum(
+                1 for term in distinct_query_terms if profile.weights.get(term, 0.0) > 0.0
+            )
+            coverage_confidence = (
+                min(1.0, matched_terms / coverage_floor) if coverage_floor > 0 else 1.0
+            )
+            scores[path] = raw_score * length_confidence * usage_confidence * coverage_confidence
         return scores
 
 

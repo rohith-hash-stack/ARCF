@@ -164,6 +164,40 @@ def _extract_line_range(content_lines: list[str], start_line: int, end_line: int
     return "\n".join(content_lines[start:end])
 
 
+def _is_within(
+    inner_start: int, inner_end: int, outer_start: int, outer_end: int
+) -> bool:
+    """Whether the `[inner_start, inner_end]` line range sits entirely
+    inside `[outer_start, outer_end]` — used to tell "this child is
+    lexically nested in its parent's own source range" (Python: a method
+    inside its class body) apart from "this child is declared separately
+    from its parent" (Go: a method outside its receiver type's struct
+    declaration) — see `gather_scoring_units`'s own use for why that
+    distinction matters."""
+    return inner_start >= outer_start and inner_end <= outer_end
+
+
+def _expand_start_for_leading_comment(content_lines: list[str], start_line: int) -> int:
+    """Walks backward from a symbol's own 1-indexed `start_line` over a
+    contiguous, unbroken block of `#`/`//` line comments directly above
+    it — the conventional doc-comment position in languages that
+    describe a declaration ABOVE it (Go: `// Register a service...`
+    immediately above `func (c *Catalog) Register(...)`) rather than as
+    a nested docstring inside it (Python). `Symbol.location.start_line`
+    points at the declaration itself, so a plain range extraction from
+    it stops exactly short of that comment — a real Consul run found
+    `Catalog.Register`'s own doc comment (almost paraphrasing the query
+    DRP was trying to match) silently excluded for exactly this reason,
+    even after the sibling fix that made the method's range reachable at
+    all. Stops at the first non-comment or blank line so it never reaches
+    into unrelated code above — a real leading doc comment is always
+    contiguous with its declaration, with no blank-line gap."""
+    idx = min(start_line - 2, len(content_lines) - 1)  # 0-indexed line above start_line
+    while idx >= 0 and _LINE_COMMENT_RE.match(content_lines[idx]):
+        idx -= 1
+    return idx + 2  # back to 1-indexed, first line of the comment block
+
+
 def _has_locality(
     index: CodeIntelligenceIndex, caller_file: str, context_file: str
 ) -> bool:
@@ -285,20 +319,87 @@ def gather_scoring_units(
             unit_key = symbol.id
             member_ids = [symbol.id]
             chunks = [symbol.name, symbol.qualified_name]
+            parent_start, parent_end = symbol.location.start_line, symbol.location.end_line
+            external_child_ids: list[str] = []
             for child in analysis.symbols:
-                # Nested members (methods of a class) contribute their
-                # own names to their parent's unit rather than becoming
-                # further scoring units of their own — one level of
-                # splitting (file -> top-level symbol) is the fix this
-                # was scoped to; a class with an unusually large number
-                # of methods diluting each other is a real, separate
-                # possible follow-up, not attempted here.
-                if child.parent_id == symbol.id:
-                    chunks.append(child.name)
-                    member_ids.append(child.id)
-            symbol_text = _extract_line_range(
-                content_lines, symbol.location.start_line, symbol.location.end_line
-            )
+                # Nested members (methods of a class) contribute their own
+                # names to their parent's unit rather than becoming
+                # further scoring units of their own when the child's own
+                # source range is lexically nested inside the parent's
+                # (Python: a method inside its class body) — one level of
+                # splitting (file -> top-level symbol) is the fix this was
+                # scoped to for that case.
+                if child.parent_id != symbol.id:
+                    continue
+                chunks.append(child.name)
+                member_ids.append(child.id)
+                if _is_within(
+                    child.location.start_line, child.location.end_line, parent_start, parent_end
+                ):
+                    continue
+                # A language whose methods are declared OUTSIDE their
+                # receiver type's own source range (Go: `func (c *Catalog)
+                # Register(...)`, declared separately from `type Catalog
+                # struct{...}`) gets a genuine SECOND splitting tier here,
+                # one scoring unit per such child — not pooled into the
+                # parent's. Pooling was tried first and made things worse:
+                # a real Consul run found `Catalog.Register`'s own doc
+                # comment ("Register a service and/or check(s) in a node,
+                # creating the node if it doesn't exist.") entirely absent
+                # from the corpus before this fix, but pooling all 11 of
+                # Catalog's methods' comments into Catalog's single unit
+                # measurably LOWERED catalog_endpoint.go's real retrieval
+                # score anyway — the same dilution fix #3 already prevents
+                # at the file level (many methods' unrelated concerns —
+                # ACL checks, metrics, hashing — burying Register's own
+                # specific vocabulary), just recurring one level deeper.
+                # Giving each such child its own unit lets `_file_level_
+                # scores`'s existing max-across-a-file's-units reduction
+                # surface it undiluted, exactly like every other split
+                # unit already works.
+                child_start = _expand_start_for_leading_comment(
+                    content_lines, child.location.start_line
+                )
+                child_text = _extract_line_range(
+                    content_lines, child_start, child.location.end_line
+                )
+                child_chunks = [child.name, child.qualified_name]
+                if child_text:
+                    child_chunks.append(_extract_comment_and_docstring_text(child_text))
+                unit_texts[child.id] = "\n".join(child_chunks)
+                unit_usage[child.id] = _combined_call_count(index, [child.id], file_path)
+                units.append(child.id)
+                external_child_ids.append(child.id)
+            if external_child_ids:
+                # A method dispatched by a framework's own registration
+                # table (an RPC handler invoked by name/reflection, not a
+                # direct call site) structurally has zero recorded callers
+                # no matter how central it is — CallGraph only sees
+                # explicit call expressions, and a real Consul run
+                # confirmed this hits even the receiver TYPE's own
+                # construction (`&Catalog{...}`, a struct literal, isn't a
+                # "call" CallGraph tracks either, so the type itself can't
+                # be used as a fallback signal). What DOES survive: at
+                # least one sibling method on the same receiver usually
+                # has real, directly-observed usage (an internal helper
+                # call, a test invoking it directly) — real evidence the
+                # TYPE as a whole is live, active code, not dead/vestigial
+                # — real Consul numbers: 9 of Catalog's 11 methods showed
+                # 0 own callers, but `ServiceNodes` (4) and
+                # `VirtualIPForService` (6) didn't. A zero-usage sibling
+                # borrows the group's max as a confidence FLOOR — never
+                # lowers an already-nonzero count, only rescues a fully
+                # invisible one from the same dead/vestigial-vs-real
+                # ambiguity fix #6 was built to resolve, using the
+                # already-existing parent-child structural relationship
+                # rather than any new analysis.
+                sibling_max = max(unit_usage[child_id] for child_id in external_child_ids)
+                if sibling_max > 0:
+                    for child_id in external_child_ids:
+                        if unit_usage[child_id] == 0:
+                            unit_usage[child_id] = sibling_max
+            expanded_parent_start = _expand_start_for_leading_comment(content_lines, parent_start)
+            symbol_text = _extract_line_range(content_lines, expanded_parent_start, parent_end)
             if symbol_text:
                 chunks.append(_extract_comment_and_docstring_text(symbol_text))
             unit_texts[unit_key] = "\n".join(chunks)

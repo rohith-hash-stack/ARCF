@@ -65,6 +65,31 @@ def test_lexical_only_match_lands_in_tier3() -> None:
     assert all(a.confidence == 0.5 for a in tier3)
 
 
+def test_tier3_prefers_multi_prefix_match_over_scan_order() -> None:
+    # Real gap found on the actual FlatBuffers repo (2026-08-10): the
+    # repo's own `CppGenerator` class matches two of the query's own
+    # words ("generated" and, transitively, "generator") but classic's
+    # Tier 3 dropped it because classify_symbol_anchors calls the
+    # UNRANKED probe_symbol_names — the same scan-order cap problem
+    # probe_symbol_names_ranked was already built and validated to fix
+    # (test_lexical_symbol_probe.py's own
+    # test_probe_symbol_names_ranked_prefers_multi_prefix_match_over_scan_order),
+    # but that fix was never wired into anchor_classifier.py's Tier 3,
+    # only into the separate (off-by-default, and itself gated off
+    # whenever enable_anchor_classification=True) ranked-seed-selection
+    # experiment. Reproduced here with the same shape as that test: 25
+    # noise symbols matching one query prefix precede, in scan order, a
+    # single symbol matching two.
+    noise = [_symbol(f"dependency_helper_{i}") for i in range(25)]
+    target = _symbol("dependency_handling_util")
+    index = SymbolIndex([*noise, target])
+
+    anchors = classify_symbol_anchors("Fix the dependency handling issue please", index)
+
+    tier3_names = {a.name for a in anchors if a.tier is AnchorTier.LEXICAL}
+    assert "dependency_handling_util" in tier3_names
+
+
 def test_no_probeable_words_returns_no_symbol_anchors() -> None:
     index = SymbolIndex([_symbol("LazyLoader")])
 

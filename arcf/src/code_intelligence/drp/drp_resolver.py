@@ -192,12 +192,28 @@ class DrpResolver:
             else (languages_detected[0] if languages_detected else "unknown")
         )
         retrieval_depth_used = max((hop for hop, _ in routing.expansion.values()), default=0)
-        resolution_reason = (
-            f"DRP resolved subsystem '{subsystem_label}' with confidence "
-            f"{routing.winning_confidence:.2f}"
-            if candidate_files
-            else "DRP found no matching subsystem for this query"
-        )
+        # A low winning_confidence and a non-empty near_tied_subsystems
+        # are the same fact reported two ways (both derive from the
+        # winner/runner-up margin — see query_router._margin_confidence)
+        # — say so explicitly here rather than reporting "resolved" in a
+        # tone that implies certainty the resolver doesn't actually have.
+        # This is the graceful-degradation behavior itself: predictable,
+        # legible uncertainty instead of a confident-sounding sentence
+        # papering over a near-coin-flip internal signal.
+        if not candidate_files:
+            resolution_reason = "DRP found no matching subsystem for this query"
+        elif routing.near_tied_subsystems:
+            competitors = "', '".join(routing.near_tied_subsystems)
+            resolution_reason = (
+                f"DRP found ambiguous signal (margin {routing.winning_confidence:.2f}) "
+                f"between '{subsystem_label}' and '{competitors}' — treat this "
+                f"resolution as low-confidence; candidates from all of them are included"
+            )
+        else:
+            resolution_reason = (
+                f"DRP resolved subsystem '{subsystem_label}' with confidence "
+                f"{routing.winning_confidence:.2f}"
+            )
 
         result = ContextResolutionResult(
             workspace_id=workspace_id,

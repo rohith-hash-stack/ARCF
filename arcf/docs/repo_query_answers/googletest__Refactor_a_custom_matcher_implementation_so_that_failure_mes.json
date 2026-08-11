@@ -1,0 +1,68 @@
+{
+  "query": "Refactor a custom matcher implementation so that failure messages remain descriptive without duplicating formatting logic.",
+  "repo": "googletest",
+  "entities_extracted": [
+    "custom matcher"
+  ],
+  "results": {
+    "direct": {
+      "answer": "In GoogleTest (gtest), custom matchers are a powerful feature that can enhance the readability and maintainability of your tests. When implementing custom matchers, it's important to provide useful failure messages while avoiding code duplication, particularly with regard to formatting logic.\n\nHere is a general approach to refactoring a custom matcher implementation to maintain descriptive failure messages without duplicating formatting logic.\n\n### Step 1: Define Your Custom Matcher\n\nFirst, start by defining your custom matcher. You'll typically want to create a matcher class that inherits from `::testing::MatcherInterface`. \n\n### Step 2: Centralize the Formatting Logic\n\nTo prevent the duplication of formatting logic, you can centralize the formatting of the failure message in a separate method, which can then be reused in different contexts.\n\n### Step 3: Implement `MatchAndExplain`\n\nWhen implementing the `MatchAndExplain` function, utilize your centralized formatting method for the failure message, ensuring that it is descriptive enough to convey useful information.\n\n### Example Implementation\n\nHere\u2019s an example of how you might implement a custom matcher that matches integers within a specified range, while also keeping the failure messages clear and consistent:\n\n```cpp\n#include <gtest/gtest.h>\n#include <gmock/gmock.h>\n\nusing ::testing::MatcherInterface;\nusing ::testing::ExplainMatchResult;\n\nclass IsInRange : public MatcherInterface<int> {\npublic:\n    IsInRange(int min, int max) : min_(min), max_(max) {}\n\n    bool MatchAndExplain(int actual, ::testing::ActionInterface<int>* result_listener) const override {\n        return actual >= min_ && actual <= max_;\n    }\n\n    void DescribeTo(std::ostream* os) const override {\n        *os << \"is in range [\" << min_ << \", \" << max_ << \"]\";\n    }\n\n    void DescribeNegationTo(std::ostream* os) const override {\n        *os << \"is not in range [\" << min_ << \", \" << max_ << \"]\";\n    }\n\nprivate:\n    int min_, max_;\n\n    std::string FormatFailureMessage(int actual) const {\n        return \"Actual value \" + std::to_string(actual) + \" is out of range [\" +\n               std::to_string(min_) + \", \" + std::to_string(max_) + \"].\";\n    }\n};\n\n// Overloading operators for convenience\ninline ::testing::PolymorphicMatcher<IsInRange> IsInRangeMatcher(int min, int max) {\n    return ::testing::MakePolymorphicMatcher(IsInRange(min, max));\n}\n\n// Example usage in a test case:\nTEST(CustomMatcherTest, ValueInRange) {\n    int actual = 10;\n    EXPECT_THAT(actual, IsInRangeMatcher(5, 15));  // This will pass\n}\n\nTEST(CustomMatcherTest, ValueNotInRange) {\n    int actual = 20;\n    EXPECT_THAT(actual, IsInRangeMatcher(5, 15));  // This will fail\n}\n```\n\n### Explanation:\n\n1. **Centralized Formatting Logic**: The `FormatFailureMessage` method in the `IsInRange` class manages the formatting of failure messages. This method can be easily called whenever a failure occurs.\n\n2. **Descriptive Messages**: In `DescribeTo` and `DescribeNegationTo`, we provide an overview of what the matcher checks. This supports both positive and negative assertions.\n\n3. **Reusable Logic**: The formatting logic for the actual value, min, and max values is in one spot, making any future changes easier to implement.\n\n4. **Polymorphic Matcher**: Using `PolymorphicMatcher` can make the matcher easier to use with different types or more complex structures if needed.\n\nBy following this approach, you maintain the clarity of failure messages without having to duplicate formatting logic, enhancing both the maintainability of your custom matchers and the readability of your test outputs.",
+      "prompt_tokens": 44,
+      "completion_tokens": 793,
+      "total_tokens": 837
+    },
+    "classic": {
+      "resolver_strategy": "classic",
+      "answer": "To refactor the custom matcher implementation in `googlemock/include/gmock/gmock-matchers.h`, we can focus on improving code organization, consistency, and readability. Here\u2019s a proposed revised version of the matcher and an associated utility function.\n\n### Refactored Code\n\nHere's an updated implementation of the `AnythingMatcher` class as an example of how we can achieve a cleaner structure, applied to the matcher descriptions.\n\n```cpp\n// googlemock/include/gmock/gmock-matchers.h\n\n// Existing includes\n#include <iostream>\n#include <sstream>\n#include <string>\n\nnamespace testing {\n\nclass [[nodiscard]] AnythingMatcher {\n public:\n  using is_gtest_matcher = void;\n\n  template <typename T>\n  bool MatchAndExplain(const T& /* x */, std::ostream* /* listener */) const {\n    return true;\n  }\n\n  void DescribeTo(std::ostream* os) const {\n    *os << \"is anything\";\n  }\n\n  void DescribeNegationTo(std::ostream* os) const {\n    *os << \"never matches\";\n  }\n};\n\n// Utility functions for matchers, unified for consistency\ntemplate <typename Matcher>\nvoid DescribeMatcherTo(const Matcher& matcher, std::ostream* os, bool negation = false) {\n  if (negation) {\n    matcher.DescribeNegationTo(os);\n  } else {\n    matcher.DescribeTo(os);\n  }\n}\n\n}  // namespace testing\n\n// This utility function can be applied to other matchers as well to ensure consistent output.\n// \n// Example usage:\n// testing::DescribeMatcherTo(some_matcher, &os);\n```\n\n### Explanation of Changes\n\n1. **Unified Describe Functions**:\n   This refactoring introduces a utility function, `DescribeMatcherTo`, for describing matchers. This function envelops the logic of either calling `DescribeTo` or `DescribeNegationTo` based on a flag, providing consistent functionality across various matcher implementations.\n\n2. **Improved Readability**:\n   The class structure is preserved, but clear comments were omitted without removing essential context in the matcher methods. By streamlining code comments and grouping related methods together, we enhance readability without losing the original intent.\n\n3. **Namespace Encapsulation**:\n   The matcher is placed within the `testing` namespace, making it clear that these matchers are part of the Google Mock framework.\n\n4. **Consistency Across Matchers**:\n   The utility function allows similar matcher implementations to leverage the same description logic, facilitating uniformity when constructed across different matcher classes.\n\n### Conclusion\n\nThese changes are designed to enhance the maintainability and readability of the code while aligning with best practices in software engineering. You can now apply this approach to other matchers in the file to maintain consistency throughout the implementation.",
+      "prompt_tokens": 8278,
+      "completion_tokens": 557,
+      "total_tokens": 8835,
+      "candidate_count": 16,
+      "phase5_tokens": 320503,
+      "packaged_file_count": 9,
+      "packaged_tokens": 7664,
+      "excluded_count": 7,
+      "packaged_files": [
+        "googlemock/include/gmock/gmock-matchers.h",
+        "googlemock/src/gmock-matchers.cc",
+        "googlemock/include/gmock/gmock-more-matchers.h",
+        ".clang-format",
+        "googlemock/include/gmock/internal/custom/gmock-matchers.h",
+        "googlemock/include/gmock/gmock-spec-builders.h",
+        "googletest/include/gtest/gtest-assertion-result.h",
+        "googletest/include/gtest/gtest-printers.h",
+        "googletest/test/googletest-param-test-test.cc"
+      ],
+      "resolve_latency_seconds": 1.891,
+      "generation_latency_seconds": 7.172,
+      "resolution_reason": "Resolved 0/1 target name(s) to known symbols. No candidate files found. Retrieval retry: symbol-based resolution found no candidate files, so search was expanded via lexical file-name probing, yielding 8 file(s). Pre-expansion anchor classification: Tier 3 (lexical guess, confidence 0.5, budget-gated at 50000 tokens): 20 anchor(s), 8 file(s) added."
+    },
+    "drp": {
+      "resolver_strategy": "drp",
+      "answer": "To refactor the custom matcher implementation in the Google Mock framework, we\u2019ll focus on improving clarity, reducing code duplication, and enhancing maintainability. The `GreaterThanMatcher` serves as our primary example. We'll improve it by consolidating the features of the `GtestGreaterThanMatcher` directly into it and simplifying the interface.\n\n### Refactored Code in `gmock-matchers_test.h`\n\nThe key differences will involve:\n- Merging `GtestGreaterThanMatcher` into `GreaterThanMatcher`.\n- Reducing duplication in `Description` and `MatchAndExplain` implementations.\n- Improving the clarity of matcher descriptions and output.\n\nHere's the updated implementation:\n\n```cpp\n#ifndef GOOGLEMOCK_TEST_GMOCK_MATCHERS_TEST_H_\n#define GOOGLEMOCK_TEST_GMOCK_MATCHERS_TEST_H_\n\n#include <iostream>\n#include <sstream>\n#include <limits>\n#include <string>\n#include <type_traits>\n#include <utility>\n\n#include \"gmock/gmock.h\"\n\nnamespace testing {\nnamespace gmock_matchers_test {\n\ntemplate <typename T>\nclass GreaterThanMatcher : public MatcherInterface<T> {\n public:\n  explicit GreaterThanMatcher(T rhs) : rhs_(rhs) {}\n\n  void DescribeTo(std::ostream* os) const override {\n    *os << \"is greater than \" << rhs_;\n  }\n\n  void DescribeNegationTo(std::ostream* os) const override {\n    *os << \"is not greater than \" << rhs_;\n  }\n\n  bool MatchAndExplain(T lhs, MatchResultListener* listener) const override {\n    if (lhs > rhs_) {\n      return true;\n    } else {\n      if (lhs == rhs_) {\n        *listener << \"which is equal to \" << rhs_;\n      } else {\n        *listener << \"which is less than \" << rhs_;\n      }\n      return false;\n    }\n  }\n\n private:\n  const T rhs_;\n};\n\ntemplate <typename T>\ninline Matcher<T> GreaterThan(T rhs) {\n  return MakeMatcher(new GreaterThanMatcher<T>(rhs));\n}\n\n// Usage example code for testing the matcher.\nclass ContainerHelper {\n public:\n  MOCK_METHOD(void, Call, (std::vector<std::unique_ptr<int>>), ());\n};\n\n}  // namespace gmock_matchers_test\n}  // namespace testing\n\n#endif  // GOOGLEMOCK_TEST_GMOCK_MATCHERS_TEST_H_\n```\n\n### Summary of Changes\n1. **Merged Functionality**: \n   - The `GtestGreaterThanMatcher` logic has been removed, and its functionality has been directly integrated into `GreaterThanMatcher`. This eliminates the need for separate structures that performed similar roles, reducing complexity.\n\n2. **Simplified Match Explanation**:\n   - The explanation in `MatchAndExplain` clarifies the outcomes (greater than, equal to, or less than).\n   - The description methods now have consistent phrasing.\n\n3. **New Inline Function**:\n   - The inline function `GreaterThan` has been retained to ensure the matcher can still be instantiated directly in test cases.\n\nThis refactoring enhances readability while maintaining the functionality of the original matcher implementation. Further enhancements could include extending the matcher to support comparisons with various types or more complex data structures, following the same refactoring principles.",
+      "prompt_tokens": 17787,
+      "completion_tokens": 654,
+      "total_tokens": 18441,
+      "candidate_count": 43,
+      "phase5_tokens": 341530,
+      "packaged_file_count": 10,
+      "packaged_tokens": 7963,
+      "excluded_count": 33,
+      "packaged_files": [
+        "googlemock/test/gmock-matchers_test.h",
+        "googlemock/include/gmock/gmock-more-matchers.h",
+        "googlemock/include/gmock/gmock-cardinalities.h",
+        "googlemock/include/gmock/gmock-function-mocker.h",
+        "googlemock/include/gmock/gmock-nice-strict.h",
+        "googlemock/include/gmock/internal/gmock-internal-utils.h",
+        "googlemock/src/gmock-cardinalities.cc",
+        "googlemock/include/gmock/gmock-more-actions.h",
+        "googlemock/src/gmock_main.cc",
+        "googlemock/test/gmock-port_test.cc"
+      ],
+      "resolve_latency_seconds": 1.854,
+      "generation_latency_seconds": 8.043,
+      "resolution_reason": "DRP resolved subsystem 'googlemock' with confidence 0.13"
+    }
+  }
+}

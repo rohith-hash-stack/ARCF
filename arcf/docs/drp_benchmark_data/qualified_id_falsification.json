@@ -1,0 +1,1645 @@
+[
+  {
+    "repo": "traefik",
+    "query": "Explain how dynamic configuration updates propagate without restarting the server.",
+    "target": "pkg/server/configurationwatcher.go",
+    "baseline_rank": 52,
+    "experimental_rank": 48,
+    "baseline_score": 0.19591455305554736,
+    "experimental_score": 0.23034834663948855,
+    "baseline_margin": -0.33645203900869647,
+    "experimental_margin": -0.363714619461743,
+    "baseline_top10": [
+      [
+        "pkg/provider/http/http.go",
+        0.5323665920642439
+      ],
+      [
+        "pkg/proxy/smart_builder.go",
+        0.4088264331523367
+      ],
+      [
+        "pkg/tls/ocsp.go",
+        0.3834560524832993
+      ],
+      [
+        "pkg/provider/tailscale/provider.go",
+        0.34818665429401513
+      ],
+      [
+        "pkg/server/server.go",
+        0.3350967816500118
+      ],
+      [
+        "pkg/tcp/wrr_load_balancer.go",
+        0.3340288328462538
+      ],
+      [
+        "pkg/provider/kubernetes/gateway/client.go",
+        0.32804190964440416
+      ],
+      [
+        "pkg/server/service/loadbalancer/leasttime/leasttime.go",
+        0.3220546063468043
+      ],
+      [
+        "pkg/provider/kubernetes/ingress/kubernetes.go",
+        0.3191508236596463
+      ],
+      [
+        "integration/healthcheck_test.go",
+        0.3033180684467328
+      ]
+    ],
+    "experimental_top10": [
+      [
+        "pkg/provider/http/http.go",
+        0.5940629661012315
+      ],
+      [
+        "pkg/provider/kubernetes/gateway/kubernetes.go",
+        0.5832306136486974
+      ],
+      [
+        "pkg/tcp/dialer.go",
+        0.5795521335588171
+      ],
+      [
+        "pkg/provider/kubernetes/ingress/kubernetes.go",
+        0.554695774629519
+      ],
+      [
+        "pkg/provider/kubernetes/gateway/kubernetes_test.go",
+        0.47225600214478114
+      ],
+      [
+        "integration/rest_test.go",
+        0.4337458498907399
+      ],
+      [
+        "pkg/proxy/fast/builder.go",
+        0.42425223934742473
+      ],
+      [
+        "pkg/server/service/transport.go",
+        0.4225809628524051
+      ],
+      [
+        "pkg/server/service/service_test.go",
+        0.4225485028821594
+      ],
+      [
+        "pkg/provider/kubernetes/crd/kubernetes_http.go",
+        0.39414414788672897
+      ]
+    ],
+    "target_experimental_terms": [
+      "certificate",
+      "configuration",
+      "content",
+      "dynamic",
+      "file",
+      "go",
+      "http",
+      "log",
+      "message",
+      "name",
+      "option",
+      "pool",
+      "provider",
+      "safe",
+      "tcp",
+      "tls",
+      "type",
+      "udp"
+    ],
+    "target_term_idfs": {
+      "certificate": 2.4229,
+      "configuration": 2.1867,
+      "content": 2.1072,
+      "dynamic": 1.8119,
+      "file": 2.1533,
+      "go": 3.7315,
+      "http": 2.1689,
+      "log": 2.8227,
+      "message": 3.5329,
+      "name": 2.2389,
+      "option": 2.7173,
+      "pool": 3.326,
+      "provider": 2.7122,
+      "safe": 3.3322,
+      "tcp": 2.3605,
+      "tls": 1.9181,
+      "type": 1.8278,
+      "udp": 3.2773
+    },
+    "neighbor_overlap": [
+      [
+        "pkg/provider/http/http.go",
+        14,
+        false
+      ],
+      [
+        "pkg/provider/kubernetes/gateway/kubernetes.go",
+        16,
+        false
+      ],
+      [
+        "pkg/tcp/dialer.go",
+        6,
+        false
+      ],
+      [
+        "pkg/provider/kubernetes/ingress/kubernetes.go",
+        14,
+        false
+      ],
+      [
+        "pkg/provider/kubernetes/gateway/kubernetes_test.go",
+        12,
+        true
+      ],
+      [
+        "integration/rest_test.go",
+        4,
+        true
+      ],
+      [
+        "pkg/proxy/fast/builder.go",
+        1,
+        false
+      ],
+      [
+        "pkg/server/service/transport.go",
+        5,
+        false
+      ],
+      [
+        "pkg/server/service/service_test.go",
+        2,
+        true
+      ],
+      [
+        "pkg/provider/kubernetes/crd/kubernetes_http.go",
+        7,
+        false
+      ]
+    ],
+    "noisy_newly_in_top10": [
+      [
+        "pkg/provider/kubernetes/gateway/kubernetes_test.go",
+        5,
+        0.47225600214478114
+      ],
+      [
+        "integration/rest_test.go",
+        6,
+        0.4337458498907399
+      ],
+      [
+        "pkg/server/service/service_test.go",
+        9,
+        0.4225485028821594
+      ]
+    ],
+    "baseline_winning_subsystem": "pkg/proxy",
+    "experimental_winning_subsystem": "pkg/provider/kubernetes/gateway",
+    "baseline_candidates": [
+      "pkg/proxy/smart_builder.go",
+      "pkg/proxy/fast/builder.go",
+      "pkg/proxy/httputil/builder.go",
+      "pkg/proxy/fast/dialer.go",
+      "pkg/proxy/httputil/proxy.go",
+      "pkg/proxy/fast/proxy.go",
+      "pkg/proxy/fast/proxy_test.go",
+      "pkg/proxy/fast/upgrade.go",
+      "pkg/proxy/httputil/bufferpool.go",
+      "pkg/proxy/smart_builder_test.go",
+      "pkg/server/service/loadbalancer/leasttime/leasttime.go",
+      "pkg/server/service/loadbalancer/hrw/hrw.go",
+      "pkg/server/service/loadbalancer/failover/failover.go",
+      "pkg/server/service/loadbalancer/p2c/p2c.go",
+      "pkg/server/service/service.go"
+    ],
+    "experimental_candidates": [
+      "pkg/provider/kubernetes/gateway/kubernetes.go",
+      "pkg/provider/kubernetes/gateway/kubernetes_test.go",
+      "pkg/provider/kubernetes/gateway/client.go",
+      "pkg/provider/kubernetes/gateway/tcproute.go",
+      "pkg/provider/kubernetes/gateway/httproute.go"
+    ],
+    "baseline_target_in_candidates": false,
+    "experimental_target_in_candidates": false,
+    "noisy_newly_in_candidates": [
+      "pkg/provider/kubernetes/gateway/kubernetes_test.go"
+    ]
+  },
+  {
+    "repo": "consul",
+    "query": "How does Consul add a new service instance to the catalog when an agent registers it?",
+    "target": "agent/consul/catalog_endpoint.go",
+    "baseline_rank": 27,
+    "experimental_rank": 48,
+    "baseline_score": 0.46331813189472054,
+    "experimental_score": 0.372346157764654,
+    "baseline_margin": -0.32833618411417403,
+    "experimental_margin": -0.4125251949126802,
+    "baseline_top10": [
+      [
+        "api/catalog.go",
+        0.7916543160088946
+      ],
+      [
+        "agent/agent.go",
+        0.7450969056367988
+      ],
+      [
+        "api/agent.go",
+        0.7275662432758012
+      ],
+      [
+        "agent/testagent.go",
+        0.67795748817954
+      ],
+      [
+        "agent/agent_test.go",
+        0.6419805019556416
+      ],
+      [
+        "agent/consul/state/state_store_test.go",
+        0.5903798336392976
+      ],
+      [
+        "agent/cache-types/catalog_services.go",
+        0.5889498585628279
+      ],
+      [
+        "test/integration/consul-container/libs/cluster/container.go",
+        0.5742333665191609
+      ],
+      [
+        "proto/private/pbconfigentry/config_entry.pb.go",
+        0.5720704292678176
+      ],
+      [
+        "agent/structs/structs.go",
+        0.5702523914807724
+      ]
+    ],
+    "experimental_top10": [
+      [
+        "agent/agent_ce.go",
+        0.7848713526773342
+      ],
+      [
+        "api/catalog.go",
+        0.7572278319558851
+      ],
+      [
+        "api/agent.go",
+        0.7051948781984684
+      ],
+      [
+        "connect/proxy/config.go",
+        0.6595415629115217
+      ],
+      [
+        "agent/consul/state/catalog_events_test.go",
+        0.5866880489237174
+      ],
+      [
+        "agent/acl_test.go",
+        0.5770272301265909
+      ],
+      [
+        "api/watch/funcs_test.go",
+        0.5660461200806157
+      ],
+      [
+        "proto/private/pbconfigentry/config_entry.pb.go",
+        0.5575496320810163
+      ],
+      [
+        "agent/agent_test.go",
+        0.5550207591288987
+      ],
+      [
+        "agent/consul/state/catalog_events.go",
+        0.5446328081720795
+      ]
+    ],
+    "target_experimental_terms": [
+      "acl",
+      "allow",
+      "authorizer",
+      "central",
+      "check",
+      "config",
+      "configentry",
+      "connect",
+      "consul",
+      "context",
+      "datacenter",
+      "dc",
+      "default",
+      "deni",
+      "deregister",
+      "entry",
+      "err",
+      "filter",
+      "gateway",
+      "health",
+      "id",
+      "index",
+      "ingress",
+      "ip",
+      "ipaddr",
+      "keyword",
+      "kind",
+      "list",
+      "merge",
+      "meta",
+      "name",
+      "new",
+      "node",
+      "option",
+      "peer",
+      "permission",
+      "proxy",
+      "query",
+      "register",
+      "request",
+      "resolver",
+      "result",
+      "satisfy",
+      "service",
+      "specific",
+      "state",
+      "store",
+      "struct",
+      "terminat",
+      "type",
+      "validate",
+      "virtual"
+    ],
+    "target_term_idfs": {
+      "acl": 1.9684,
+      "allow": 2.8463,
+      "authorizer": 2.9755,
+      "central": 6.32,
+      "check": 2.2417,
+      "config": 1.852,
+      "configentry": 4.2759,
+      "connect": 2.4209,
+      "consul": 2.764,
+      "context": 2.8806,
+      "datacenter": 3.906,
+      "dc": 3.4173,
+      "default": 2.1164,
+      "deni": 3.8332,
+      "deregister": 4.1669,
+      "entry": 2.2686,
+      "err": 3.1024,
+      "filter": 3.492,
+      "gateway": 2.4684,
+      "health": 2.6482,
+      "id": 2.2216,
+      "index": 2.2387,
+      "ingress": 3.2001,
+      "ip": 3.6873,
+      "ipaddr": 4.3662,
+      "keyword": 4.263,
+      "kind": 2.7148,
+      "list": 2.8238,
+      "merge": 4.2199,
+      "meta": 1.8689,
+      "name": 2.2392,
+      "new": 2.0982,
+      "node": 2.1674,
+      "option": 2.7318,
+      "peer": 2.6601,
+      "permission": 3.4004,
+      "proxy": 2.5844,
+      "query": 2.4091,
+      "register": 2.8714,
+      "request": 1.9145,
+      "resolver": 2.8616,
+      "result": 3.5046,
+      "satisfy": 5.2067,
+      "service": 1.6963,
+      "specific": 3.0382,
+      "state": 2.9037,
+      "store": 2.9443,
+      "struct": 1.8815,
+      "terminat": 3.1597,
+      "type": 2.0126,
+      "validate": 3.5302,
+      "virtual": 3.8397
+    },
+    "neighbor_overlap": [
+      [
+        "agent/agent_ce.go",
+        13,
+        false
+      ],
+      [
+        "api/catalog.go",
+        0,
+        false
+      ],
+      [
+        "api/agent.go",
+        0,
+        false
+      ],
+      [
+        "connect/proxy/config.go",
+        11,
+        false
+      ],
+      [
+        "agent/consul/state/catalog_events_test.go",
+        25,
+        true
+      ],
+      [
+        "agent/acl_test.go",
+        23,
+        true
+      ],
+      [
+        "api/watch/funcs_test.go",
+        9,
+        true
+      ],
+      [
+        "proto/private/pbconfigentry/config_entry.pb.go",
+        2,
+        false
+      ],
+      [
+        "agent/agent_test.go",
+        26,
+        true
+      ],
+      [
+        "agent/consul/state/catalog_events.go",
+        23,
+        false
+      ]
+    ],
+    "noisy_newly_in_top10": [
+      [
+        "agent/consul/state/catalog_events_test.go",
+        5,
+        0.5866880489237174
+      ],
+      [
+        "agent/acl_test.go",
+        6,
+        0.5770272301265909
+      ],
+      [
+        "api/watch/funcs_test.go",
+        7,
+        0.5660461200806157
+      ]
+    ],
+    "baseline_winning_subsystem": "agent::agent",
+    "experimental_winning_subsystem": "agent::agent",
+    "baseline_candidates": [
+      "agent/agent.go",
+      "agent/agent_test.go",
+      "agent/agent_endpoint_ce.go",
+      "agent/agent_ce.go",
+      "agent/agent_endpoint_test.go",
+      "test/integration/consul-container/libs/cluster/container.go",
+      "test/integration/consul-container/libs/service/service.go",
+      "test/integration/consul-container/libs/assert/envoy.go",
+      "test/integration/consul-container/libs/cluster/agent.go",
+      "test/integration/consul-container/libs/cluster/cluster.go"
+    ],
+    "experimental_candidates": [
+      "agent/agent_ce.go",
+      "agent/agent_test.go",
+      "agent/agent.go",
+      "agent/agent_endpoint_test.go",
+      "agent/agent_endpoint_ce.go"
+    ],
+    "baseline_target_in_candidates": false,
+    "experimental_target_in_candidates": false,
+    "noisy_newly_in_candidates": []
+  },
+  {
+    "repo": "sqlalchemy",
+    "query": "How does SQLAlchemy decide whether to load a relationship immediately or wait until it's accessed?",
+    "target": "lib/sqlalchemy/orm/strategies.py",
+    "baseline_rank": 2,
+    "experimental_rank": 1,
+    "baseline_score": 0.40260516107659006,
+    "experimental_score": 0.4565692916742671,
+    "baseline_margin": -0.03814237291572187,
+    "experimental_margin": 0.03307722003818986,
+    "baseline_top10": [
+      [
+        "test/ext/test_horizontal_shard.py",
+        0.4407475339923119
+      ],
+      [
+        "lib/sqlalchemy/orm/strategies.py",
+        0.40260516107659006
+      ],
+      [
+        "test/orm/test_versioning.py",
+        0.37743780993563814
+      ],
+      [
+        "lib/sqlalchemy/orm/strategy_options.py",
+        0.3430164533425613
+      ],
+      [
+        "lib/sqlalchemy/orm/session.py",
+        0.3275454130702314
+      ],
+      [
+        "test/orm/inheritance/test_basic.py",
+        0.32481816964238236
+      ],
+      [
+        "test/orm/test_merge.py",
+        0.3204676189655612
+      ],
+      [
+        "lib/sqlalchemy/util/queue.py",
+        0.3086347991180367
+      ],
+      [
+        "lib/sqlalchemy/orm/loading.py",
+        0.3071964839446723
+      ],
+      [
+        "lib/sqlalchemy/ext/orderinglist.py",
+        0.3007664624457652
+      ]
+    ],
+    "experimental_top10": [
+      [
+        "lib/sqlalchemy/orm/strategies.py",
+        0.4565692916742671
+      ],
+      [
+        "test/ext/test_horizontal_shard.py",
+        0.4234920716360772
+      ],
+      [
+        "test/orm/test_versioning.py",
+        0.38941897154992733
+      ],
+      [
+        "lib/sqlalchemy/orm/util.py",
+        0.3456961415527605
+      ],
+      [
+        "lib/sqlalchemy/orm/_orm_constructors.py",
+        0.33291522549460695
+      ],
+      [
+        "lib/sqlalchemy/orm/strategy_options.py",
+        0.33179177915247277
+      ],
+      [
+        "test/orm/inheritance/test_basic.py",
+        0.321395532581305
+      ],
+      [
+        "lib/sqlalchemy/util/queue.py",
+        0.31577091380619277
+      ],
+      [
+        "test/orm/test_of_type.py",
+        0.31505299330336667
+      ],
+      [
+        "test/orm/test_merge.py",
+        0.3131951786863493
+      ]
+    ],
+    "target_experimental_terms": [
+      "appender",
+      "attr",
+      "attribute",
+      "autoflush",
+      "backref",
+      "bindparam",
+      "callable",
+      "cascade",
+      "class",
+      "clon",
+      "coercion",
+      "collection",
+      "column",
+      "committ",
+      "compile",
+      "context",
+      "create",
+      "default",
+      "deferr",
+      "deprecat",
+      "dict",
+      "element",
+      "empty",
+      "entity",
+      "event",
+      "fetch",
+      "flag",
+      "get",
+      "history",
+      "identifi",
+      "identity",
+      "immutabledict",
+      "impl",
+      "init",
+      "instance",
+      "interface",
+      "intersection",
+      "issuperset",
+      "join",
+      "level",
+      "list",
+      "listen",
+      "listener",
+      "load",
+      "loader",
+      "log",
+      "logger",
+      "manytomany",
+      "manytoone",
+      "memoiz",
+      "mismatch",
+      "module",
+      "never",
+      "non",
+      "none",
+      "null",
+      "object",
+      "ok",
+      "onetomany",
+      "option",
+      "orm",
+      "passive",
+      "path",
+      "persistent",
+      "pk",
+      "plugin",
+      "post",
+      "preload",
+      "processor",
+      "property",
+      "query",
+      "raise",
+      "raw",
+      "register",
+      "registry",
+      "relat",
+      "relationship",
+      "result",
+      "role",
+      "scalar",
+      "select",
+      "selectable",
+      "set",
+      "setup",
+      "slot",
+      "sql",
+      "state",
+      "status",
+      "strategy",
+      "subquery",
+      "track",
+      "traverse",
+      "tuple",
+      "unique",
+      "unitofwork",
+      "util",
+      "visitor",
+      "warn"
+    ],
+    "target_term_idfs": {
+      "appender": 6.0151,
+      "attr": 3.397,
+      "attribute": 2.7265,
+      "autoflush": 5.215,
+      "backref": 5.0924,
+      "bindparam": 4.0198,
+      "callable": 3.7896,
+      "cascade": 4.7129,
+      "class": 2.072,
+      "clon": 4.4122,
+      "coercion": 2.6183,
+      "collection": 2.8106,
+      "column": 2.1561,
+      "committ": 5.1316,
+      "compile": 3.1857,
+      "context": 3.65,
+      "create": 2.8317,
+      "default": 2.8741,
+      "deferr": 4.2127,
+      "deprecat": 2.8671,
+      "dict": 2.4954,
+      "element": 2.4298,
+      "empty": 2.6772,
+      "entity": 3.5798,
+      "event": 2.9554,
+      "fetch": 3.6997,
+      "flag": 3.6027,
+      "get": 2.4406,
+      "history": 4.8242,
+      "identifi": 5.1053,
+      "identity": 3.638,
+      "immutabledict": 2.691,
+      "impl": 3.8846,
+      "init": 2.5454,
+      "instance": 2.8001,
+      "interface": 3.641,
+      "intersection": 5.2296,
+      "issuperset": 5.215,
+      "join": 3.0114,
+      "level": 3.638,
+      "list": 2.5646,
+      "listen": 3.3738,
+      "listener": 5.1725,
+      "load": 3.203,
+      "loader": 4.0242,
+      "log": 4.5291,
+      "logger": 5.1316,
+      "manytomany": 5.7356,
+      "manytoone": 5.7356,
+      "memoiz": 2.5687,
+      "mismatch": 5.2902,
+      "module": 2.4775,
+      "never": 4.6955,
+      "non": 2.7086,
+      "none": 3.265,
+      "null": 2.9067,
+      "object": 2.5147,
+      "ok": 4.5439,
+      "onetomany": 5.7356,
+      "option": 2.7937,
+      "orm": 3.2167,
+      "passive": 4.2673,
+      "path": 3.5011,
+      "persistent": 5.3548,
+      "pk": 3.9317,
+      "plugin": 4.2562,
+      "post": 4.011,
+      "preload": 2.9315,
+      "processor": 3.541,
+      "property": 2.4524,
+      "query": 3.2305,
+      "raise": 3.5011,
+      "raw": 4.2396,
+      "register": 4.7217,
+      "registry": 3.8143,
+      "relat": 4.2901,
+      "relationship": 3.5356,
+      "result": 3.1248,
+      "role": 2.42,
+      "scalar": 3.8397,
+      "select": 2.5394,
+      "selectable": 3.3421,
+      "set": 2.4086,
+      "setup": 2.8079,
+      "slot": 3.7896,
+      "sql": 2.3271,
+      "state": 3.1356,
+      "status": 4.3311,
+      "strategy": 4.6451,
+      "subquery": 3.9277,
+      "track": 5.0303,
+      "traverse": 3.3332,
+      "tuple": 3.205,
+      "unique": 4.1458,
+      "unitofwork": 6.2303,
+      "util": 1.9022,
+      "visitor": 3.2426,
+      "warn": 2.3174
+    },
+    "neighbor_overlap": [
+      [
+        "test/ext/test_horizontal_shard.py",
+        0,
+        true
+      ],
+      [
+        "test/orm/test_versioning.py",
+        0,
+        true
+      ],
+      [
+        "lib/sqlalchemy/orm/util.py",
+        31,
+        false
+      ],
+      [
+        "lib/sqlalchemy/orm/_orm_constructors.py",
+        11,
+        false
+      ],
+      [
+        "lib/sqlalchemy/orm/strategy_options.py",
+        12,
+        false
+      ],
+      [
+        "test/orm/inheritance/test_basic.py",
+        0,
+        true
+      ],
+      [
+        "lib/sqlalchemy/util/queue.py",
+        0,
+        false
+      ],
+      [
+        "test/orm/test_of_type.py",
+        0,
+        true
+      ],
+      [
+        "test/orm/test_merge.py",
+        0,
+        true
+      ]
+    ],
+    "noisy_newly_in_top10": [
+      [
+        "test/orm/test_of_type.py",
+        9,
+        0.31505299330336667
+      ]
+    ],
+    "baseline_winning_subsystem": "lib/sqlalchemy/orm",
+    "experimental_winning_subsystem": "lib/sqlalchemy/orm",
+    "baseline_candidates": [
+      "lib/sqlalchemy/orm/strategies.py",
+      "lib/sqlalchemy/orm/strategy_options.py",
+      "lib/sqlalchemy/orm/session.py",
+      "lib/sqlalchemy/orm/loading.py",
+      "lib/sqlalchemy/orm/state.py",
+      "lib/sqlalchemy/orm/__init__.py",
+      "lib/sqlalchemy/orm/_orm_constructors.py",
+      "lib/sqlalchemy/orm/_typing.py",
+      "lib/sqlalchemy/orm/attributes.py",
+      "lib/sqlalchemy/orm/base.py",
+      "lib/sqlalchemy/orm/bulk_persistence.py",
+      "lib/sqlalchemy/orm/clsregistry.py",
+      "lib/sqlalchemy/orm/collections.py",
+      "lib/sqlalchemy/orm/context.py",
+      "lib/sqlalchemy/orm/decl_api.py",
+      "lib/sqlalchemy/orm/decl_base.py",
+      "lib/sqlalchemy/orm/dependency.py",
+      "lib/sqlalchemy/orm/descriptor_props.py",
+      "lib/sqlalchemy/orm/dynamic.py",
+      "lib/sqlalchemy/orm/evaluator.py",
+      "lib/sqlalchemy/orm/events.py",
+      "lib/sqlalchemy/orm/exc.py",
+      "lib/sqlalchemy/orm/identity.py",
+      "lib/sqlalchemy/orm/instrumentation.py",
+      "lib/sqlalchemy/orm/interfaces.py",
+      "lib/sqlalchemy/orm/mapped_collection.py",
+      "lib/sqlalchemy/orm/mapper.py",
+      "lib/sqlalchemy/orm/path_registry.py",
+      "lib/sqlalchemy/orm/persistence.py",
+      "lib/sqlalchemy/orm/properties.py",
+      "lib/sqlalchemy/orm/query.py",
+      "lib/sqlalchemy/orm/relationships.py",
+      "lib/sqlalchemy/orm/scoping.py",
+      "lib/sqlalchemy/orm/state_changes.py",
+      "lib/sqlalchemy/orm/sync.py",
+      "lib/sqlalchemy/orm/unitofwork.py",
+      "lib/sqlalchemy/orm/util.py",
+      "lib/sqlalchemy/orm/writeonly.py",
+      "test/orm/test_versioning.py",
+      "test/orm/test_merge.py",
+      "test/orm/test_of_type.py",
+      "test/orm/test_default_strategies.py",
+      "test/orm/test_subquery_relations.py"
+    ],
+    "experimental_candidates": [
+      "lib/sqlalchemy/orm/strategies.py",
+      "lib/sqlalchemy/orm/util.py",
+      "lib/sqlalchemy/orm/_orm_constructors.py",
+      "lib/sqlalchemy/orm/strategy_options.py",
+      "lib/sqlalchemy/orm/session.py",
+      "lib/sqlalchemy/orm/__init__.py",
+      "lib/sqlalchemy/orm/_typing.py",
+      "lib/sqlalchemy/orm/attributes.py",
+      "lib/sqlalchemy/orm/base.py",
+      "lib/sqlalchemy/orm/bulk_persistence.py",
+      "lib/sqlalchemy/orm/clsregistry.py",
+      "lib/sqlalchemy/orm/collections.py",
+      "lib/sqlalchemy/orm/context.py",
+      "lib/sqlalchemy/orm/decl_api.py",
+      "lib/sqlalchemy/orm/decl_base.py",
+      "lib/sqlalchemy/orm/dependency.py",
+      "lib/sqlalchemy/orm/descriptor_props.py",
+      "lib/sqlalchemy/orm/dynamic.py",
+      "lib/sqlalchemy/orm/evaluator.py",
+      "lib/sqlalchemy/orm/events.py",
+      "lib/sqlalchemy/orm/exc.py",
+      "lib/sqlalchemy/orm/identity.py",
+      "lib/sqlalchemy/orm/instrumentation.py",
+      "lib/sqlalchemy/orm/interfaces.py",
+      "lib/sqlalchemy/orm/loading.py",
+      "lib/sqlalchemy/orm/mapped_collection.py",
+      "lib/sqlalchemy/orm/mapper.py",
+      "lib/sqlalchemy/orm/path_registry.py",
+      "lib/sqlalchemy/orm/persistence.py",
+      "lib/sqlalchemy/orm/properties.py",
+      "lib/sqlalchemy/orm/query.py",
+      "lib/sqlalchemy/orm/relationships.py",
+      "lib/sqlalchemy/orm/scoping.py",
+      "lib/sqlalchemy/orm/state.py",
+      "lib/sqlalchemy/orm/state_changes.py",
+      "lib/sqlalchemy/orm/sync.py",
+      "lib/sqlalchemy/orm/unitofwork.py",
+      "lib/sqlalchemy/orm/writeonly.py",
+      "test/orm/test_versioning.py",
+      "test/orm/test_of_type.py",
+      "test/orm/test_merge.py",
+      "test/orm/test_default_strategies.py",
+      "test/orm/test_events.py"
+    ],
+    "baseline_target_in_candidates": true,
+    "experimental_target_in_candidates": true,
+    "noisy_newly_in_candidates": [
+      "test/orm/test_events.py"
+    ]
+  },
+  {
+    "repo": "django",
+    "query": "How does Django avoid hitting the database again when the same queryset is evaluated more than once?",
+    "target": "django/db/models/query.py",
+    "baseline_rank": 3,
+    "experimental_rank": 1,
+    "baseline_score": 0.35698955261669474,
+    "experimental_score": 0.46866156045243557,
+    "baseline_margin": -0.03200207376911768,
+    "experimental_margin": 0.07707280444967723,
+    "baseline_top10": [
+      [
+        "django/forms/models.py",
+        0.3889916263858124
+      ],
+      [
+        "django/core/cache/backends/db.py",
+        0.3697559376209507
+      ],
+      [
+        "django/db/models/query.py",
+        0.35698955261669474
+      ],
+      [
+        "django/db/backends/postgresql/creation.py",
+        0.31809618822014035
+      ],
+      [
+        "django/core/serializers/base.py",
+        0.3168403570446216
+      ],
+      [
+        "django/utils/functional.py",
+        0.31648174221407993
+      ],
+      [
+        "django/db/backends/base/introspection.py",
+        0.3097998910674749
+      ],
+      [
+        "django/db/models/expressions.py",
+        0.2973390733722094
+      ],
+      [
+        "tests/queryset_pickle/tests.py",
+        0.29264332841685314
+      ],
+      [
+        "tests/admin_views/admin.py",
+        0.285192172268744
+      ]
+    ],
+    "experimental_top10": [
+      [
+        "django/db/models/query.py",
+        0.46866156045243557
+      ],
+      [
+        "django/forms/models.py",
+        0.39158875600275833
+      ],
+      [
+        "django/core/cache/backends/db.py",
+        0.36997649553249007
+      ],
+      [
+        "django/test/runner.py",
+        0.3332788271248253
+      ],
+      [
+        "tests/admin_filters/tests.py",
+        0.3304580170517626
+      ],
+      [
+        "django/core/serializers/base.py",
+        0.32617056467864425
+      ],
+      [
+        "django/utils/functional.py",
+        0.3240830070380915
+      ],
+      [
+        "django/db/backends/base/introspection.py",
+        0.31333118516252
+      ],
+      [
+        "django/db/backends/postgresql/creation.py",
+        0.3104914612431213
+      ],
+      [
+        "tests/queryset_pickle/tests.py",
+        0.29729435122365755
+      ]
+    ],
+    "target_experimental_terms": [
+      "atomic",
+      "cach",
+      "compiler",
+      "conf",
+      "conflict",
+      "core",
+      "create",
+      "current",
+      "db",
+      "delete",
+      "django",
+      "error",
+      "exception",
+      "exist",
+      "field",
+      "filter",
+      "get",
+      "ignore",
+      "insert",
+      "intersection",
+      "join",
+      "kwarg",
+      "lookup",
+      "manager",
+      "mark",
+      "object",
+      "pre",
+      "prohibit",
+      "query",
+      "queryset",
+      "raw",
+      "read",
+      "rollback",
+      "router",
+      "save",
+      "sep",
+      "set",
+      "sett",
+      "sql",
+      "timezone",
+      "transaction",
+      "tz",
+      "update",
+      "use",
+      "util",
+      "value",
+      "version",
+      "write",
+      "xor"
+    ],
+    "target_term_idfs": {
+      "atomic": 4.3667,
+      "cach": 4.5881,
+      "compiler": 6.265,
+      "conf": 5.0023,
+      "conflict": 5.6954,
+      "core": 4.743,
+      "create": 3.5309,
+      "current": 4.1154,
+      "db": 3.4318,
+      "delete": 4.0272,
+      "django": 3.571,
+      "error": 3.0498,
+      "exception": 3.7628,
+      "exist": 3.677,
+      "field": 1.7882,
+      "filter": 3.5757,
+      "get": 2.3981,
+      "ignore": 4.9636,
+      "insert": 5.421,
+      "intersection": 5.7221,
+      "join": 4.5838,
+      "kwarg": 4.4693,
+      "lookup": 3.6226,
+      "manager": 2.8117,
+      "mark": 5.0089,
+      "object": 2.402,
+      "pre": 4.8004,
+      "prohibit": 5.3818,
+      "query": 3.4623,
+      "queryset": 4.4502,
+      "raw": 4.951,
+      "read": 4.5372,
+      "rollback": 5.2304,
+      "router": 4.3257,
+      "save": 4.2516,
+      "sep": 5.5603,
+      "set": 2.2069,
+      "sett": 2.6958,
+      "sql": 4.0626,
+      "timezone": 3.385,
+      "transaction": 4.2061,
+      "tz": 4.3324,
+      "update": 4.413,
+      "use": 3.062,
+      "util": 3.9349,
+      "value": 2.9709,
+      "version": 4.5087,
+      "write": 4.6325,
+      "xor": 6.3886
+    },
+    "neighbor_overlap": [
+      [
+        "django/forms/models.py",
+        2,
+        false
+      ],
+      [
+        "django/core/cache/backends/db.py",
+        10,
+        false
+      ],
+      [
+        "django/test/runner.py",
+        4,
+        true
+      ],
+      [
+        "tests/admin_filters/tests.py",
+        1,
+        true
+      ],
+      [
+        "django/core/serializers/base.py",
+        0,
+        false
+      ],
+      [
+        "django/utils/functional.py",
+        0,
+        false
+      ],
+      [
+        "django/db/backends/base/introspection.py",
+        2,
+        false
+      ],
+      [
+        "django/db/backends/postgresql/creation.py",
+        1,
+        false
+      ],
+      [
+        "tests/queryset_pickle/tests.py",
+        7,
+        true
+      ]
+    ],
+    "noisy_newly_in_top10": [
+      [
+        "django/test/runner.py",
+        4,
+        0.3332788271248253
+      ],
+      [
+        "tests/admin_filters/tests.py",
+        5,
+        0.3304580170517626
+      ]
+    ],
+    "baseline_winning_subsystem": "django/db/models",
+    "experimental_winning_subsystem": "django/db/models",
+    "baseline_candidates": [
+      "django/db/models/query.py",
+      "django/db/models/expressions.py",
+      "django/db/models/fields/related_descriptors.py",
+      "django/db/models/fields/proxy.py",
+      "django/db/models/fields/__init__.py",
+      "django/db/models/__init__.py",
+      "django/db/models/aggregates.py",
+      "django/db/models/base.py",
+      "django/db/models/constants.py",
+      "django/db/models/constraints.py",
+      "django/db/models/deletion.py",
+      "django/db/models/enums.py",
+      "django/db/models/fetch_modes.py",
+      "django/db/models/fields/composite.py",
+      "django/db/models/fields/files.py",
+      "django/db/models/fields/generated.py",
+      "django/db/models/fields/json.py",
+      "django/db/models/fields/mixins.py",
+      "django/db/models/fields/related.py",
+      "django/db/models/fields/related_lookups.py",
+      "django/db/models/fields/reverse_related.py",
+      "django/db/models/fields/tuple_lookups.py",
+      "django/db/models/functions/__init__.py",
+      "django/db/models/functions/comparison.py",
+      "django/db/models/functions/datetime.py",
+      "django/db/models/functions/json.py",
+      "django/db/models/functions/math.py",
+      "django/db/models/functions/mixins.py",
+      "django/db/models/functions/text.py",
+      "django/db/models/functions/uuid.py",
+      "django/db/models/functions/window.py",
+      "django/db/models/indexes.py",
+      "django/db/models/lookups.py",
+      "django/db/models/manager.py",
+      "django/db/models/options.py",
+      "django/db/models/query_utils.py",
+      "django/db/models/signals.py",
+      "django/db/models/sql/__init__.py",
+      "django/db/models/sql/compiler.py",
+      "django/db/models/sql/constants.py",
+      "django/db/models/sql/datastructures.py",
+      "django/db/models/sql/query.py",
+      "django/db/models/sql/subqueries.py",
+      "django/db/models/sql/where.py",
+      "django/db/models/utils.py"
+    ],
+    "experimental_candidates": [
+      "django/db/models/query.py",
+      "django/db/models/fields/related_descriptors.py",
+      "django/db/models/fields/proxy.py",
+      "django/db/models/base.py",
+      "django/db/models/expressions.py",
+      "django/db/models/__init__.py",
+      "django/db/models/aggregates.py",
+      "django/db/models/constants.py",
+      "django/db/models/constraints.py",
+      "django/db/models/deletion.py",
+      "django/db/models/enums.py",
+      "django/db/models/fetch_modes.py",
+      "django/db/models/fields/__init__.py",
+      "django/db/models/fields/composite.py",
+      "django/db/models/fields/files.py",
+      "django/db/models/fields/generated.py",
+      "django/db/models/fields/json.py",
+      "django/db/models/fields/mixins.py",
+      "django/db/models/fields/related.py",
+      "django/db/models/fields/related_lookups.py",
+      "django/db/models/fields/reverse_related.py",
+      "django/db/models/fields/tuple_lookups.py",
+      "django/db/models/functions/__init__.py",
+      "django/db/models/functions/comparison.py",
+      "django/db/models/functions/datetime.py",
+      "django/db/models/functions/json.py",
+      "django/db/models/functions/math.py",
+      "django/db/models/functions/mixins.py",
+      "django/db/models/functions/text.py",
+      "django/db/models/functions/uuid.py",
+      "django/db/models/functions/window.py",
+      "django/db/models/indexes.py",
+      "django/db/models/lookups.py",
+      "django/db/models/manager.py",
+      "django/db/models/options.py",
+      "django/db/models/query_utils.py",
+      "django/db/models/signals.py",
+      "django/db/models/sql/__init__.py",
+      "django/db/models/sql/compiler.py",
+      "django/db/models/sql/constants.py",
+      "django/db/models/sql/datastructures.py",
+      "django/db/models/sql/query.py",
+      "django/db/models/sql/subqueries.py",
+      "django/db/models/sql/where.py",
+      "django/db/models/utils.py"
+    ],
+    "baseline_target_in_candidates": true,
+    "experimental_target_in_candidates": true,
+    "noisy_newly_in_candidates": []
+  },
+  {
+    "repo": "vllm",
+    "query": "How does vLLM decide which request to pause when it runs out of memory for the KV cache during batching?",
+    "target": "vllm/v1/core/sched/scheduler.py",
+    "baseline_rank": 106,
+    "experimental_rank": 110,
+    "baseline_score": 0.3542202279835279,
+    "experimental_score": 0.3439064239423788,
+    "baseline_margin": -0.5212435838332796,
+    "experimental_margin": -0.3492626148000195,
+    "baseline_top10": [
+      [
+        "vllm/distributed/kv_transfer/kv_connector/v1/mooncake/store/worker.py",
+        0.8754638118168075
+      ],
+      [
+        "benchmarks/kernels/benchmark_paged_attention.py",
+        0.6612606206226038
+      ],
+      [
+        "benchmarks/kernels/benchmark_reshape_and_cache.py",
+        0.6588445512459273
+      ],
+      [
+        "benchmarks/kernels/benchmark_reshape_and_cache_flash.py",
+        0.6541558475391263
+      ],
+      [
+        "vllm/model_executor/layers/attention/rswa_attention.py",
+        0.5968250084462059
+      ],
+      [
+        "tests/v1/core/test_kv_sharing.py",
+        0.5904834845225586
+      ],
+      [
+        "vllm/benchmarks/latency.py",
+        0.5837469417513966
+      ],
+      [
+        "tests/v1/core/test_prefix_caching.py",
+        0.572914606060735
+      ],
+      [
+        "vllm/v1/core/sched/interface.py",
+        0.565493251320443
+      ],
+      [
+        "vllm/model_executor/layers/attention/encoder_only_attention.py",
+        0.5594006352712706
+      ]
+    ],
+    "experimental_top10": [
+      [
+        "tests/v1/core/test_kv_cache_utils.py",
+        0.6931690387423983
+      ],
+      [
+        "tests/v1/core/test_prefix_caching.py",
+        0.651334201228131
+      ],
+      [
+        "benchmarks/kernels/benchmark_reshape_and_cache.py",
+        0.640108467441509
+      ],
+      [
+        "benchmarks/kernels/benchmark_reshape_and_cache_flash.py",
+        0.6365471643656169
+      ],
+      [
+        "benchmarks/kernels/benchmark_paged_attention.py",
+        0.6201918377989601
+      ],
+      [
+        "tests/v1/kv_connector/unit/test_mooncake_connector.py",
+        0.6106994567346735
+      ],
+      [
+        "tests/v1/core/test_kv_sharing.py",
+        0.5579976348067143
+      ],
+      [
+        "vllm/model_executor/layers/attention/rswa_attention.py",
+        0.5576293812352957
+      ],
+      [
+        "vllm/distributed/kv_transfer/kv_connector/v1/lmcache_mp_connector.py",
+        0.5561543925134699
+      ],
+      [
+        "vllm/v1/attention/backends/flash_attn.py",
+        0.5523149427144323
+      ]
+    ],
+    "target_experimental_terms": [
+      "abort",
+      "base",
+      "connector",
+      "core",
+      "create",
+      "data",
+      "decod",
+      "delivery",
+      "ec",
+      "engine",
+      "error",
+      "event",
+      "factory",
+      "fcf",
+      "finish",
+      "grammar",
+      "kv",
+      "kvs",
+      "new",
+      "output",
+      "paus",
+      "pause",
+      "policy",
+      "preempt",
+      "priority",
+      "publisher",
+      "queu",
+      "recv",
+      "remote",
+      "req",
+      "request",
+      "require",
+      "role",
+      "runn",
+      "schedul",
+      "scheduler",
+      "spec",
+      "stat",
+      "state",
+      "status",
+      "stopp",
+      "stream",
+      "structur",
+      "type",
+      "unpaus",
+      "update",
+      "v1",
+      "wait"
+    ],
+    "target_term_idfs": {
+      "abort": 4.7443,
+      "base": 3.9606,
+      "connector": 3.8406,
+      "core": 4.9276,
+      "create": 3.467,
+      "data": 3.5386,
+      "decod": 5.1793,
+      "delivery": 8.2101,
+      "ec": 6.6595,
+      "engine": 3.6675,
+      "error": 3.9226,
+      "event": 4.1911,
+      "factory": 4.6774,
+      "fcf": 8.7697,
+      "finish": 4.1521,
+      "grammar": 5.6127,
+      "kv": 3.0701,
+      "kvs": 5.7554,
+      "new": 3.6021,
+      "output": 3.0231,
+      "paus": 7.6303,
+      "pause": 7.1856,
+      "policy": 5.3727,
+      "preempt": 5.5164,
+      "priority": 5.236,
+      "publisher": 6.722,
+      "queu": 6.6006,
+      "recv": 4.9742,
+      "remote": 4.5338,
+      "req": 4.6588,
+      "request": 2.8888,
+      "require": 4.4406,
+      "role": 4.6167,
+      "runn": 4.7669,
+      "schedul": 5.05,
+      "scheduler": 3.9606,
+      "spec": 3.8878,
+      "stat": 4.7007,
+      "state": 3.4897,
+      "status": 4.731,
+      "stopp": 5.4601,
+      "stream": 3.8552,
+      "structur": 5.2433,
+      "type": 2.715,
+      "unpaus": 9.4628,
+      "update": 3.5671,
+      "v1": 4.8428,
+      "wait": 4.6879
+    },
+    "neighbor_overlap": [
+      [
+        "tests/v1/core/test_kv_cache_utils.py",
+        4,
+        true
+      ],
+      [
+        "tests/v1/core/test_prefix_caching.py",
+        4,
+        true
+      ],
+      [
+        "benchmarks/kernels/benchmark_reshape_and_cache.py",
+        0,
+        true
+      ],
+      [
+        "benchmarks/kernels/benchmark_reshape_and_cache_flash.py",
+        0,
+        true
+      ],
+      [
+        "benchmarks/kernels/benchmark_paged_attention.py",
+        0,
+        true
+      ],
+      [
+        "tests/v1/kv_connector/unit/test_mooncake_connector.py",
+        8,
+        true
+      ],
+      [
+        "tests/v1/core/test_kv_sharing.py",
+        0,
+        true
+      ],
+      [
+        "vllm/model_executor/layers/attention/rswa_attention.py",
+        0,
+        false
+      ],
+      [
+        "vllm/distributed/kv_transfer/kv_connector/v1/lmcache_mp_connector.py",
+        7,
+        false
+      ],
+      [
+        "vllm/v1/attention/backends/flash_attn.py",
+        1,
+        false
+      ]
+    ],
+    "noisy_newly_in_top10": [
+      [
+        "tests/v1/core/test_kv_cache_utils.py",
+        1,
+        0.6931690387423983
+      ],
+      [
+        "tests/v1/kv_connector/unit/test_mooncake_connector.py",
+        6,
+        0.6106994567346735
+      ]
+    ],
+    "baseline_winning_subsystem": "benchmarks/kernels::benchmark",
+    "experimental_winning_subsystem": "tests/v1/core",
+    "baseline_candidates": [
+      "benchmarks/kernels/benchmark_paged_attention.py",
+      "benchmarks/kernels/benchmark_reshape_and_cache.py",
+      "benchmarks/kernels/benchmark_reshape_and_cache_flash.py",
+      "benchmarks/kernels/benchmark_per_token_group_quant.py",
+      "benchmarks/kernels/benchmark_grouped_gemm_cutlass.py",
+      "vllm/distributed/kv_transfer/kv_connector/v1/mooncake/store/worker.py",
+      "vllm/distributed/kv_transfer/kv_connector/v1/mooncake/store/connector.py",
+      "vllm/distributed/kv_transfer/kv_connector/v1/mooncake/mooncake_connector.py",
+      "vllm/distributed/kv_transfer/kv_connector/v1/mooncake/store/scheduler.py",
+      "vllm/distributed/kv_transfer/kv_connector/v1/mooncake/stats.py"
+    ],
+    "experimental_candidates": [
+      "tests/v1/core/test_kv_cache_utils.py",
+      "tests/v1/core/test_prefix_caching.py",
+      "tests/v1/core/test_kv_sharing.py",
+      "tests/v1/core/prefix_cache/test_partial_prefix_cache_primitives.py",
+      "tests/v1/core/utils.py",
+      "tests/v1/core/prefix_cache/test_partial_prefix_cache_hits.py",
+      "tests/v1/core/test_async_scheduler.py",
+      "tests/v1/core/test_deferred_block_free.py",
+      "tests/v1/core/test_mamba_align_chunk_split.py",
+      "tests/v1/core/test_priority_scheduler_random.py",
+      "tests/v1/core/test_scheduler.py",
+      "tests/v1/core/test_swa_inflight_window_free.py",
+      "tests/v1/core/test_worker_slot_overflow.py",
+      "benchmarks/kernels/benchmark_reshape_and_cache.py",
+      "benchmarks/kernels/benchmark_reshape_and_cache_flash.py",
+      "benchmarks/kernels/benchmark_paged_attention.py",
+      "benchmarks/kernels/benchmark_grouped_gemm_cutlass.py",
+      "benchmarks/kernels/benchmark_quant.py"
+    ],
+    "baseline_target_in_candidates": false,
+    "experimental_target_in_candidates": false,
+    "noisy_newly_in_candidates": [
+      "tests/v1/core/test_kv_cache_utils.py",
+      "tests/v1/core/test_prefix_caching.py",
+      "tests/v1/core/test_kv_sharing.py",
+      "tests/v1/core/prefix_cache/test_partial_prefix_cache_primitives.py",
+      "tests/v1/core/utils.py",
+      "tests/v1/core/prefix_cache/test_partial_prefix_cache_hits.py",
+      "tests/v1/core/test_async_scheduler.py",
+      "tests/v1/core/test_deferred_block_free.py",
+      "tests/v1/core/test_mamba_align_chunk_split.py",
+      "tests/v1/core/test_priority_scheduler_random.py",
+      "tests/v1/core/test_scheduler.py",
+      "tests/v1/core/test_swa_inflight_window_free.py",
+      "tests/v1/core/test_worker_slot_overflow.py",
+      "benchmarks/kernels/benchmark_quant.py"
+    ]
+  }
+]

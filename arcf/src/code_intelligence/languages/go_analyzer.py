@@ -36,10 +36,27 @@ a Go import path (e.g. "myapp/auth") names a PACKAGE (a whole
 directory, possibly many files), not one file, whereas
 ImportReference.resolved_file_path models a single resolved file. This
 analyzer treats the import path as if it were a workspace-relative
-directory (a fair assumption for a single-module repo with no import-
-path remapping) and, if any workspace .go file lives under it,
-resolves to the alphabetically-first one as a representative — a
-documented, best-effort choice, not a guess hidden from the caller.
+directory and, if any workspace .go file lives under it, resolves to
+the alphabetically-first one as a representative — a documented,
+best-effort choice, not a guess hidden from the caller.
+
+A real Go import is module-qualified (`github.com/org/repo/pkg/auth`),
+not workspace-relative (`pkg/auth`) — the module's own declared prefix
+(from `go.mod`, never read here) doesn't appear in `workspace_files` at
+all. Matching the raw path directly against workspace-relative
+directories, as an earlier version of this analyzer did, therefore
+NEVER resolved a single Go import in any real multi-segment module path
+— confirmed against a real 5,931-import Traefik scan, 0 resolved.
+`_resolve_import_path` instead tries progressively shorter suffixes of
+the import path (dropping leading segments one at a time: the full
+path, then everything after the first segment, then after the second,
+...) against `workspace_files`, returning the first (longest, most
+specific) suffix that matches — this recovers the workspace-relative
+portion of a module-qualified path without ever needing to read
+`go.mod`, purely from data already available. A stdlib import
+("context") or third-party import with no matching local directory
+("github.com/rs/zerolog") tries every suffix and correctly resolves to
+nothing, the same as before — this only fixes genuinely local imports.
 """
 
 from dataclasses import dataclass, field
@@ -400,9 +417,22 @@ class GoLanguageAnalyzer:
 
     @staticmethod
     def _resolve_import_path(raw_path: str, workspace_files: frozenset[str]) -> str | None:
-        prefix = f"{raw_path}/"
-        matches = sorted(f for f in workspace_files if f.startswith(prefix) and f.endswith(".go"))
-        return matches[0] if matches else None
+        """See the module docstring's own "Import resolution" section for
+        why this tries multiple suffixes rather than the raw path
+        directly: a real Go import is module-qualified
+        (`github.com/org/repo/pkg/auth`), and the module's own prefix
+        never appears in `workspace_files` (workspace-relative,
+        `pkg/auth`). Trying the full path first, then progressively
+        shorter suffixes, and returning the first match keeps the most
+        specific interpretation whenever more than one suffix happens to
+        match."""
+        segments = raw_path.split("/")
+        for start in range(len(segments)):
+            prefix = "/".join(segments[start:]) + "/"
+            matches = sorted(f for f in workspace_files if f.startswith(prefix) and f.endswith(".go"))
+            if matches:
+                return matches[0]
+        return None
 
     # -- tree helpers ---------------------------------------------------
 

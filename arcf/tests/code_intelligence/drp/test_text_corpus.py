@@ -3,6 +3,7 @@ from pathlib import Path
 from code_intelligence.drp.text_corpus import gather_scoring_units
 from code_intelligence.engine import CodeIntelligenceEngine
 from code_intelligence.index import CodeIntelligenceIndex
+from code_intelligence.languages.go_analyzer import GoLanguageAnalyzer
 from code_intelligence.languages.python_analyzer import PythonLanguageAnalyzer
 from code_intelligence.registry import LanguageRegistry
 from infrastructure.cost import CostEstimator
@@ -18,6 +19,14 @@ def _build_index(tmp_path: Path) -> CodeIntelligenceIndex:
 
 def _gather(tmp_path: Path, max_symbols_per_file_document: int = 8):
     index = _build_index(tmp_path)
+    permissions = PermissionManager(tmp_path)
+    return gather_scoring_units(index, permissions, max_symbols_per_file_document)
+
+
+def _go_gather(tmp_path: Path, max_symbols_per_file_document: int = 8):
+    engine = CodeIntelligenceEngine(LanguageRegistry([GoLanguageAnalyzer()]), CostEstimator())
+    scan = RepositoryScanner().scan(tmp_path)
+    index = engine.build_index(tmp_path, scan.files)
     permissions = PermissionManager(tmp_path)
     return gather_scoring_units(index, permissions, max_symbols_per_file_document)
 
@@ -148,3 +157,73 @@ def test_unit_usage_excludes_same_named_symbol_with_no_locality(tmp_path: Path) 
     _, _, unit_usage = _gather(tmp_path)
 
     assert unit_usage["pkg1/a.py"] == 0
+
+
+def test_externally_declared_method_gets_its_own_unit_with_its_doc_comment(
+    tmp_path: Path,
+) -> None:
+    # Go declares methods OUTSIDE their receiver type's own source range
+    # (`func (w *Widget) Activate()`, separate from `type Widget
+    # struct{...}`), unlike Python where a method is lexically nested
+    # inside its class body — a real Consul run found a receiver
+    # struct's own methods' doc comments were silently unreachable under
+    # this shape (see text_corpus.py's own module docstring). Force a
+    # split (9 top-level symbols, over the 8-symbol threshold) so
+    # Widget's own unit is scored separately from the rest of the file.
+    filler = "\n\n".join(f"func f{i}() {{}}" for i in range(8))
+    source = (
+        "package app\n\n"
+        "type Widget struct {\n\tid int\n}\n\n"
+        "// Activate turns the widget on and logs telemetry about the activation event.\n"
+        "func (w *Widget) Activate() {\n\tdoStuff()\n}\n\n"
+        f"{filler}\n"
+    )
+    (tmp_path / "widget.go").write_text(source)
+
+    unit_texts, file_to_units, _unit_usage = _go_gather(tmp_path)
+
+    units = file_to_units["widget.go"]
+    activate_unit = next(u for u in units if "Widget.Activate#" in u)
+    widget_unit = next(u for u in units if "::Widget#" in u)
+
+    assert "Activate turns the widget on" in unit_texts[activate_unit]
+    # The parent's own unit must NOT also carry the full comment — that
+    # would reintroduce the pooling/dilution regression a real Consul
+    # run found (11 methods' comments pooled into one struct unit
+    # measurably lowered its real retrieval score) even though it also
+    # fixed the original comment-loss bug.
+    assert "Activate turns the widget on" not in unit_texts[widget_unit]
+    assert "Activate" in unit_texts[widget_unit]
+
+
+def test_zero_usage_split_method_borrows_a_floor_from_a_used_sibling(
+    tmp_path: Path,
+) -> None:
+    # A framework-dispatched method (invoked by name/reflection through a
+    # registration table, e.g. an RPC handler) structurally has zero
+    # recorded callers no matter how central it is — CallGraph only sees
+    # explicit call expressions. A real Consul run found 9 of a receiver
+    # struct's 11 methods showed 0 own callers this way, even though the
+    # struct itself was obviously live code. `Dispatched` below simulates
+    # that: nothing calls it directly, but its sibling `Called` (same
+    # receiver, `Widget`) genuinely is — real evidence `Widget` is live,
+    # active code, which `Dispatched` should be able to borrow from.
+    filler = "\n\n".join(f"func f{i}() {{}}" for i in range(7))
+    source = (
+        "package app\n\n"
+        "type Widget struct {\n\tid int\n}\n\n"
+        "func (w *Widget) Dispatched() {\n\tdoStuff()\n}\n\n"
+        "func (w *Widget) Called() {\n\tdoOtherStuff()\n}\n\n"
+        "func UseWidget(w *Widget) {\n\tw.Called()\n}\n\n"
+        f"{filler}\n"
+    )
+    (tmp_path / "widget.go").write_text(source)
+
+    _, file_to_units, unit_usage = _go_gather(tmp_path)
+
+    units = file_to_units["widget.go"]
+    dispatched_unit = next(u for u in units if "Widget.Dispatched#" in u)
+    called_unit = next(u for u in units if "Widget.Called#" in u)
+
+    assert unit_usage[called_unit] > 0
+    assert unit_usage[dispatched_unit] == unit_usage[called_unit]

@@ -7,66 +7,65 @@
     "drp": {
       "resolver": "drp+pmi",
       "top_files": [
+        "benchmarks/kernels/benchmark_paged_attention.py",
+        "benchmarks/kernels/benchmark_reshape_and_cache.py",
+        "benchmarks/kernels/benchmark_reshape_and_cache_flash.py",
+        "benchmarks/kernels/benchmark_per_token_group_quant.py",
+        "benchmarks/kernels/benchmark_grouped_gemm_cutlass.py",
         "vllm/distributed/kv_transfer/kv_connector/v1/mooncake/store/worker.py",
         "vllm/distributed/kv_transfer/kv_connector/v1/mooncake/store/connector.py",
         "vllm/distributed/kv_transfer/kv_connector/v1/mooncake/mooncake_connector.py",
         "vllm/distributed/kv_transfer/kv_connector/v1/mooncake/store/scheduler.py",
-        "vllm/distributed/kv_transfer/kv_connector/v1/mooncake/stats.py",
-        "vllm/distributed/kv_transfer/kv_connector/v1/mooncake/__init__.py",
-        "vllm/distributed/kv_transfer/kv_connector/v1/mooncake/mooncake_utils.py",
-        "vllm/distributed/kv_transfer/kv_connector/v1/mooncake/store/coordinator.py",
-        "vllm/distributed/kv_transfer/kv_connector/v1/mooncake/store/data.py",
-        "vllm/distributed/kv_transfer/kv_connector/v1/mooncake/store/metrics.py",
-        "vllm/distributed/kv_transfer/kv_connector/v1/mooncake/store/protocol.py"
+        "vllm/distributed/kv_transfer/kv_connector/v1/mooncake/stats.py"
       ],
-      "candidate_count": 11,
-      "confidence": 0.004684752915780238,
-      "resolver_latency_seconds": 0.0835,
-      "packaged_tokens": 7949,
+      "candidate_count": 10,
+      "confidence": 0.004431462093320757,
+      "resolver_latency_seconds": 0.1235,
+      "packaged_tokens": 7135,
       "packaged_file_count": 4,
-      "graph_expansion_count": 6,
-      "top_subsystem": "vllm/distributed/kv_transfer/kv_connector/v1/mooncake",
+      "graph_expansion_count": 0,
+      "top_subsystem": "benchmarks/kernels::benchmark",
       "top_community": ".buildkite/check-torch-abi.py",
       "subsystem_scores": [
         [
+          "benchmarks/kernels::benchmark",
+          0.8610062893081762
+        ],
+        [
           "vllm/distributed/kv_transfer/kv_connector/v1/mooncake",
-          0.9000000000000001
-        ],
-        [
-          "vllm/model_executor/layers/attention",
-          0.8506318405876069
-        ],
-        [
-          "vllm/distributed/kv_transfer/kv_connector/v1",
-          0.8176284814534074
+          0.8485660063402498
         ],
         [
           "tests/v1/core",
-          0.8011738650671005
+          0.7858639829236
         ],
         [
-          "tests/v1/kv_connector/unit::test",
-          0.7950840558960748
-        ],
-        [
-          "vllm/model_executor/models::extract",
-          0.7901349133063871
-        ],
-        [
-          "vllm/v1/core",
-          0.7508308597455924
+          "vllm/model_executor/layers/attention",
+          0.7507682455383362
         ],
         [
           "vllm/v1/attention/backends",
-          0.748765056962949
+          0.7396564241804576
+        ],
+        [
+          "tests/v1/kv_connector/unit::test",
+          0.7379972297608991
+        ],
+        [
+          "vllm/distributed/kv_transfer/kv_connector/v1",
+          0.7368463775173479
         ],
         [
           "vllm/v1/engine",
-          0.7413626094845935
+          0.7356786233149546
         ],
         [
-          "benchmarks/kernels::benchmark",
-          0.723842607646519
+          "vllm/v1/worker",
+          0.7310284655335346
+        ],
+        [
+          "vllm/v1/worker/gpu",
+          0.7268428791215517
         ]
       ],
       "query_expansion": {},

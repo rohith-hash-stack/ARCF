@@ -249,6 +249,67 @@ def test_near_tie_is_deterministic(tmp_path: Path) -> None:
     assert first.near_tied_entry_files == second.near_tied_entry_files
 
 
+def test_margin_confidence_is_low_for_a_genuine_near_tie(tmp_path: Path) -> None:
+    # winning_confidence and near_tied_subsystems are two views of the
+    # same winner/runner-up margin (see query_router._margin_confidence's
+    # own docstring) — a near-tie must report LOW confidence, not the
+    # old total-score-share formula's disconnected number.
+    _near_tie_fixture(tmp_path)
+    index = _build_index(tmp_path)
+    drp_index = DrpIndexBuilder.build(index, tmp_path, max_files_per_subsystem=2)
+
+    routing = route_query(
+        "How does the system register a new service instance in the catalog?",
+        drp_index.taxonomy,
+        drp_index.file_tfidf,
+        drp_index.file_to_units,
+        drp_index.subsystem_graph,
+        index,
+    )
+
+    assert routing.near_tied_subsystems  # sanity: this really is a near-tie
+    assert routing.winning_confidence < 0.05
+
+
+def test_margin_confidence_is_high_for_a_decisive_win(tmp_path: Path) -> None:
+    # pkg/server is the only subsystem with any real lexical overlap with
+    # this query (pkg/provider and pkg/middleware are about unrelated
+    # topics) — a clean, one-sided win should report high confidence,
+    # not a number diluted by how many unrelated subsystems also exist.
+    _traefik_like_fixture(tmp_path)
+    index = _build_index(tmp_path)
+    drp_index = DrpIndexBuilder.build(index, tmp_path, max_files_per_subsystem=2)
+
+    routing = route_query(
+        "Explain how dynamic configuration updates propagate without restarting the server.",
+        drp_index.taxonomy,
+        drp_index.file_tfidf,
+        drp_index.file_to_units,
+        drp_index.subsystem_graph,
+        index,
+    )
+
+    assert not routing.near_tied_subsystems
+    assert routing.winning_confidence > 0.5
+
+
+def test_margin_confidence_is_zero_when_every_subsystem_scores_zero(tmp_path: Path) -> None:
+    _traefik_like_fixture(tmp_path)
+    index = _build_index(tmp_path)
+    drp_index = DrpIndexBuilder.build(index, tmp_path, max_files_per_subsystem=2)
+
+    routing = route_query(
+        "zzz qqq xyzabc nonexistent gibberish terms",
+        drp_index.taxonomy,
+        drp_index.file_tfidf,
+        drp_index.file_to_units,
+        drp_index.subsystem_graph,
+        index,
+    )
+
+    assert routing.winning_confidence == 0.0
+
+
 def test_empty_taxonomy_yields_empty_routing(tmp_path: Path) -> None:
     index = _build_index(tmp_path)
     taxonomy = build_taxonomy(index)

@@ -27,6 +27,9 @@ DETECTOR_NAME_TO_ANALYZER_LANGUAGE: dict[str, str] = {
     "Go": "go",
     "C#": "csharp",
     "Kotlin": "kotlin",
+    "C": "cpp",
+    "C++": "cpp",  # same analyzer handles both dialects
+    "Rust": "rust",
 }
 
 

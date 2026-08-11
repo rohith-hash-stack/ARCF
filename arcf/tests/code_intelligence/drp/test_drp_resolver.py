@@ -205,8 +205,12 @@ def test_pmi_expansion_bridges_a_zero_coverage_query_term_to_the_right_subsystem
 
     assert "pkg/server/watcher.py" in {f.file_path for f in result.candidate_files}
     assert diagnostics.query_expansion is not None
-    assert "restarting" in diagnostics.query_expansion
-    expanded_to = {term for term, _ in diagnostics.query_expansion["restarting"]}
+    # "restarting" is stemmed to "restart" by tfidf.tokenize before PMI
+    # expansion ever sees it (see tfidf.py's own `_stem`) — the query-
+    # expansion dict is keyed by the post-stem token, same as every
+    # other term.
+    assert "restart" in diagnostics.query_expansion
+    expanded_to = {term for term, _ in diagnostics.query_expansion["restart"]}
     assert "apply" in expanded_to or "watcher" in expanded_to
 
 
@@ -261,3 +265,61 @@ def test_near_tied_subsystem_files_reach_the_final_result_as_supporting_evidence
     reasons_by_path = {f.file_path: f.reason for f in result.candidate_files}
     near_tied_reason = next(r for r in reasons_by_path.values() if "near-tied" in r)
     assert "close second to" in near_tied_reason
+
+
+def test_ambiguous_resolution_says_so_instead_of_sounding_resolved(tmp_path: Path) -> None:
+    # Graceful degradation under ambiguity: when the winner barely beat
+    # the runner-up, the top-level resolution_reason must say so in
+    # plain language, not phrase it as a confidently "resolved" pick —
+    # low winning_confidence and a non-empty near-tie are the same fact
+    # (see query_router._margin_confidence), so the wording must agree
+    # with the number instead of contradicting it.
+    _write(
+        tmp_path,
+        "sub_a/handler.py",
+        '"""Registers a new service instance in the catalog when an agent '
+        'reports it."""\ndef register_service():\n    return True\n',
+    )
+    _write(
+        tmp_path,
+        "sub_a/caller.py",
+        "from .handler import register_service\n\ndef entry():\n    return register_service()\n",
+    )
+    _write(
+        tmp_path,
+        "sub_b/structs.py",
+        '"""Registers a new service instance in the catalog when an agent '
+        'reports it too."""\ndef register_service_struct():\n    return True\n',
+    )
+    _write(
+        tmp_path,
+        "sub_b/caller.py",
+        "from .structs import register_service_struct\n\n"
+        "def entry():\n    return register_service_struct()\n",
+    )
+    index = _build_index(tmp_path)
+    drp_index = DrpIndexBuilder.build(index, tmp_path, max_files_per_subsystem=0)
+
+    result, _ = DrpResolver(index, drp_index).resolve(
+        "ws1",
+        "contract1",
+        str(tmp_path),
+        "How does the system register a new service instance in the catalog?",
+    )
+
+    assert result.confidence < 0.05
+    assert "ambiguous" in result.resolution_reason.lower()
+    assert "resolved subsystem" not in result.resolution_reason.lower()
+
+
+def test_decisive_resolution_still_sounds_resolved(tmp_path: Path) -> None:
+    _traefik_like_fixture(tmp_path)
+    result, _ = _resolve(
+        tmp_path,
+        "Explain how dynamic configuration updates propagate without restarting the server.",
+        max_files_per_subsystem=0,
+    )
+
+    assert result.confidence > 0.5
+    assert "resolved subsystem" in result.resolution_reason.lower()
+    assert "ambiguous" not in result.resolution_reason.lower()

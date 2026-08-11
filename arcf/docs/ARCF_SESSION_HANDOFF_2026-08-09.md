@@ -29,8 +29,11 @@ rejected by the user this session — see §8).
 the five existing graph classes, or `context/` packaging is touched. DRP is reached
 only through `resolver_strategy="drp"` on `CodeIntelligenceContractService.
 attach_code_intelligence` (`code_intelligence/service.py`), default `"classic"` —
-every existing caller/test is byte-identical. 798/798 tests pass as of this doc
-(updated 2026-08-09 follow-up session — see fix #9 in §3).
+every existing caller/test is byte-identical. 805/805 tests pass as of this doc
+(updated 2026-08-09/10 follow-up session — see fixes #9-#13 in §3; fix #13 touches
+`go_analyzer.py`, a shared LanguageAnalyzer, not DRP-only, but stays within the same
+"never touch context_resolver.py / the five classic graph classes" isolation
+discipline since LanguageAnalyzer is a different, lower layer).
 
 ## 2. Architecture — `arcf/src/code_intelligence/drp/`
 
@@ -68,22 +71,31 @@ Benchmark repos: shallow-cloned siblings at
 | 7 | Winner-take-all: a subsystem within 2-3% of the winner got ZERO candidate files (Consul, Django) | Near-tie subsystem expansion — runner-up subsystems within `_NEAR_TIE_MARGIN=0.03` also get their own entry files (SUPPORTING tier, capped at `_MAX_NEAR_TIE_SUBSYSTEMS=2`) | `query_router.py`, `drp_resolver.py` |
 | 8 | A large FLAT directory (idiomatic Go: one package, many files, zero subdirectories — Consul's `agent/consul`, 175 files) can never be split by directory depth, no matter how large | Filename-prefix clustering (Go's own convention: `catalog_endpoint.go`/`catalog_endpoint_ce.go`/`catalog_endpoint_test.go` share the `catalog` prefix) when a directory is oversized AND has no subdirectories — including its own direct files even when it DOES split by subdirectory too (a second sub-bug found mid-fix: `agent/consul` has one small real subdirectory `autopilotevents/` mixed in with 175 flat files, which was falling through to the old "just register the flat blob" path) | `taxonomy.py` (`_filename_prefix`, `register_direct_files`) |
 | 9 | `CallGraph`/`ReferenceResolver.resolve()` deliberately fan out an ambiguous name to EVERY same-named symbol in the whole repo (documented, intentional design for `CallGraph`'s real purpose — conservative reachability/impact analysis; see `reference_resolver.py`'s own module docstring). DRP's `_combined_call_count` (fix #6) trusted that fanned-out edge set as if it were a real COUNT — a real SQLAlchemy run found three unrelated `__init__` methods each credited with an identical, inflated 367 "callers" (the total count of every `__init__()` call anywhere in the repo), which defeated fix #6's own usage-confidence dampening for an example/demo file (`examples/dogpile_caching/caching_query.py`, `usage_count=1323`, full confidence, zero dampening) | Locality filter (same file / same directory via `SymbolIndex.same_package` / import-reachable via `ImportGraph` — the same signal `resolve_with_disambiguation` already uses elsewhere) applied as a **read-side filter on DRP's own usage count**, not any change to `CallGraph`/`ReferenceResolver` themselves — stays inside DRP's isolation boundary. Fixed the anomaly (1323→11) and improved Django (rank 10→**5**) with no regressions on SQLAlchemy (still rank 1) or the 798-test suite (was 797, +1 new test) | `text_corpus.py` (`_combined_call_count`, new `_has_locality`) |
+| 10 | Languages that declare methods OUTSIDE their receiver type's own source range (Go: `func (c *Catalog) Register(...)`, separate from `type Catalog struct{...}`) left every such method's own doc comment and body completely unreachable by fix #3's per-symbol split — the parent's own line-range extraction never touches it, and methods (`parent_id != None`) never got their own scoring unit either. Real Consul case: `Catalog.Register`'s doc comment ("Register a service and/or check(s) in a node...") — nearly a paraphrase of the benchmark query — was entirely absent from the corpus. **First attempted fix (pooling all method comments into the parent's one unit) made things WORSE** (target score 0.25→0.11) by reintroducing fix #3's own dilution problem one level deeper (11 methods' unrelated concerns — ACL checks, metrics, hashing — burying Register's specific vocabulary) | Give each externally-declared child its own scoring unit (a genuine second splitting tier, gated by `_is_within` so Python's already-correct nested-range case is untouched) instead of pooling, plus a leading-comment lookback (`_expand_start_for_leading_comment`) since a symbol's own doc comment sits on the lines ABOVE its declared `start_line`, not inside it — a separate, subtler part of the same bug. `_file_level_scores`'s existing max-across-a-file's-units reduction picks the new units up automatically, no query_router.py change needed. 799/799 tests (new Go-fixture test added), no regressions on the 5-repo sweep, though this alone didn't flip Consul (see fix #11 and §6 for why) | `text_corpus.py` (`gather_scoring_units`, new `_is_within`/`_expand_start_for_leading_comment`) |
+| 11 | No stemming anywhere in `tokenize()` — exact-string matching only. Found while checking why fix #10's newly-reachable `Register` doc comment still scored 0: the query says "agent **registers** it," the comment says "**Register** a service..." — two different tokens, zero overlap, despite being the same word | Lightweight, deterministic suffix-stripping (`_stem` — plural -s/-es/-ies, verb -ing/-ed; explicitly NOT a full Porter/Snowball implementation or an external NLP dependency, matching this module's own "pure Python/math, no libraries" restraint) applied inside `tokenize()`, so it's automatic for corpus, query, AND PMI-expansion text alike. Verified against a stress-test word list for false positives (class/process/status/success/bus stay unchanged) before landing. Real effect: **Django improved to rank 1** (from rank 5), SQLAlchemy stays rank 1, no regressions on the 801-test suite (2 new stemming tests added) or the other 3 repos — Traefik's wrong winner even moved into the correct neighborhood (`pkg/server/service` instead of `integration`) | `tfidf.py` (`tokenize`, new `_stem`) |
+| 12 | Even with fixes #10/#11, `Register`'s own unit still scored a raw 0.6086 but got zeroed to 0.0 by usage-confidence dampening (fix #6): `usage_count=0`. Root cause: a framework-dispatched method (RPC handler invoked by name/reflection through a registration table) structurally has zero recorded callers no matter how central it is — `CallGraph` only sees explicit call expressions, and this session confirmed the receiver TYPE's own construction (`&Catalog{...}`, a struct literal) isn't tracked as a "call" either, so the type itself can't be used as a confidence fallback. What DOES survive: checked all 11 of `Catalog`'s methods directly — 9 showed 0 own callers, but `ServiceNodes` (4) and `VirtualIPForService` (6) didn't, real evidence the type as a whole is live, active code. This is the **user's own graph-proximity idea**, applied to its narrowest, best-evidenced form (not the fuller "type → method → call" graph originally proposed — see below) | A zero-usage split method borrows the MAX usage count among its siblings on the same receiver type as a confidence floor (never lowers an already-nonzero count) — pure structural composition of the existing parent-child relationship, no new analysis. Verified in isolation with a dedicated test (`Dispatched`/`Called`/`Widget` fixture) and against real Consul data (`Register`'s own score: 0.0→0.1826). **Did NOT change Consul's end-to-end ranking** — `Register` still isn't `catalog_endpoint.go`'s highest-scoring unit (something else in the file already scores 0.4633), so `_file_level_scores`'s max-across-units reduction was never bottlenecked on it for this specific query. A real, tested, isolated correctness fix that just wasn't decisive here. 802/802 tests (1 new test), no regressions on the 5-repo sweep | `text_corpus.py` (`gather_scoring_units`, sibling-usage-floor pass) |
+
+| 13 | `go_analyzer.py`'s `_resolve_import_path` matched a raw import path directly against workspace-relative paths — but a real Go import is module-qualified (`github.com/org/repo/pkg/auth`), and the module's own declared prefix (from `go.mod`, never read) never appears in workspace-relative paths (`pkg/auth`) at all. Confirmed against a real Traefik scan: **0 of 5,931 imports ever resolved**, local or not — meaning `ImportGraph` was completely empty for every Go repo this whole session, and fix #9's locality filter had silently been degraded to same-file/same-package checks only (its import-reachability tier never fired for Go). This is a shared, core `LanguageAnalyzer` bug, not DRP-specific — found while building the qualified-identifier falsification experiment (§9), which needed real import resolution to detect "project-local" symbols | `_resolve_import_path` now tries progressively shorter suffixes of the import path (dropping leading segments one at a time) against `workspace_files`, returning the first (longest, most specific) match — recovers the workspace-relative portion of a module-qualified path without ever reading `go.mod`, purely from data already available. Traefik: 0→1,361/5,931 resolved; Consul: 0→6,462/16,602. Stdlib/third-party imports correctly still never resolve (verified with a dedicated test). 3 new tests, 805/805 full suite, zero regressions on the 5-repo DRP sweep (all 5 repos' rank/candidates unchanged after this fix alone) | `go_analyzer.py` (`_resolve_import_path`) |
+
+**On the fuller graph-proximity idea (user's original proposal, "ConfigurationWatcher → Watch → loadConfiguration" with score diffusion across call edges):** fix #12 implements the narrowest slice of it (usage-confidence only, sibling-max floor) because that's exactly what the concrete Consul evidence supported. The broader version — propagating TF-IDF *relevance* itself (not just usage-confidence) across a type→method→call graph — is still unbuilt. **Checked whether it would even help before building it (per this doc's own discipline) — it would not; see the final re-diagnosis immediately below.**
+
+**Consul, re-diagnosed one more time after fix #12 (2026-08-10) — final conclusion for this experiment.** Fresh `subsystem_scores` breakdown: `agent/consul::catalog` (the correct subsystem) actually **wins** on taxonomy (0.625 vs the winner's 0.375) and **ties** on community (0.755 vs 0.755) — the entire remaining gap is TF-IDF (0.230 vs the winner `agent::agent`'s 0.562). Traced that gap to its source: `agent/agent.go`'s `AddServiceRequest`/`Agent.AddService`/`Agent.registerEndpoint` score very high (raw weights: "add" 0.57, "service" 0.38, "agent" 0.35, "register" 0.22) — and **this is a completely legitimate match, not noise**. Consul's real service-registration flow genuinely spans two architectural layers: `agent/agent.go` is the agent-local HTTP API where a registration request first lands (`Agent.AddService`), and `agent/consul/catalog_endpoint.go`'s `Catalog.Register` is the RPC handler that actually writes it into the catalog (reached later, via anti-entropy sync). The benchmark query — "...when an **agent registers** it" — is honestly ambiguous between these two; the literal phrase arguably points at `agent.go` even more directly than at the RPC layer. No amount of relevance-propagation across `Catalog`'s own internal call graph would resolve this, because the competing signal isn't a mis-scored neighbor of the target file — it's an entirely different, legitimately relevant file answering a different (but related) question. **Conclusion: every specific, fixable bug this session found (#1-#12) is fixed and verified. Consul's remaining failure is the same structural ceiling already documented for Traefik (§5/§7) and vLLM (§8) — genuine cross-cutting topical overlap between architecturally distinct files, not a defect. User confirmed accepting this as the final diagnosis; do not resume chasing Consul without new evidence that changes this conclusion.**
 
 **Rejected/deferred ideas** (do not re-propose without new evidence):
 - **SLM-based query expansion** — analyzed in depth, user said "forgot about SLM Q/A proposal, I will find an alternative way." Do not resume.
 - **Dual-layer prose-code binding** (comment-to-symbol proximity pointers) — architecturally reviewed, found to not actually fix the Traefik case (the file's own comments don't contain the missing word either) — see §7.
 - **`test/`/`tests/` folder-name deprioritization** — user explicitly rejected this ("what if repository itself a testing framework... suggest another approach") in favor of fix #6 above (call-graph based, not name-based).
-- **Qualified-identifier-reference vocabulary extraction** (`text_corpus.py` reading `pkg.Type`/`obj.Method`-shaped references out of a file's own body via a targeted `\bword\.Word\b` regex, not just comments + DEFINED symbol names) — tried and **reverted** in the 2026-08-09 Traefik follow-up session, see §7. Real, verified upside (Traefik target file's own score +31%, Django rank 10→1) but a real, verified regression (SQLAlchemy rank 1→unretrieved) that reintroduced fix #6's exact pathology (test/example files outranking real implementation) via the usage-count anomaly fix #9 above has since resolved. **The blocker that gated retrying this is now fixed** — this idea is no longer gated, but was NOT re-attempted this session; if picked up, re-run the exact same 5-repo sweep from scratch rather than assuming the old regression still applies unchanged now that fix #9 landed.
+- **Qualified-identifier-reference vocabulary extraction, unfiltered or path-gated** — two earlier variants tried and reverted (see §7's original account): unfiltered caused the SQLAlchemy regression fix #9 later explained; a "production-file" path-based guardrail (excluding `test`/`examples`/`benchmark` paths from the new signal) also reverted — it correctly stopped test files from directly absorbing the signal, but SQLAlchemy's `lib/sqlalchemy/orm` vs `test/orm::test` margin was ALREADY razor-thin (0.6%) before this change, and enriching vocabulary across many production files still shifted the corpus-wide IDF landscape enough to flip it — a mechanism no per-file gate can reach, since IDF is computed once, globally, before any per-file weighting applies. **A third, far more rigorous variant (project-local-only via `resolved_file_path`, deduplicated/low-weight, measured with a dedicated falsification methodology) was run in a follow-up session — see §9. Verdict: falsified.** Two of five repos improved (SQLAlchemy, Django), but Traefik — the repo whose own diagnosed lexical gap motivated the whole idea — barely moved and never reached retrieval, while Consul regressed and vLLM's routed candidate list was flooded with 14 test/benchmark files despite graph-locality weighting. Do not re-attempt any qualified-identifier-extraction variant without new evidence addressing §9's core finding: the repo that most needed this fix didn't respond to it, which undercuts the "lexical incompleteness is the root cause" premise more than any single regression does.
 
 ## 4. Current benchmark status (as of this doc)
 
 | repo | query target | status | current blocker |
 |---|---|---|---|
 | **SQLAlchemy** | `lib/sqlalchemy/orm/strategies.py` | ✅ **succeeds, rank 1** | — |
-| **Django** | `django/db/models/query.py` | ✅ **succeeds, rank 5** (improved from rank 10 by fix #9, 2026-08-09) | — |
-| Traefik | `pkg/server/configurationwatcher.go` | ❌ fails | vocabulary-extraction gap (§5/§7) — the qualified-reference fix that helps this is no longer regression-gated (fix #9 fixed the anomaly that caused its SQLAlchemy regression) but was not re-attempted this session |
-| Consul | `agent/consul/catalog_endpoint.go` | ❌ fails | two independent open issues, see §6 (top-K-mean aggregation; fix #3/#5 small-split-unit interaction) — re-ran after fix #9 landed, target subsystem changed (`test/integration/.../libs` no longer wins) but still fails, now behind `agent/cache-types::catalog`, not yet re-diagnosed |
-| vLLM | `vllm/v1/core/sched/scheduler.py` | ❌ fails | fully re-diagnosed 2026-08-09 — see §8, same structural ceiling as Consul, not a quick fix |
+| **Django** | `django/db/models/query.py` | ✅ **succeeds, rank 1** (rank 10 → 5 via fix #9, → **1** via fix #11 stemming, 2026-08-09) | — |
+| Traefik | `pkg/server/configurationwatcher.go` | ❌ fails | vocabulary-extraction gap (§5/§7) — the qualified-reference fix that helps this is no longer regression-gated (fix #9 fixed the anomaly that caused its SQLAlchemy regression) but was not re-attempted this session. Stemming (fix #11) moved the wrong winner into the right neighborhood (`pkg/server/service`) without flipping it |
+| Consul | `agent/consul/catalog_endpoint.go` | ❌ fails, **closed out as a genuine architectural ambiguity, not a bug** | see §6's final re-diagnosis — every specific bug found this session (#1-#12) is fixed and verified; what remains is the same structural ceiling as Traefik/vLLM |
+| vLLM | `vllm/v1/core/sched/scheduler.py` | ❌ fails | fully re-diagnosed 2026-08-09 — see §8, same structural ceiling as Consul, not a quick fix. Unaffected by fixes #10/#11 (`scheduler.py` isn't split) |
 
 Grounded queries/targets (all independently verified against real source before use —
 do not re-verify unless the repo has changed):
@@ -281,6 +293,73 @@ vocabulary, without embeddings-level semantic understanding DRP is constitutiona
 built not to use. Not something to chase with another incremental patch — flagging as
 a fundamental, known limitation of the approach rather than a bug queue item.
 
+## 9. Falsification experiment: project-local qualified-identifier indexing (2026-08-10)
+
+**Purpose (user's own framing, verbatim intent):** test, without trying to make it
+succeed, whether "some target files are lexically underrepresented in the index" is
+the actual root cause of Issue #3's retrieval failures — not build a feature. One
+variable only: a low-weight, PROJECT-LOCAL (never stdlib/third-party) qualified-
+identifier field, added in parallel to the real corpus, never modifying DRP logic,
+subsystem aggregation, or confidence propagation.
+
+**Blocker found before the experiment could even run:** "project-local" detection
+needs `ImportReference.resolved_file_path`, which turned out to be effectively
+non-functional — **fixed as fix #13 above** (Go: 0→1,361/5,931 resolved). Without that
+fix, this experiment would have silently measured almost nothing for Traefik/Consul.
+
+**Isolation:** implemented entirely in a new, standalone script,
+`arcf/scripts/qualified_id_falsification.py` — reads `gather_scoring_units`,
+`build_tfidf_index`, `route_query`, and `DrpIndexBuilder` but never modifies any of
+them. Baseline = the real, unmodified `DrpIndexBuilder.build()` output. Experimental =
+the same `unit_usage`/`file_to_units`/taxonomy/subsystem_graph, with one additional
+per-file text field (deduplicated `qualifier.member` pairs whose qualifier resolves
+locally via imports) appended before calling the same `build_tfidf_index`. Both
+conditions are then run through the real, unmodified `route_query` (Stage 4) so the
+comparison reflects actual subsystem/community/taxonomy aggregation, not just raw
+per-file cosine similarity — nothing in `text_corpus.py`/`tfidf.py`/`query_router.py`
+was touched by this experiment.
+
+**Results (full detail in `docs/drp_benchmark_data/qualified_id_falsification.json`):**
+
+| repo | lexical rank (base→exp) | in final candidates | noisy files newly in routed candidates |
+|---|---|---|---|
+| Traefik | 52 → 48 | False → False | 1 (`kubernetes_test.go`) |
+| Consul | 27 → **48** (regressed) | False → False | 0 (moot — never retrieved either way) |
+| SQLAlchemy | 2 → **1** | True → True | 1 (`test/orm/test_events.py`) |
+| Django | 3 → **1** | True → True | 0 |
+| vLLM | 106 → 110 | False → False | **14** — entire winning subsystem flipped to `tests/v1/core` |
+
+**Verdict against the user's own explicit success criteria: does not survive.**
+Consul regressed (violates "Consul does not become worse"). vLLM's candidate list was
+flooded with test/benchmark files despite graph-locality/community/taxonomy weighting
+(violates both "ambiguous candidates do not increase significantly" and "precision
+remains stable"). Graph-locality dampening held perfectly for Django, held partially
+for SQLAlchemy/Traefik (1 noisy candidate each), and failed completely for vLLM — no
+predictor found yet for which repos it protects.
+
+**The decisive finding, more important than any single regression:** Traefik — the
+repo whose own documented lexical gap ("dynamic" missing from `configurationwatcher.
+go`'s vocabulary, see §5) directly motivated this entire idea — barely moved (52→48)
+and never once reached retrieval in either condition. The two repos that DID improve
+(SQLAlchemy, Django) had no comparable documented lexical gap going in. **This
+inverts the expected result if "lexical incompleteness" were really the dominant root
+cause of Issue #3** — closing the gap should have helped the repo with the gap the
+most, not the least. This is stronger evidence against the lexical-incompleteness
+hypothesis than the regressions are evidence against the mechanism itself.
+
+**Recommendation (matches the user's own read after reviewing this report):** do not
+carry this forward as the foundation for a Behavioral Semantic Index or any other
+larger architectural extension as currently scoped. The pattern looks repo-structure-
+dependent (how tightly test files are graph-connected to production code; how
+concentrated a project's own vocabulary already is) rather than a general lexical
+fix — and the falsification's own strongest signal is that it didn't even solve the
+case it was built for. Any future revival of this idea should start by explaining
+Traefik's non-response, not by re-tuning the noise-suppression side.
+
+**Script is a reusable falsification harness**, not a one-off: `--repo NAME` to run
+just one, or no argument for the full 5-repo sweep. Re-run it fresh rather than
+trusting these numbers if the underlying corpus/text_corpus.py/tfidf.py changes.
+
 ## 7. Conventions to preserve
 
 - **Determinism is non-negotiable** — every new module follows the existing
@@ -300,5 +379,5 @@ a fundamental, known limitation of the approach rather than a bug queue item.
   to already-stable DRP code's core contract without re-running the full 62-test DRP
   suite plus the 5-repo benchmark sweep.
 - **Run the full suite, not just DRP's**, before/after any change:
-  `uv run pytest -q` from `arcf/` (798 passing as of this doc, updated 2026-08-09
-  follow-up session — was 797, fix #9 added one new test).
+  `uv run pytest -q` from `arcf/` (805 passing as of this doc, updated 2026-08-09/10
+  follow-up session — fixes #9-#13 added 8 new tests total).

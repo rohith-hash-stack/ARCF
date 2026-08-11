@@ -57,8 +57,10 @@ from code_intelligence.drp.diagnostics import compute_retrieval_rank
 from code_intelligence.drp.drp_index import DrpIndexBuilder
 from code_intelligence.drp.drp_resolver import DrpResolver
 from code_intelligence.engine import CodeIntelligenceEngine
+from code_intelligence.languages.cpp_analyzer import CppLanguageAnalyzer
 from code_intelligence.languages.go_analyzer import GoLanguageAnalyzer
 from code_intelligence.languages.python_analyzer import PythonLanguageAnalyzer
+from code_intelligence.languages.rust_analyzer import RustLanguageAnalyzer
 from code_intelligence.registry import LanguageRegistry
 from code_intelligence.service import CodeIntelligenceContractService
 from context.budget_manager import ContextBudgetManager
@@ -84,6 +86,8 @@ RESULTS_DIR = Path(__file__).resolve().parent.parent / "docs" / "drp_benchmark_d
 _ANALYZERS = {
     "python": PythonLanguageAnalyzer,
     "go": GoLanguageAnalyzer,
+    "cpp": CppLanguageAnalyzer,
+    "rust": RustLanguageAnalyzer,
 }
 
 

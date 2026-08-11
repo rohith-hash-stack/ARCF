@@ -7,11 +7,11 @@
     "drp": {
       "resolver": "drp+pmi",
       "top_files": [
-        "django/db/models/expressions.py",
-        "django/db/models/fields/__init__.py",
-        "django/db/models/manager.py",
-        "django/db/models/fields/related_descriptors.py",
         "django/db/models/query.py",
+        "django/db/models/expressions.py",
+        "django/db/models/fields/related_descriptors.py",
+        "django/db/models/fields/proxy.py",
+        "django/db/models/fields/__init__.py",
         "django/db/models/__init__.py",
         "django/db/models/aggregates.py",
         "django/db/models/base.py",
@@ -25,62 +25,62 @@
         "django/db/models/fields/generated.py",
         "django/db/models/fields/json.py",
         "django/db/models/fields/mixins.py",
-        "django/db/models/fields/proxy.py",
-        "django/db/models/fields/related.py"
+        "django/db/models/fields/related.py",
+        "django/db/models/fields/related_lookups.py"
       ],
-      "candidate_count": 50,
-      "confidence": 0.010079189584777696,
-      "resolver_latency_seconds": 0.0558,
-      "packaged_tokens": 7978,
-      "packaged_file_count": 7,
+      "candidate_count": 45,
+      "confidence": 0.010542393682180655,
+      "resolver_latency_seconds": 0.1026,
+      "packaged_tokens": 7945,
+      "packaged_file_count": 6,
       "graph_expansion_count": 40,
       "top_subsystem": "django/db/models",
       "top_community": "django/__init__.py",
       "subsystem_scores": [
         [
           "django/db/models",
-          0.8925521873819886
+          0.925
         ],
         [
           "django/db/backends/postgresql",
-          0.8700000000000001
+          0.8097703400162604
         ],
         [
           "django/db/backends/base",
-          0.8482032173793204
+          0.8020516778982105
         ],
         [
           "django/core/serializers",
-          0.8418640524179833
-        ],
-        [
-          "django/db/backends/sqlite3",
-          0.8074228990105634
-        ],
-        [
-          "django/forms",
-          0.7649547673493625
-        ],
-        [
-          "django/db/migrations",
-          0.7453203149361943
+          0.7854315985095214
         ],
         [
           "django/utils",
-          0.7423559047508702
+          0.7671050327951691
+        ],
+        [
+          "django/forms",
+          0.7608121784986607
+        ],
+        [
+          "django/db/backends/sqlite3",
+          0.755271167292469
+        ],
+        [
+          "django/db/migrations",
+          0.7027768332468898
         ],
         [
           "django/views",
-          0.7389224748375645
+          0.701741843580154
         ],
         [
           "django/core/management",
-          0.7166899600684725
+          0.6786790608703356
         ]
       ],
       "query_expansion": {},
       "target_file": "django/db/models/query.py",
-      "retrieval_rank": 5,
+      "retrieval_rank": 1,
       "target_retrieved": true
     }
   }

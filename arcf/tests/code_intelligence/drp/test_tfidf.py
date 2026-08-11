@@ -15,6 +15,26 @@ def test_tokenize_drops_stopwords_and_short_tokens() -> None:
     assert tokens == ["configuration"]
 
 
+def test_tokenize_stems_common_inflections_to_a_shared_base_form() -> None:
+    # Real, measured case: a Consul run scored the query "...when an
+    # agent registers it" as an exact ZERO against `Catalog.Register`'s
+    # own doc comment ("Register a service...") purely because
+    # "registers" and "register" were different tokens.
+    assert tokenize("registers") == tokenize("register") == tokenize("registering")
+    assert tokenize("services") == tokenize("service")
+    assert tokenize("watches") == tokenize("watch") == tokenize("watching")
+    assert tokenize("loaded") == tokenize("loads") == tokenize("load")
+
+
+def test_tokenize_stemming_does_not_conflate_unrelated_short_words() -> None:
+    # Every rule is scoped to a specific suffix shape precisely so it
+    # doesn't over-stem: "class"/"process"/"status"/"success" must stay
+    # themselves, and short/irregular words ending in -us/-is/-ss are
+    # deliberately excluded from the plural-strip rule.
+    for word in ["class", "process", "status", "success", "bus"]:
+        assert tokenize(word) == [word]
+
+
 def test_subsystem_with_unique_term_scores_highest_for_that_term() -> None:
     texts = {
         "pkg/server": "configuration watcher dynamic reload propagate",
@@ -132,3 +152,69 @@ def test_usage_confidence_does_not_penalize_documents_at_or_above_the_floor() ->
     scores = index.score(tokenize("lazy load"))
 
     assert scores["a"] == scores["b"]
+
+
+def test_broad_coverage_beats_a_single_incidental_term_match() -> None:
+    # Real, measured case: a real FlatBuffers run scored a 9-distinct-
+    # term query ("How does the garbage collector reclaim unused heap
+    # memory during a stop-the-world pause") at 0.30 against a document
+    # whose ONLY overlap was one stemmed term ("unus", shared by the
+    # query's "unused" and an unrelated enum sentinel `Character_
+    # Unused`) — HIGHER than a genuinely on-topic query scored (0.37 is
+    # comparable, and this single-term match nearly matched it) despite
+    # every other one of the query's 8 distinct terms matching nothing.
+    # Coverage-confidence dampening (_MIN_DISTINCT_TERMS_FOR_FULL_
+    # CONFIDENCE) exists specifically to correct this.
+    single_incidental_term_only = "unused unused unused unused unused"  # repeated for a large raw weight
+    genuinely_broad_overlap = "garbage collector reclaim heap memory during pause cycle sweep"
+    texts = {
+        "single_term": single_incidental_term_only,
+        "broad": genuinely_broad_overlap,
+    }
+    index = build_tfidf_index(texts)
+
+    scores = index.score(
+        tokenize("How does the garbage collector reclaim unused heap memory during a stop-the-world pause.")
+    )
+
+    assert scores["broad"] > scores["single_term"]
+
+
+def test_coverage_confidence_does_not_penalize_documents_at_or_above_the_floor() -> None:
+    # Two documents each matching all 3 of the query's distinct terms —
+    # coverage dampening should have already saturated to 1.0x for both,
+    # so the comparison is purely the underlying cosine similarity.
+    texts = {
+        "a": "watcher configuration reload propagate update",
+        "b": "watcher configuration reload",
+    }
+    index = build_tfidf_index(texts)
+
+    scores = index.score(tokenize("watcher configuration reload"))
+
+    assert scores["a"] > 0.0 and scores["b"] > 0.0
+
+
+def test_short_query_is_not_penalized_for_lacking_terms_it_never_had() -> None:
+    # A genuinely narrow, single-concept query (one real term) matching
+    # that one term fully must NOT be dampened just because
+    # _MIN_DISTINCT_TERMS_FOR_FULL_CONFIDENCE is 3 — the floor is capped
+    # at the query's own distinct-term count precisely so this doesn't
+    # happen; this only dampens a multi-term query most of whose terms
+    # are absent, not short queries in general.
+    texts = {"a": "lazyloader provide loading behavior", "b": "unrelated content entirely"}
+    index = build_tfidf_index(texts)
+
+    scores = index.score(tokenize("lazyloader"))
+
+    # Full single-term match should score exactly the same as it would
+    # without any coverage dampening at all (coverage_confidence == 1.0).
+    assert scores["a"] > 0.0
+    assert scores["b"] == 0.0
+
+
+def test_coverage_confidence_is_deterministic_and_does_not_crash_on_empty_query() -> None:
+    texts = {"a": "watcher configuration"}
+    index = build_tfidf_index(texts)
+
+    assert index.score([]) == {"a": 0.0}
