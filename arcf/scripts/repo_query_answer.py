@@ -54,6 +54,24 @@ Usage:
     uv run python scripts/repo_query_answer.py \\
         --repo-path <path> --repo-name <name> --query "<query text>" \\
         [--resolver classic|drp|both] [--skip-direct]
+
+`--query` is repeatable (`--query "Q1" --query "Q2" ...`) to run several
+queries against the same already-cloned repo in one process. This isn't
+just convenience: `_resolve_and_answer` builds a `CodeIntelligenceEngine`/
+`CodeIntelligenceIndex` per call, and both `resolver_strategy` values
+independently re-parse the whole repo (service.py's `_resolve` and
+`_resolve_drp` each call `build_index`) — against an immutable clone,
+every one of those parses after the first is redundant work, not a
+different answer. `main()` now builds one `service`/`index_cache` for
+the whole process and passes the SAME `index_cache` dict into every
+`attach_code_intelligence` call (both resolver strategies, every query),
+so only the first resolution against a given root actually parses;
+everything after reuses it via the opt-in `index_cache` parameter
+(defaulted to `None` everywhere else — see its docstring on
+`CodeIntelligenceContractService.attach_code_intelligence`). Per-query
+output files and their JSON shape are unchanged — one file per query,
+same keys — so this doesn't affect anything already reading
+`docs/repo_query_answers/*.json`.
 """
 
 from __future__ import annotations
@@ -139,12 +157,10 @@ async def _resolve_and_answer(
     intent: UserIntent,
     client: LiteLLMClient,
     resolver_strategy: str,
+    service: CodeIntelligenceContractService,
+    contract_store: InMemoryContractStore,
+    index_cache: dict,
 ) -> dict:
-    engine = CodeIntelligenceEngine(_full_registry(), CostEstimator())
-    contract_store = InMemoryContractStore()
-    service = CodeIntelligenceContractService(
-        engine, contract_store, InMemoryContextResolutionStore()
-    )
     living = LivingContract(contract=Contract(intent=intent))
     contract_store.save(living)
 
@@ -164,6 +180,7 @@ async def _resolve_and_answer(
         target_names=entities,
         workspace_root=str(root),
         resolver_strategy=resolver_strategy,
+        index_cache=index_cache,
         **classic_flags,
     )
     resolve_elapsed = asyncio.get_event_loop().time() - start
@@ -209,42 +226,41 @@ async def _resolve_and_answer(
     }
 
 
-async def main() -> None:
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--repo-path", required=True)
-    parser.add_argument("--repo-name", required=True)
-    parser.add_argument("--query", required=True)
-    parser.add_argument("--resolver", choices=["classic", "drp", "both"], default="both")
-    parser.add_argument("--skip-direct", action="store_true")
-    args = parser.parse_args()
-    root = Path(args.repo_path)
-
-    client = LiteLLMClient(max_retries=3, base_delay_seconds=0.5)
-
+async def _run_one_query(
+    root: Path,
+    repo_name: str,
+    query: str,
+    resolver: str,
+    skip_direct: bool,
+    client: LiteLLMClient,
+    service: CodeIntelligenceContractService,
+    contract_store: InMemoryContractStore,
+    index_cache: dict,
+) -> None:
     extractor = IntentExtractor(client, model=GENERATION_MODEL)
-    raw, _ = await extractor.extract(args.query)
+    raw, _ = await extractor.extract(query)
     entities = list(raw.entities)
     intent = UserIntent(
-        raw_request=args.query,
+        raw_request=query,
         intent=raw.intent_summary,
         domain=raw.domain,
         task=raw.task,
         entities=entities,
         confidence=raw.self_reported_confidence,
     )
-    print(f"[{args.repo_name}] entities_extracted: {entities or '(none)'}")
+    print(f"[{repo_name}] entities_extracted: {entities or '(none)'}")
 
-    strategies = ["classic", "drp"] if args.resolver == "both" else [args.resolver]
+    strategies = ["classic", "drp"] if resolver == "both" else [resolver]
     results: dict[str, dict] = {}
-    if not args.skip_direct:
+    if not skip_direct:
         try:
-            results["direct"] = await _direct_llm(client, args.repo_name, args.query)
+            results["direct"] = await _direct_llm(client, repo_name, query)
         except Exception as exc:  # noqa: BLE001 - recorded, not swallowed silently
             results["direct"] = {"error": f"{type(exc).__name__}: {exc}", "traceback": traceback.format_exc()}
     for strategy in strategies:
         try:
             results[strategy] = await _resolve_and_answer(
-                root, args.query, entities, intent, client, strategy
+                root, query, entities, intent, client, strategy, service, contract_store, index_cache
             )
         except Exception as exc:  # noqa: BLE001 - recorded, not swallowed silently
             results[strategy] = {
@@ -254,18 +270,18 @@ async def main() -> None:
             }
 
     output = {
-        "query": args.query,
-        "repo": args.repo_name,
+        "query": query,
+        "repo": repo_name,
         "entities_extracted": entities,
         "results": results,
     }
     RESULTS_DIR.mkdir(parents=True, exist_ok=True)
-    safe_query = "".join(c if c.isalnum() else "_" for c in args.query[:60])
-    results_file = RESULTS_DIR / f"{args.repo_name}__{safe_query}.json"
+    safe_query = "".join(c if c.isalnum() else "_" for c in query[:60])
+    results_file = RESULTS_DIR / f"{repo_name}__{safe_query}.json"
     results_file.write_text(json.dumps(output, indent=2), encoding="utf-8")
 
     for strategy, result in results.items():
-        print(f"\n=== [{args.repo_name}] {strategy.upper()} ===")
+        print(f"\n=== [{repo_name}] {strategy.upper()} ===")
         if "error" in result:
             print(f"ERROR: {result['error']}")
             continue
@@ -286,6 +302,52 @@ async def main() -> None:
         )
 
     print(f"\nWritten to {results_file}")
+
+
+async def main() -> None:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--repo-path", required=True)
+    parser.add_argument("--repo-name", required=True)
+    parser.add_argument(
+        "--query",
+        required=True,
+        action="append",
+        help="Repeatable — pass multiple --query flags to run several queries "
+        "against the same repo in one process, reusing one parsed index.",
+    )
+    parser.add_argument("--resolver", choices=["classic", "drp", "both"], default="both")
+    parser.add_argument("--skip-direct", action="store_true")
+    args = parser.parse_args()
+    root = Path(args.repo_path)
+
+    client = LiteLLMClient(max_retries=3, base_delay_seconds=0.5)
+
+    # Built ONCE for the whole process (all queries, both resolver
+    # strategies) — `index_cache` is the opt-in cache `_resolve`/
+    # `_resolve_drp` (service.py) key by resolved workspace root, so the
+    # first resolution against this (immutable, already-cloned) root
+    # parses it and every later call this process makes reuses that
+    # parse. See this module's docstring for why that redundant work
+    # existed before this change.
+    engine = CodeIntelligenceEngine(_full_registry(), CostEstimator())
+    contract_store = InMemoryContractStore()
+    service = CodeIntelligenceContractService(
+        engine, contract_store, InMemoryContextResolutionStore()
+    )
+    index_cache: dict = {}
+
+    for query in args.query:
+        await _run_one_query(
+            root,
+            args.repo_name,
+            query,
+            args.resolver,
+            args.skip_direct,
+            client,
+            service,
+            contract_store,
+            index_cache,
+        )
 
 
 if __name__ == "__main__":
