@@ -439,6 +439,71 @@ def test_falloff_gate_halts_rather_than_skips_once_triggered(tmp_path: Path) -> 
     assert excluded == 2
 
 
+def test_supporting_evidence_compression_uses_ast_scope_not_plain_margin(
+    tmp_path: Path,
+) -> None:
+    # Feature C wiring: SUPPORTING ("secondary") candidates route through
+    # extract_with_ast_scope, not the plain extract() -- proven here by
+    # two things plain extract() (margin_lines=2 default) could never
+    # produce: the leading import header riding along, and a margin wide
+    # enough to be 5 (not 2) lines around the symbol.
+    lines = ["import os", "from pkg import thing", ""]
+    lines += [f"line {i}" for i in range(4, 300)]
+    (tmp_path / "routing.py").write_text("\n".join(lines) + "\n")
+    manager = _manager(tmp_path)
+    symbol = SymbolReference(
+        symbol_id="routing.py::handler",
+        name="handler",
+        qualified_name="handler",
+        kind=SymbolKind.FUNCTION,
+        file_path="routing.py",
+        start_line=200,
+        end_line=200,
+    )
+    ranked = [_ranked("routing.py", token_count=15_000, evidence_tier=EvidenceTier.SUPPORTING)]
+    result = _empty_result(entry_points=[symbol])
+
+    packaged, used, excluded = manager.select(ranked, result, max_tokens=100_000)
+
+    assert len(packaged) == 1
+    content = packaged[0].content
+    assert "import os" in content
+    assert "from pkg import thing" in content
+    assert "line 195" in content  # 200 - 5, the AST-scope margin
+    assert "line 198" in content  # would already be inside a plain-margin-2 range too
+    assert excluded == 0
+
+
+def test_primary_evidence_compression_still_uses_plain_extract(tmp_path: Path) -> None:
+    # The doesn't-fit-in-full PRIMARY path is deliberately untouched by
+    # Feature C -- same file/symbol shape as the SUPPORTING case above,
+    # but PRIMARY, and forced to compress by a tight budget rather than
+    # the evidence-tier trigger. No header should ride along, since plain
+    # extract() only ever takes a margin around the symbol itself.
+    lines = ["import os", "from pkg import thing", ""]
+    lines += [f"line {i}" for i in range(4, 300)]
+    (tmp_path / "routing.py").write_text("\n".join(lines) + "\n")
+    manager = _manager(tmp_path)
+    symbol = SymbolReference(
+        symbol_id="routing.py::handler",
+        name="handler",
+        qualified_name="handler",
+        kind=SymbolKind.FUNCTION,
+        file_path="routing.py",
+        start_line=200,
+        end_line=200,
+    )
+    ranked = [_ranked("routing.py", token_count=100_000, evidence_tier=EvidenceTier.PRIMARY)]
+    result = _empty_result(entry_points=[symbol])
+
+    packaged, used, excluded = manager.select(ranked, result, max_tokens=200)
+
+    assert len(packaged) == 1
+    content = packaged[0].content
+    assert "import os" not in content
+    assert "line 200" in content
+
+
 def test_falloff_gate_is_a_noop_for_a_single_candidate(tmp_path: Path) -> None:
     (tmp_path / "a.py").write_text("def foo():\n    pass\n")
     manager = _manager(tmp_path)

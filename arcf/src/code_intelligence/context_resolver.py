@@ -501,7 +501,17 @@ class ContextResolver:
         the initialization context that gives it meaning. The
         constructor's file is always already a candidate (it's the same
         file as the method that triggered this), so only impacted_symbols
-        needs enriching — no new file/reason bookkeeping required."""
+        needs enriching — no new file/reason bookkeeping required.
+
+        Feature C (AST Enclosing Scope Slicing, 2026-08-11): the parent
+        CLASS symbol itself now rides along too, not just its
+        constructor — SymbolRangeCompressor.extract_with_ast_scope needs
+        the class's own declaration line to slice a method's excerpt
+        with its enclosing type/struct/class header attached. Reuses
+        parent_id, already computed once by each LanguageAnalyzer's
+        tree-sitter parse at index-build time — no new parsing here,
+        consistent with this class's existing "bookkeeping, not
+        traversal" role (see module docstring)."""
         method_symbols = [
             symbol
             for symbol in (*impacted_symbols.values(), *entry_point_symbols)
@@ -512,6 +522,7 @@ class ContextResolver:
             parent = self._index.symbol_index.get(method.parent_id)
             if parent is None or parent.kind is not SymbolKind.CLASS:
                 continue
+            impacted_symbols.setdefault(parent.id, parent)
             constructor = self._find_constructor(parent)
             if (
                 constructor is not None

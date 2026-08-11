@@ -73,6 +73,7 @@ falloff without ever reaching the "does it fit" question at all.
 """
 
 from collections import defaultdict
+from typing import Callable
 
 from context.compressor import SymbolRangeCompressor
 from context.relevance_ranker import RankedFile
@@ -173,7 +174,14 @@ class ContextBudgetManager:
             # no narrower "relevant part" to prefer over the whole file.
             compress_first_tiers = (EvidenceTier.SUPPORTING, EvidenceTier.EXPERIMENTAL)
             if ranked.evidence_tier in compress_first_tiers and symbols_in_file:
-                compressed = self._compress(ranked, symbols_in_file, remaining)
+                # Feature C (AST Enclosing Scope Slicing): SUPPORTING/
+                # EXPERIMENTAL are exactly the "secondary candidates" the
+                # task spec means -- PRIMARY's doesn't-fit-in-full path
+                # below keeps the plain extract() unchanged, since that's
+                # a confident direct match, not fan-out noise.
+                compressed = self._compress(
+                    ranked, symbols_in_file, remaining, extract=self._compressor.extract_with_ast_scope
+                )
                 if compressed is not None:
                     packaged.append(compressed)
                     used += compressed.token_count
@@ -230,14 +238,24 @@ class ContextBudgetManager:
         return packaged, used, excluded
 
     def _compress(
-        self, ranked: RankedFile, symbols_in_file: list[SymbolReference], remaining: int
+        self,
+        ranked: RankedFile,
+        symbols_in_file: list[SymbolReference],
+        remaining: int,
+        extract: Callable[[str, list[SymbolReference]], str] | None = None,
     ) -> PackagedFile | None:
         """Shared by both compression triggers above (evidence-tier-driven
         and doesn't-fit-in-full): `None` means "couldn't produce a
         compressed excerpt that fits" — the caller counts that as
-        excluded, same as it always has for the doesn't-fit path."""
+        excluded, same as it always has for the doesn't-fit path.
+        `extract` defaults to the plain SymbolRangeCompressor.extract;
+        the evidence-tier-driven trigger passes extract_with_ast_scope
+        instead (Feature C) — same shared token-check/PackagedFile
+        construction either way, only the excerpt-building function
+        differs."""
+        extract_fn = extract if extract is not None else self._compressor.extract
         try:
-            excerpt = self._compressor.extract(ranked.file_path, symbols_in_file)
+            excerpt = extract_fn(ranked.file_path, symbols_in_file)
         except _READ_ERRORS:
             return None
         if not excerpt:
