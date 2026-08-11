@@ -642,15 +642,24 @@ def test_task_type_none_leaves_max_tokens_unchanged(tmp_path: Path) -> None:
     assert excluded == 0
 
 
-def test_unknown_task_type_uses_the_middle_safety_fallback_tier(tmp_path: Path) -> None:
-    (tmp_path / "a.py").write_text("x = 1\n")
+def test_unknown_and_bug_fix_task_types_use_the_cross_module_tier(tmp_path: Path) -> None:
+    # Moved from the 2500 (logic) tier to 4500 (cross-module) after real
+    # Consul measurement showed a real query's grounding quality costed
+    # by the tighter cap -- see _BUDGET_TIER_BY_TASK_TYPE's own comment.
+    # 3500 proves this: it clears 2500 (the old tier) but not the plain
+    # 8000 max_tokens, so passing means the CURRENT (4500) tier is what's
+    # actually in effect, not the old one or no cap at all.
+    (tmp_path / "unknown.py").write_text("x = 1\n")
+    (tmp_path / "bugfix.py").write_text("x = 1\n")
     manager = _manager(tmp_path)
-    ranked = [_ranked("a.py", token_count=2000, score=0.9)]
 
-    packaged, used, excluded = manager.select(
-        ranked, _empty_result(), max_tokens=8000, task_type=RetrievalTaskType.UNKNOWN
-    )
-
-    # 2000 fits the 2500 UNKNOWN-tier ceiling.
-    assert {p.file_path for p in packaged} == {"a.py"}
-    assert excluded == 0
+    for task_type, file_path in (
+        (RetrievalTaskType.UNKNOWN, "unknown.py"),
+        (RetrievalTaskType.BUG_FIX, "bugfix.py"),
+    ):
+        ranked = [_ranked(file_path, token_count=3500, score=0.9)]
+        packaged, used, excluded = manager.select(
+            ranked, _empty_result(), max_tokens=8000, task_type=task_type
+        )
+        assert {p.file_path for p in packaged} == {file_path}
+        assert excluded == 0
