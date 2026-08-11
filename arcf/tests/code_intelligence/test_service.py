@@ -9,6 +9,7 @@ with a non-empty, evidence-backed candidate_files list.
 import json
 import logging
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 
@@ -786,3 +787,84 @@ async def test_resolver_strategy_drp_routes_through_the_isolated_drp_resolver(
     assert "drp:" in resolution.resolution_reason.lower() or any(
         f.reason.startswith("drp:") for f in resolution.candidate_files
     )
+
+
+async def test_index_cache_defaults_to_none_and_rebuilds_every_call(tmp_path: Path) -> None:
+    """`index_cache` benchmark-script optimization (arcf-repo-sweep-50):
+    every existing caller passes no `index_cache`, so `build_index` must
+    keep re-parsing on every call — the exact behavior every other test
+    in this file already implicitly relies on. Proven directly here via
+    call-count, not just "results looked right", since a stale-index bug
+    would still produce plausible-looking results on an unchanged fixture."""
+    _write(tmp_path, "auth.py", "def authenticate(user):\n    return True\n")
+    service, contract_store = _service()
+
+    living_a = _seed_contract(contract_store, "Find the code that handles authenticate.")
+    living_b = _seed_contract(contract_store, "Find the code that handles authenticate.")
+
+    with patch.object(
+        service._engine, "build_index", wraps=service._engine.build_index
+    ) as spy:
+        await service.attach_code_intelligence(
+            living_a.contract_id, target_names=["authenticate"], workspace_root=str(tmp_path)
+        )
+        await service.attach_code_intelligence(
+            living_b.contract_id, target_names=["authenticate"], workspace_root=str(tmp_path)
+        )
+
+    assert spy.call_count == 2
+
+
+async def test_index_cache_reused_across_calls_and_both_resolver_strategies(
+    tmp_path: Path,
+) -> None:
+    """Opt-in `index_cache`: a caller (e.g. the 50-repo sweep's
+    repo_query_answer.py, which otherwise re-parses the same immutable
+    cloned repo once per query AND once per resolver_strategy) can pass
+    a shared dict to skip redundant `build_index` calls against the same
+    root — `_resolve` (classic) and `_resolve_drp` both call
+    `_build_index_cached` independently, so this must hold across BOTH
+    strategies, not just repeat classic calls. Results must stay
+    byte-identical to the uncached path (same fixture/query as
+    test_resolver_strategy_defaults_to_classic_and_is_unaffected_by_drp_existing
+    for classic; same DRP fixture pattern as
+    test_resolver_strategy_drp_routes_through_the_isolated_drp_resolver)."""
+    _write(tmp_path, "auth.py", "def authenticate(user):\n    return True\n")
+    service, contract_store = _service()
+    shared_cache: dict = {}
+
+    living_classic = _seed_contract(contract_store, "Find the code that handles authenticate.")
+    living_classic_again = _seed_contract(
+        contract_store, "Find the code that handles authenticate."
+    )
+    living_drp = _seed_contract(contract_store, "Find the code that handles authenticate.")
+
+    with patch.object(
+        service._engine, "build_index", wraps=service._engine.build_index
+    ) as spy:
+        _, first = await service.attach_code_intelligence(
+            living_classic.contract_id,
+            target_names=["authenticate"],
+            workspace_root=str(tmp_path),
+            index_cache=shared_cache,
+        )
+        _, second = await service.attach_code_intelligence(
+            living_classic_again.contract_id,
+            target_names=["authenticate"],
+            workspace_root=str(tmp_path),
+            index_cache=shared_cache,
+        )
+        _, drp_result = await service.attach_code_intelligence(
+            living_drp.contract_id,
+            target_names=["authenticate"],
+            workspace_root=str(tmp_path),
+            resolver_strategy="drp",
+            index_cache=shared_cache,
+        )
+
+    assert spy.call_count == 1
+    assert [f.file_path for f in first.candidate_files] == [
+        f.file_path for f in second.candidate_files
+    ]
+    assert str(Path(tmp_path).resolve()) in shared_cache
+    assert drp_result is not None

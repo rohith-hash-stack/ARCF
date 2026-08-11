@@ -81,7 +81,7 @@ from infrastructure.cost import CostEstimator
 from shared.errors import ContractNotFoundError, NoWorkspaceAttachedError, WorkspacePathError
 from workspace.permissions import PermissionManager
 from workspace.repository_segmentation import RepositorySegmenter
-from workspace.scanner import RepositoryScanner, ScanResult
+from workspace.scanner import RepositoryScanner, ScannedFile, ScanResult
 
 _logger = logging.getLogger("arcf.retrieval")
 
@@ -167,6 +167,7 @@ class CodeIntelligenceContractService:
         enable_confidence_propagation: bool = False,
         enable_multi_axis_decomposition: bool = False,
         resolver_strategy: Literal["classic", "drp"] = "classic",
+        index_cache: dict[str, CodeIntelligenceIndex] | None = None,
     ) -> tuple[LivingContract, ContextResolutionResult]:
         """`enable_subsystem_localization` — ARCF root-cause validation
         experiment (context/subsystem_localizer.py), defaulted to False:
@@ -242,7 +243,20 @@ class CodeIntelligenceContractService:
         evidence-fallback, lexical probing, anchor classification, and
         multi-axis decomposition entirely rather than plugging into any
         of them, so `target_names`/`raw_request` are its only classic-
-        pipeline inputs."""
+        pipeline inputs.
+
+        `index_cache` — optional, defaulted to `None`: every existing
+        caller (including the live API in `interfaces/api/app.py` and
+        every existing test) is unaffected. When a caller supplies a
+        dict, `_resolve`/`_resolve_drp` key `self._engine.build_index`'s
+        result by the resolved workspace root and reuse it instead of
+        re-parsing, so repeated calls against the SAME on-disk root
+        (e.g. multiple queries or both `resolver_strategy` values against
+        one already-cloned repo in a benchmark script) skip redundant
+        tree-sitter parsing. Only safe when the caller knows the
+        workspace root's files won't change between calls — the live API
+        never passes this, since a real workspace can be edited between
+        requests."""
         latest = await asyncio.to_thread(self._contract_store.get_latest, contract_id)
         if latest is None:
             raise ContractNotFoundError(f"No contract found with id {contract_id}")
@@ -265,6 +279,7 @@ class CodeIntelligenceContractService:
             enable_confidence_propagation,
             enable_multi_axis_decomposition,
             resolver_strategy,
+            index_cache,
         )
         self._log_retrieval_diagnostics(latest, result)
         await asyncio.to_thread(self._resolution_store.save, result)
@@ -288,6 +303,7 @@ class CodeIntelligenceContractService:
         enable_confidence_propagation: bool = False,
         enable_multi_axis_decomposition: bool = False,
         resolver_strategy: Literal["classic", "drp"] = "classic",
+        index_cache: dict[str, CodeIntelligenceIndex] | None = None,
     ) -> ContextResolutionResult:
         if not root_path.is_dir():
             raise WorkspacePathError(f"{root_path} is not an existing directory")
@@ -301,7 +317,9 @@ class CodeIntelligenceContractService:
             # driven scope/task classification, evidence-fallback,
             # lexical probing, anchor classification, multi-axis
             # decomposition) runs for this branch.
-            return self._resolve_drp(root_path, contract_id, target_names, raw_request)
+            return self._resolve_drp(
+                root_path, contract_id, target_names, raw_request, index_cache
+            )
 
         # ARCF hardening §12 (pipeline ordering): lightweight deterministic
         # checks — language/analyzer-coverage detection, repository
@@ -329,7 +347,7 @@ class CodeIntelligenceContractService:
             index = None
             result = self._empty_resolution(resolved_root, contract_id)
         else:
-            index = self._engine.build_index(root_path, scan.files)
+            index = self._build_index_cached(root_path, scan.files, resolved_root, index_cache)
             result = ContextResolver(index).resolve(
                 resolved_root,
                 contract_id,
@@ -666,12 +684,32 @@ class CodeIntelligenceContractService:
         )
         return result
 
+    def _build_index_cached(
+        self,
+        root_path: Path,
+        files: list[ScannedFile],
+        resolved_root: str,
+        index_cache: dict[str, CodeIntelligenceIndex] | None,
+    ) -> CodeIntelligenceIndex:
+        """Shared by `_resolve` and `_resolve_drp` (both call
+        `self._engine.build_index` on the same scan independently) so an
+        opt-in `index_cache` benefits both resolver strategies against
+        the same root, not just one. See `index_cache`'s docstring on
+        `attach_code_intelligence` for the safety caveat."""
+        if index_cache is not None and resolved_root in index_cache:
+            return index_cache[resolved_root]
+        index = self._engine.build_index(root_path, files)
+        if index_cache is not None:
+            index_cache[resolved_root] = index
+        return index
+
     def _resolve_drp(
         self,
         root_path: Path,
         contract_id: str,
         target_names: list[str],
         raw_request: str,
+        index_cache: dict[str, CodeIntelligenceIndex] | None = None,
     ) -> ContextResolutionResult:
         """ARCF Issue #3 Dynamic Repository Profiling (DRP) experiment —
         a fully independent resolution path (code_intelligence/drp/),
@@ -688,7 +726,7 @@ class CodeIntelligenceContractService:
         keep them."""
         scan = RepositoryScanner().scan(root_path)
         resolved_root = str(root_path.resolve())
-        index = self._engine.build_index(root_path, scan.files)
+        index = self._build_index_cached(root_path, scan.files, resolved_root, index_cache)
         drp_index = DrpIndexBuilder.build(index, root_path)
         result, _diagnostics = DrpResolver(index, drp_index).resolve(
             resolved_root,
