@@ -27,6 +27,11 @@ from collections import Counter
 from uuid import uuid4
 
 from code_intelligence.index import CodeIntelligenceIndex
+from code_intelligence.locality import (
+    locality_filtered_callers_of_name,
+    locality_filtered_transitive_callees,
+    locality_filtered_transitive_callers,
+)
 from code_intelligence.reference_resolver import ReferenceResolver
 from domain.code_intelligence import Symbol, SymbolKind
 from domain.context_resolution import (
@@ -267,7 +272,21 @@ class ContextResolver:
         # produced conflicting justification chains for the same file.
         # caller_hops/callee_hops below already cover every symbol-owning
         # hop correctly.
-        for caller_file in self._index.candidate_selector.callers_of(name):
+        #
+        # locality_filtered_callers_of_name, not candidate_selector.
+        # callers_of(name) directly: `name` is a raw string, and
+        # SymbolIndex.find_by_name has no disambiguation of its own — for
+        # a common identifier (confirmed real, 2026-08-11: "New" matched
+        # 159 same-named declarations in a real Consul clone, "Register"
+        # 38), the unfiltered version unions caller files across EVERY
+        # same-named symbol repo-wide regardless of which one `symbol`
+        # (already disambiguated below) actually is, corrupting
+        # candidate_files with files from dozens of unrelated subsystems
+        # at reported confidence=1.0. Filtered relative to `symbol`'s own
+        # file, the seed this whole expansion is actually anchored to.
+        for caller_file in locality_filtered_callers_of_name(
+            self._index, name, symbol.file_path
+        ):
             if budget.allow(caller_file):
                 self._add_file(
                     candidate_files,
@@ -282,8 +301,18 @@ class ContextResolver:
                 max_hop = max(max_hop, 1)
                 self._attach_call_site_symbols(caller_file, name, impacted_symbols)
 
-        caller_hops = self._index.call_graph.transitive_caller_symbols_of(
-            symbol.id, traversal_depth
+        # locality_filtered_transitive_callers, not CallGraph.
+        # transitive_caller_symbols_of directly: CallGraph's own stored
+        # caller/callee edges were built from name-ambiguous resolution
+        # at index-construction time (see call_graph.py's own docstring
+        # — deliberate, for impact-analysis use, where over-inclusion is
+        # the correct default), so even a CORRECTLY disambiguated
+        # `symbol` here can have a caller/callee set inflated by every
+        # OTHER same-named symbol's real callers. Same technique as Fix
+        # #9 (arcf-drp-issue3-experiment), generalized to classic's own
+        # resolution path instead of staying DRP-internal.
+        caller_hops = locality_filtered_transitive_callers(
+            self._index, self._index.call_graph, symbol.id, symbol.file_path, traversal_depth
         )
         for caller_id, (hop, parent_id) in sorted(
             caller_hops.items(), key=lambda item: (item[1][0], item[0])
@@ -317,8 +346,8 @@ class ContextResolver:
             )
             max_hop = max(max_hop, hop)
 
-        callee_hops = self._index.call_graph.transitive_callee_symbols_of(
-            symbol.id, traversal_depth
+        callee_hops = locality_filtered_transitive_callees(
+            self._index, self._index.call_graph, symbol.id, symbol.file_path, traversal_depth
         )
         for callee_id, (hop, parent_id) in sorted(
             callee_hops.items(), key=lambda item: (item[1][0], item[0])
