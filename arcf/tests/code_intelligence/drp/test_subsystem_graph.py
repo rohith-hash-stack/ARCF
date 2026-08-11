@@ -93,3 +93,32 @@ def test_empty_index_yields_empty_result(tmp_path: Path) -> None:
     assert result.metrics == {}
     assert result.communities == {}
     assert result.modularity == 0.0
+
+
+def test_import_edge_to_a_file_missing_from_file_analyses_does_not_crash(
+    tmp_path: Path,
+) -> None:
+    """Real bug, found 2026-08-11 re-running the DRP ground-truth suite
+    against a fresh Traefik clone: a deeply-nested generated-code file
+    exceeded Windows' MAX_PATH while resolving, so engine.py's own
+    graceful "unreadable file -> skip, not a hard failure" handling
+    (see engine.py's process_file) excluded it from file_analyses — but
+    it was still a real, scanned import target, so ImportGraph still had
+    an edge pointing to it. `_build_adjacency` didn't know that edge's
+    target might not be in file_analyses, so `_run_label_propagation`
+    KeyError'd on `degree[neighbor]` for a file it never expected to see.
+    Reproduced here by deleting one file's entry from file_analyses
+    AFTER building a real index (so import_graph still references it),
+    without needing a real MAX_PATH failure to trigger it — any reason a
+    scanned, import-referenced file ends up missing from file_analyses
+    hits this same path."""
+    _write_two_cluster_fixture(tmp_path)
+    index = _build_index(tmp_path)
+    assert "a2.py" in index.file_analyses
+    del index.file_analyses["a2.py"]  # a1.py imports it; import_graph still has the edge
+
+    result = build_subsystem_graph(index)  # must not raise KeyError
+
+    assert "a2.py" not in result.metrics
+    assert "a1.py" in result.metrics
+    assert "a3.py" in result.metrics

@@ -81,10 +81,25 @@ class SubsystemGraphResult:
 
 
 def _build_adjacency(index: CodeIntelligenceIndex) -> dict[str, dict[str, int]]:
+    # ImportGraph/CallGraph edges can point at a file that's a real,
+    # scanned, import/call target but never made it into
+    # index.file_analyses — engine.py already treats that as an
+    # ordinary, silent skip (any OSError/WorkspacePathError reading it,
+    # e.g. a Windows MAX_PATH-length failure on a deeply-nested
+    # generated-code path — confirmed via a real Traefik clone,
+    # 2026-08-11), never a hard failure. `_run_label_propagation` below
+    # only knows about `all_files = sorted(index.file_analyses)`, so an
+    # edge to a file outside that set is a dangling reference into a
+    # `degree` dict that was never populated for it — an unhandled
+    # KeyError crash, not a graceful degradation, unlike every other
+    # place in this codebase that reads a possibly-missing file. Both
+    # edge endpoints are checked, not just the import target: caller_file
+    # could theoretically be missing for the same reason.
+    known_files = set(index.file_analyses)
     adjacency: dict[str, dict[str, int]] = defaultdict(lambda: defaultdict(int))
 
     def add_edge(a: str, b: str, weight: int) -> None:
-        if a == b:
+        if a == b or a not in known_files or b not in known_files:
             return
         adjacency[a][b] += weight
         adjacency[b][a] += weight
