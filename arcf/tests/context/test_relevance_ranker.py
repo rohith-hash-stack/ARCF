@@ -271,3 +271,50 @@ def test_ranking_is_deterministic() -> None:
     first = RelevanceRanker().rank(result)
     second = RelevanceRanker().rank(result)
     assert first == second
+
+
+def test_ambiguity_confidence_none_is_a_neutral_multiplier() -> None:
+    result = _result(
+        [FileReference(file_path="a.py", reason="defines foo", language="python", token_count=5)]
+    )
+    ranked = RelevanceRanker().rank(result)
+    assert ranked[0].relevance_score == 1.0
+
+
+def test_ambiguity_confidence_scales_down_relevance_score() -> None:
+    result = _result(
+        [
+            FileReference(
+                file_path="a.py",
+                reason="defines foo",
+                language="python",
+                token_count=5,
+                ambiguity_confidence=0.5,
+            )
+        ]
+    )
+    ranked = RelevanceRanker().rank(result)
+    assert ranked[0].relevance_score == 0.5
+
+
+def test_ambiguity_confidence_reorders_below_an_unambiguous_lower_base_score() -> None:
+    # "calls" (base 0.7) with no ambiguity should outrank "defines" (base
+    # 1.0) once the defines match is diluted by enough same-named
+    # candidates — this is Feature A's whole point: raw role weight alone
+    # isn't the final word once ambiguity is factored in.
+    result = _result(
+        [
+            FileReference(
+                file_path="ambiguous.py",
+                reason="defines foo",
+                language="python",
+                token_count=5,
+                ambiguity_confidence=0.3,
+            ),
+            FileReference(
+                file_path="specific.py", reason="calls foo", language="python", token_count=5
+            ),
+        ]
+    )
+    ranked = RelevanceRanker().rank(result)
+    assert [r.file_path for r in ranked] == ["specific.py", "ambiguous.py"]

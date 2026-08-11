@@ -23,6 +23,7 @@ box — narrowing an ever-larger candidate set further (ranking,
 compression) remains Phase 6's job, not this one's.
 """
 
+import math
 from collections import Counter
 from uuid import uuid4
 
@@ -112,6 +113,7 @@ class ContextResolver:
         max_hop_reached = 0
         ambiguous_targets: list[str] = []
         unresolved_symbols: list[str] = []
+        file_ambiguity_confidence: dict[str, float] = {}
         reference_resolver = ReferenceResolver(self._index.symbol_index)
 
         resolved_count = 0
@@ -133,6 +135,17 @@ class ContextResolver:
             if disambiguation.ambiguous:
                 ambiguous_targets.append(name)
             expand_matches = len(matches) <= _MAX_CANDIDATES_TO_EXPAND
+            # Feature A (Tier-1 structural ambiguity decay): N is the raw
+            # match count for THIS name, before any graph expansion runs —
+            # a name matching many unrelated symbols (Go's bare `New`: 156
+            # real matches in Consul) is a weaker per-candidate signal than
+            # one matching a handful, however confident each individual
+            # match's role_score looks in isolation. N=1 keeps the
+            # multiplier at exactly 1.0 (no penalty for an unambiguous
+            # name), matching this field's None-is-neutral contract.
+            ambiguity_confidence = (
+                1.0 if len(matches) <= 1 else 1.0 / math.log2(len(matches) + 1)
+            )
             for symbol in matches:
                 entry_point_symbols.append(symbol)
                 self._add_file(
@@ -144,6 +157,8 @@ class ContextResolver:
                     f"defines {name}",
                     (f"defines {name}",),
                     entry_point_tier,
+                    file_ambiguity_confidence,
+                    ambiguity_confidence,
                 )
                 if not expand_matches:
                     continue
@@ -223,6 +238,7 @@ class ContextResolver:
                     token_count=self._index.token_counts.get(file_path, 0),
                     justification_chain=file_chains.get(file_path, ()),
                     evidence_tier=file_tiers.get(file_path, EvidenceTier.SUPPORTING),
+                    ambiguity_confidence=file_ambiguity_confidence.get(file_path),
                 )
                 for file_path in sorted(candidate_files)
             ],
@@ -565,6 +581,8 @@ class ContextResolver:
         reason: str,
         chain: tuple[str, ...],
         tier: EvidenceTier,
+        file_ambiguity_confidence: dict[str, float] | None = None,
+        ambiguity_confidence: float | None = None,
     ) -> None:
         candidate_files.add(file_path)
         file_reasons.setdefault(file_path, reason)
@@ -577,6 +595,17 @@ class ContextResolver:
         # still primary evidence if any confident match resolves to it.
         if tier is EvidenceTier.PRIMARY or file_path not in file_tiers:
             file_tiers[file_path] = tier
+        # Feature A (ambiguity decay): only ever passed by the direct
+        # "defines {name}" entry-point call site below — every other
+        # caller leaves this None, matching file_reasons/file_chains'
+        # own first-write-wins discipline rather than letting a later,
+        # unrelated hop-expansion visit to the same file clobber it.
+        if (
+            ambiguity_confidence is not None
+            and file_ambiguity_confidence is not None
+            and file_path not in file_ambiguity_confidence
+        ):
+            file_ambiguity_confidence[file_path] = ambiguity_confidence
 
     def _to_symbol_reference(self, symbol: Symbol) -> SymbolReference:
         return SymbolReference(

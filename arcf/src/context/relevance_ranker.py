@@ -65,6 +65,10 @@ class RankedFile:
     own docstring. Drives ContextBudgetManager's compress-vs-keep-full
     decision; relevance_score (ranking order) and evidence_tier
     (compression policy) are deliberately independent axes."""
+    ambiguity_confidence: float | None = None
+    """Carried straight through from FileReference.ambiguity_confidence
+    (Feature A) purely for traceability — already folded into
+    relevance_score by `_score` below, same as anchor_confidence."""
 
 
 class RelevanceRanker:
@@ -84,11 +88,13 @@ class RelevanceRanker:
                     impacted_counts,
                     profile,
                     file_ref.anchor_confidence,
+                    file_ref.ambiguity_confidence,
                 ),
                 reason=file_ref.reason,
                 language=file_ref.language,
                 token_count=file_ref.token_count,
                 evidence_tier=file_ref.evidence_tier,
+                ambiguity_confidence=file_ref.ambiguity_confidence,
             )
             for file_ref in result.candidate_files
         ]
@@ -102,6 +108,7 @@ class RelevanceRanker:
         impacted_counts: Counter[str],
         profile: dict[str, float] | None,
         anchor_confidence: float | None = None,
+        ambiguity_confidence: float | None = None,
     ) -> float:
         weights = profile if profile is not None else _REASON_WEIGHTS
         verb = reason.split(" ", 1)[0]
@@ -119,4 +126,10 @@ class RelevanceRanker:
         # role-weight system, not a replacement of it: role_score above
         # is computed exactly as before, unconditionally.
         confidence_factor = anchor_confidence if anchor_confidence is not None else 1.0
-        return round(min(role_score * confidence_factor, 1.0), 4)
+        # Feature A (2026-08-11, Real-Time Token & Latency Optimization):
+        # same independent-multiplier shape as confidence_factor above,
+        # applied on top of it rather than replacing it — an anchor-
+        # classified file that also happens to be one of N ambiguous
+        # same-named matches gets both penalties, not just one.
+        ambiguity_factor = ambiguity_confidence if ambiguity_confidence is not None else 1.0
+        return round(min(role_score * confidence_factor * ambiguity_factor, 1.0), 4)
