@@ -368,6 +368,33 @@ def test_ambiguous_target_name_narrowed_by_prior_target_context(tmp_path: Path) 
     assert "b.py" in {f.file_path for f in result.candidate_files}
 
 
+def test_path_qualified_target_name_resolves_the_directory_collision(tmp_path: Path) -> None:
+    # Real Consul regression shape: two DIFFERENT packages each happen to
+    # have a directory (and a same-named symbol inside it) called
+    # "cache" -- exactly agent/cache vs internal/controller/cache. A
+    # plain "cache" target name would stay ambiguous; the path-qualified
+    # "pkg_b/cache" target name (SLM-1's refined contract emits pure
+    # directory/file paths, never a "path/symbolname" hybrid -- see
+    # intent_extraction.py's prompt) should resolve cleanly to the one
+    # actually inside pkg_b/cache/.
+    (tmp_path / "pkg_a" / "cache").mkdir(parents=True)
+    (tmp_path / "pkg_b" / "cache").mkdir(parents=True)
+    (tmp_path / "pkg_a" / "cache" / "store.py").write_text(
+        "class cache:\n    pass\n"
+    )
+    (tmp_path / "pkg_b" / "cache" / "store.py").write_text(
+        "class cache:\n    pass\n"
+    )
+    index = _build_index(tmp_path)
+
+    result = ContextResolver(index).resolve(
+        "ws1", "contract1", str(tmp_path), ["pkg_b/cache"]
+    )
+
+    assert result.ambiguous_targets == ()
+    assert {f.file_path for f in result.candidate_files} == {"pkg_b/cache/store.py"}
+
+
 def test_wildly_ambiguous_target_name_skips_expansion_but_keeps_all_files(
     tmp_path: Path,
 ) -> None:

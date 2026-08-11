@@ -74,6 +74,42 @@ _CONSTRUCTOR_MATCHES_CLASS_NAME_LANGUAGES = frozenset({"java", "csharp"})
 # match.
 _MAX_CANDIDATES_TO_EXPAND = 5
 
+# Feature 2 (path-aware reference resolution, 2026-08-11,
+# arcf-grounding-validation-entity-extraction-gap): SLM-1's refined
+# entity contract can now emit path-qualified hints like "agent/cache"
+# or "agent/cache/cache.go" alongside plain identifiers -- this set of
+# extensions distinguishes a trailing path SEGMENT (part of the
+# directory) from a trailing FILENAME (to be stripped, since the
+# directory is what ReferenceResolver.resolve_with_disambiguation's
+# path_hint filters against, not a specific file).
+_SOURCE_FILE_EXTENSIONS = frozenset(
+    {".go", ".py", ".ts", ".tsx", ".js", ".jsx", ".java", ".cs", ".kt", ".cpp", ".cc", ".rs"}
+)
+
+
+def _split_path_hint(name: str) -> tuple[str, str | None]:
+    """Splits a raw target name into (symbol_candidate, path_hint).
+    Names without a "/" are returned unchanged with path_hint=None --
+    the overwhelmingly common case, zero behavior change. A
+    path-qualified name's last segment becomes BOTH the symbol
+    candidate to resolve (a package/type sometimes really does share its
+    directory's name, e.g. Go's `package cache` in agent/cache/cache.go)
+    AND, combined with everything before it, the path_hint used to filter
+    candidates by directory."""
+    if "/" not in name:
+        return name, None
+    parts = name.split("/")
+    last = parts[-1]
+    has_extension = any(last.endswith(ext) for ext in _SOURCE_FILE_EXTENSIONS)
+    if has_extension:
+        symbol_candidate = last.rsplit(".", 1)[0]
+        directory_parts = parts[:-1]
+    else:
+        symbol_candidate = last
+        directory_parts = parts
+    path_hint = "/".join(directory_parts) + "/" if directory_parts else None
+    return symbol_candidate, path_hint
+
 
 class ContextResolver:
     def __init__(self, index: CodeIntelligenceIndex) -> None:
@@ -118,14 +154,16 @@ class ContextResolver:
 
         resolved_count = 0
         for name in target_names:
+            symbol_candidate, path_hint = _split_path_hint(name)
             # Locality context is whatever's already been established as
             # relevant by earlier target names in this same call — the
             # "detected execution path" (ARCF hardening §3). The first
             # target name in a request has no such context yet.
             disambiguation = reference_resolver.resolve_with_disambiguation(
-                name,
+                symbol_candidate,
                 context_files=frozenset(candidate_files),
                 import_graph=self._index.import_graph,
+                path_hint=path_hint,
             )
             matches = disambiguation.resolved
             if matches:

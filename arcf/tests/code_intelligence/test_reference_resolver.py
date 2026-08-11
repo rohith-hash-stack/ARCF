@@ -125,3 +125,82 @@ def test_disambiguation_unresolvable_name_is_not_ambiguous() -> None:
     assert result.ambiguous is False
     assert result.preferred is None
     assert result.resolved == []
+
+
+def test_path_hint_filters_out_directory_collision() -> None:
+    # Real Consul regression: two files both named cache.go, only one in
+    # the directory a path-qualified entity actually pointed at.
+    real = _symbol("Cache", SymbolKind.CLASS, "Cache", file_path="agent/cache/cache.go")
+    unrelated = _symbol(
+        "Cache", SymbolKind.CLASS, "Cache", file_path="internal/controller/cache/cache.go"
+    )
+    resolver = ReferenceResolver(SymbolIndex([real, unrelated]))
+    result = resolver.resolve_with_disambiguation("Cache", path_hint="agent/cache/")
+    assert result.ambiguous is False
+    assert result.preferred == real
+    assert result.resolved == [real]
+
+
+def test_path_hint_falls_back_to_full_set_when_it_matches_nothing() -> None:
+    a = _symbol("helper", SymbolKind.FUNCTION, "module_a.helper", file_path="a.py")
+    b = _symbol("helper", SymbolKind.METHOD, "Foo.helper", file_path="b.py")
+    resolver = ReferenceResolver(SymbolIndex([a, b]))
+    result = resolver.resolve_with_disambiguation("helper", path_hint="nowhere/")
+    assert result.ambiguous is True
+    assert {s.id for s in result.resolved} == {a.id, b.id}
+
+
+def test_path_hint_combines_with_locality_scoring_when_still_ambiguous() -> None:
+    same_dir = _symbol("helper", SymbolKind.FUNCTION, "pkg/a.py", file_path="pkg/a.py")
+    other_pkg_dir = _symbol("helper", SymbolKind.METHOD, "pkg/b.py", file_path="pkg/b.py")
+    outside = _symbol("helper", SymbolKind.CLASS, "outside.py", file_path="outside/c.py")
+    resolver = ReferenceResolver(SymbolIndex([same_dir, other_pkg_dir, outside]))
+    result = resolver.resolve_with_disambiguation(
+        "helper", context_files=frozenset({"pkg/context.py"}), path_hint="pkg/"
+    )
+    assert result.ambiguous is True
+    assert {s.id for s in result.resolved} == {same_dir.id, other_pkg_dir.id}
+
+
+def test_permutation_fallback_recovers_single_word_from_prose() -> None:
+    new_fn = _symbol("New", SymbolKind.FUNCTION, "New", file_path="agent/cache/cache.go")
+    resolver = ReferenceResolver(SymbolIndex([new_fn]))
+    result = resolver.resolve_with_disambiguation("New function")
+    assert result.resolved == [new_fn]
+    assert result.preferred == new_fn
+    assert result.permutation_matched == "New"
+
+
+def test_permutation_fallback_recovers_pascal_case_compound() -> None:
+    check_listener = _symbol(
+        "CheckListener", SymbolKind.CLASS, "CheckListener", file_path="agent/checks/listener.go"
+    )
+    resolver = ReferenceResolver(SymbolIndex([check_listener]))
+    result = resolver.resolve_with_disambiguation("service check listeners")
+    assert result.preferred == check_listener
+    assert result.permutation_matched == "CheckListener"
+
+
+def test_permutation_fallback_not_attempted_for_single_word_names() -> None:
+    # A clean, single-token name that just doesn't exist stays
+    # unresolved -- permutation is only for prose (multi-word) input.
+    resolver = ReferenceResolver(SymbolIndex([]))
+    result = resolver.resolve_with_disambiguation("nonexistent")
+    assert result.resolved == []
+    assert result.permutation_matched is None
+
+
+def test_permutation_fallback_leaves_directly_resolvable_names_untouched() -> None:
+    symbol = _symbol("authenticate", SymbolKind.METHOD, "AuthService.authenticate")
+    resolver = ReferenceResolver(SymbolIndex([symbol]))
+    result = resolver.resolve_with_disambiguation("authenticate")
+    assert result.permutation_matched is None
+    assert result.preferred == symbol
+
+
+def test_permutation_fallback_returns_unresolved_when_no_candidate_matches() -> None:
+    resolver = ReferenceResolver(SymbolIndex([]))
+    result = resolver.resolve_with_disambiguation("totally unrelated prose here")
+    assert result.resolved == []
+    assert result.preferred is None
+    assert result.permutation_matched is None
