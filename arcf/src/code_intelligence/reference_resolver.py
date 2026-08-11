@@ -17,20 +17,106 @@ context over the first match. Scoped to ContextResolver's top-level
 target-name lookup only — `resolve()` itself (used by CallGraph and
 InheritanceGraph, whose fan-out-to-all-candidates behavior is already
 well tested) is unchanged.
+
+Path-aware filtering and identifier-permutation fallback (2026-08-11,
+arcf-grounding-validation-entity-extraction-gap): a real Consul
+benchmark found two related SLM-1 failure modes that plain `resolve()`
+has no recovery from — both handled here, in `resolve_with
+_disambiguation` only, for the same reason the locality scoring above
+is scoped there and not into `resolve()` itself (this module's whole
+discipline: extend the opt-in target-name lookup, never the shared
+edges CallGraph/InheritanceGraph depend on).
+
+(1) `path_hint`: when the caller has a directory/path signal for a
+name (ContextResolver splits it out of a path-qualified entity like
+"agent/cache" before calling this), candidates outside that path are
+dropped from the returned population itself — a deliberate departure
+from `resolved`'s "always the full match set" contract above, but a
+narrower, more trustworthy signal than locality scoring: the caller
+told us the directory, we didn't have to guess it from already-resolved
+files. Falls back to the unfiltered set if the hint matches nothing (a
+hint that doesn't help shouldn't have the power to make an otherwise-
+resolvable name un-resolve).
+
+(2) Identifier-permutation fallback: when `resolve()` finds nothing at
+all AND the raw name looks like prose (contains a space — a clean
+single-token name that simply doesn't exist is left alone, not forced
+through permutation), `_permutation_candidates` generates PascalCase/
+camelCase/snake_case joins plus adjacent-word-pair and single-word
+candidates from the phrase's own tokens, tried in that order until one
+resolves. Real example this fixes: SLM-1 extracting "New function"
+where `resolve("New function")` finds nothing, but `resolve("New")`
+(one of the generated candidates) finds the real symbol.
 """
 
+import re
 from dataclasses import dataclass
 
 from code_intelligence.import_graph import ImportGraph
 from code_intelligence.symbol_index import SymbolIndex
 from domain.code_intelligence import Symbol, SymbolKind
 
+_TOKEN_PATTERN = re.compile(r"[A-Za-z0-9]+")
+
+
+def _tokenize_prose(phrase: str) -> list[str]:
+    return [w.lower() for w in _TOKEN_PATTERN.findall(phrase)]
+
+
+def _singularize(word: str) -> str:
+    # Light heuristic, not real lemmatization -- deliberately guarded
+    # against "class"/"address"-style words ending in a doubled "s" or
+    # too short to safely assume a plural.
+    if len(word) > 4 and word.endswith("s") and not word.endswith("ss"):
+        return word[:-1]
+    return word
+
+
+def _pascal(words: list[str]) -> str:
+    return "".join(w.capitalize() for w in words)
+
+
+def _camel(words: list[str]) -> str:
+    if not words:
+        return ""
+    return words[0] + "".join(w.capitalize() for w in words[1:])
+
+
+def _snake(words: list[str]) -> str:
+    return "_".join(words)
+
+
+def _permutation_candidates(raw_name: str) -> list[str]:
+    """Deterministic, ordered candidate identifiers generated from a
+    prose phrase's own words — most-specific (the whole phrase) first,
+    down to single words, so a real multi-word compound identifier is
+    preferred over an accidental single-word match when both exist."""
+    words = [_singularize(w) for w in _tokenize_prose(raw_name)]
+    if len(words) < 2:
+        return []
+
+    candidates = [_pascal(words)]
+    candidates.extend(_pascal(words[i : i + 2]) for i in range(len(words) - 1))
+    candidates.extend(w.capitalize() for w in words)
+    candidates.append(_camel(words))
+    candidates.append(_snake(words))
+
+    seen: set[str] = set()
+    unique: list[str] = []
+    for candidate in candidates:
+        if candidate not in seen:
+            seen.add(candidate)
+            unique.append(candidate)
+    return unique
+
 
 @dataclass(frozen=True)
 class DisambiguationResult:
     resolved: list[Symbol]
-    """Every candidate symbol matching the name (post kind-filter),
-    regardless of ambiguity — same population `resolve()` would return."""
+    """Every candidate symbol matching the name (post kind-filter and
+    post path_hint-filter, when a path_hint was given and matched
+    something), regardless of ambiguity — same population `resolve()`
+    would return absent a path_hint."""
     ambiguous: bool
     """True when more than one candidate remains after applying every
     deterministic locality signal available — i.e. disambiguation could
@@ -40,6 +126,13 @@ class DisambiguationResult:
     """The single best candidate by locality score, or the sole match
     when there's no ambiguity to begin with. `None` when unresolved or
     still ambiguous."""
+    permutation_matched: str | None = None
+    """The generated identifier candidate that actually resolved, when
+    the raw name itself matched nothing and permutation fallback
+    recovered a result — `None` whenever the raw name resolved directly
+    (the overwhelmingly common case) or nothing resolved at all. Purely
+    for auditability, matching this project's justification_chain-style
+    "never a silent black box" discipline."""
 
 
 class ReferenceResolver:
@@ -61,6 +154,7 @@ class ReferenceResolver:
         kinds: tuple[SymbolKind, ...] | None = None,
         context_files: frozenset[str] = frozenset(),
         import_graph: ImportGraph | None = None,
+        path_hint: str | None = None,
     ) -> DisambiguationResult:
         """Like `resolve()`, but when the name resolves to more than one
         candidate, deterministically narrows it using locality relative to
@@ -71,13 +165,37 @@ class ReferenceResolver:
         the highest locality score, it's `preferred` and `ambiguous` is
         False; otherwise every tied candidate remains and `ambiguous` is
         True. Never invents a symbol that isn't a real name match — this
-        only orders/narrows what `resolve()` already found."""
+        only orders/narrows what `resolve()` already found (except
+        `path_hint`, a deliberate exception — see this module's own
+        docstring).
+
+        `path_hint`, when given, is applied FIRST: candidates outside it
+        are dropped from the population entirely, before either the
+        empty-result permutation fallback or locality scoring ever runs
+        (a caller-provided directory is stronger evidence than anything
+        this method could infer on its own)."""
         candidates = self.resolve(raw_name, kinds=kinds)
+        permutation_matched: str | None = None
+
+        if not candidates and " " in raw_name.strip():
+            for candidate_name in _permutation_candidates(raw_name):
+                permuted = self.resolve(candidate_name, kinds=kinds)
+                if permuted:
+                    candidates = permuted
+                    permutation_matched = candidate_name
+                    break
+
+        if path_hint is not None:
+            path_filtered = [c for c in candidates if c.file_path.startswith(path_hint)]
+            if path_filtered:
+                candidates = path_filtered
+
         if len(candidates) <= 1:
             return DisambiguationResult(
                 resolved=candidates,
                 ambiguous=False,
                 preferred=candidates[0] if candidates else None,
+                permutation_matched=permutation_matched,
             )
 
         scored = [
@@ -89,9 +207,15 @@ class ReferenceResolver:
 
         if len(best_candidates) == 1:
             return DisambiguationResult(
-                resolved=candidates, ambiguous=False, preferred=best_candidates[0]
+                resolved=candidates,
+                ambiguous=False,
+                preferred=best_candidates[0],
+                permutation_matched=permutation_matched,
             )
-        return DisambiguationResult(resolved=candidates, ambiguous=True, preferred=None)
+        return DisambiguationResult(
+            resolved=candidates, ambiguous=True, preferred=None,
+            permutation_matched=permutation_matched,
+        )
 
     @staticmethod
     def _locality_score(

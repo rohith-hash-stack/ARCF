@@ -24,7 +24,21 @@ these keys:
 - "domain": one of ["frontend", "backend", "testing", "infrastructure", "data", \
 "documentation", "unknown"]
 - "task": one of ["bug_fix", "feature", "refactor", "documentation", "test", "unknown"]
-- "entities": array of specific files/functions/components/features mentioned (empty array if none)
+- "entities": array of specific code identifiers or paths mentioned or clearly implied \
+by the request. Each entity MUST be either:
+  (a) a valid code identifier in the casing it would actually appear in source \
+(PascalCase, camelCase, snake_case, or UPPERCASE) -- e.g. "Register", "handleLogin", \
+"parse_config", "MAX_RETRIES"; or
+  (b) a path-qualified hint written as a slash-separated path -- e.g. "agent/cache" or \
+"agent/cache/cache.go" -- when the request names or clearly implies a specific package, \
+directory, or file.
+  Do NOT extract descriptive English noun phrases, plurals, or generic words as entities \
+(e.g. never "service check listeners", "the New function", "configuration struct", \
+"binding rule endpoint") -- if the request only describes something in prose without a \
+clear underlying identifier, extract the single most specific identifier-shaped word from \
+that phrase instead (e.g. "downstream service check listeners" -> "Listener" or "Check", \
+not the full phrase), or omit it rather than inventing a made-up identifier. \
+Empty array if nothing qualifies.
 - "constraints": array of explicit limitations the user stated (empty array if none)
 - "assumptions": array of things you are inferring that were not explicitly stated \
 (empty array if none)

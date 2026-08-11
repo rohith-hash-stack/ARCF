@@ -126,3 +126,34 @@ async def test_requests_deterministic_temperature(monkeypatch: pytest.MonkeyPatc
     await extractor.extract("fix the login bug")
 
     assert captured["temperature"] == 0.0
+
+
+async def test_prompt_forbids_prose_entities_and_requires_identifier_grammar(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """arcf-grounding-validation-entity-extraction-gap (2026-08-11): a
+    real Consul benchmark found SLM-1 frequently returning natural-
+    language noun phrases ("Agent cache", "New function", "downstream
+    service check listeners") as entities, which ReferenceResolver.
+    resolve()'s exact-match requirement can never resolve -- silently
+    falling through to weak evidence-contract matching. This can only be
+    verified at the prompt-content level (an LLM's actual compliance
+    with a prompt isn't something a unit test can assert -- that's what
+    scripts/validate_llm_grounding.py's real-Consul re-run is for), but
+    the instruction the prompt gives the model must at minimum say the
+    right thing."""
+    captured: dict[str, object] = {}
+
+    async def fake_acompletion(**kwargs: object) -> SimpleNamespace:
+        captured.update(kwargs)
+        return _fake_response(json.dumps(_VALID_PAYLOAD))
+
+    monkeypatch.setattr(litellm, "acompletion", fake_acompletion)
+    extractor = _extractor()
+    await extractor.extract("Trace how Agent cache updates propagate to downstream service check listeners.")
+
+    prompt = captured["messages"][0]["content"]
+    assert "PascalCase" in prompt
+    assert "snake_case" in prompt
+    assert "path-qualified hint" in prompt
+    assert "service check listeners" in prompt  # the real failing example, cited directly
