@@ -211,6 +211,132 @@ names like `__offset`/`__indirect`/`__vector_len`, `hostConnection`'s
 `Register`/`FindHierarchy` including a verbatim error string, all
 character-for-character correct).
 
+## Answer-content validation pass — direct-LLM baseline (2026-08-11)
+
+Same methodology as the pass above, applied to the 12 stored **direct**
+(no-context, training-knowledge-only) answers instead of classic/DRP: all
+3 repos re-cloned fresh (`googletest`, `flatbuffers`, `gvisor`, deleted
+afterward), and every concrete, falsifiable claim in `results.direct.answer`
+across all 12 queries — API/class/method names, constructor and function
+signatures, command-line flag names, package paths, described behavior —
+individually checked against the real source.
+
+**First finding, before any individual claim-checking: direct's answers are
+structurally different from classic/DRP's.** 5 of the 12 direct answers
+(flatbuffers Q1 "add a CLI validation flag", flatbuffers Q3 "why FlatBuffers
+avoids full deserialization", googletest Q1 "parameterized-test overhead",
+gvisor Q2 "startup-time regression", gvisor Q3 "refactor syscall
+validation") contain **zero concrete, falsifiable claims** — no cited file
+paths, no real function/class names, no verbatim strings. They're generic,
+textbook-style advice ("locate the code responsible for schema validation,"
+"profile the tests to identify bottlenecks") or, where they do include code,
+the code uses explicitly hypothetical names the answer itself frames as
+illustrative (`doOpen`, `isValidFD`, `verbose_validation`) rather than
+claiming to describe the real gVisor/FlatBuffers codebase. This has no
+classic/DRP equivalent in the prior pass — every classic/DRP answer checked
+cited *something* concrete (a real file, a real symbol, even if occasionally
+wrong), because they had actual packaged file content to react to. Direct,
+with nothing to react to, defaults to staying abstract in these cases rather
+than committing to specifics that could be checked at all.
+
+The other 7 of 12 answers did make concrete, checkable claims — 29 individual
+claims checked across them. **8 confirmed inaccuracies found:**
+
+1. **googletest Q2, direct** — fabricated the constructor
+   `TestEventListener(listener)` as a base-class call inside the example's
+   `DurationListener(testing::TestEventListener* listener) :
+   testing::TestEventListener(listener) {}`. `TestEventListener` (declared
+   `googletest/include/gtest/gtest.h:930`) declares no such constructor —
+   only an implicit default one. **This is the exact same fabricated
+   constructor pattern the prior pass found in DRP's googletest Q4** (see
+   item 1 above) — direct invents the identical nonexistent API
+   independently, from training data alone.
+2. **googletest Q2, direct** — the example subclasses `TestEventListener`
+   directly and overrides only `OnTestStart`/`OnTestEnd`, but
+   `TestEventListener` declares 9 pure virtual methods (`OnTestProgramStart`,
+   `OnTestIterationStart`, `OnEnvironmentsSetUpStart/End`, `OnTestPartResult`,
+   `OnEnvironmentsTearDownStart/End`, `OnTestIterationEnd`,
+   `OnTestProgramEnd` — `gtest.h:930-990`); a subclass overriding only two of
+   them is still abstract and won't compile. The real pattern for this use
+   case is subclassing `EmptyTestEventListener` (which stubs all nine), not
+   `TestEventListener` directly.
+3. **googletest Q2, direct** — calls `test_info.result()->passed()`
+   (lowercase). The real method is `TestResult::Passed()` (capital P,
+   `gtest.h:420`) — C++ is case-sensitive, so this line won't compile as
+   written.
+4. **googletest Q2, direct** — calls
+   `testing::UnitTest::GetInstance()->listeners().Release()` with no
+   argument. The real signature is `TestEventListener*
+   Release(TestEventListener* listener)` (`gtest.h:1040`) — it requires the
+   listener-to-remove as a parameter; a no-arg call won't compile.
+5. **googletest Q4, direct** — the example's `MatchAndExplain` signature is
+   `bool MatchAndExplain(int actual, ::testing::ActionInterface<int>*
+   result_listener) const override`. The real `MatcherInterface<T>` method
+   is `virtual bool MatchAndExplain(T x, MatchResultListener* listener)
+   const = 0` (`gtest-matchers.h:175`) — `ActionInterface` (confirmed real,
+   `gmock-actions.h:703`) is a *different* gmock interface entirely, for
+   defining custom actions (e.g. `WillOnce(Invoke(...))`), unrelated to
+   matchers. A cross-API name conflation that wouldn't compile.
+6. **flatbuffers Q2, direct** — claims you can inspect serialized data via
+   "the `flatc` compiler with the `--json` or `--text` options." Only
+   `--json` (short form `-t`, registered in `flatc_main.cpp:169`) is real;
+   no `--text` option exists among flatc's registered flags
+   (`flatc_main.cpp:88-179` lists every generator flag: cpp, csharp, dart,
+   proto, go, java, jsonschema, kotlin, lobster, lua, nim, python, php,
+   rust, json, swift, ts — no "text").
+7. **gvisor Q1, direct** — calls gVisor's user-space kernel "Sentries"
+   (plural, as if that's the component's name — "gVisor's user-space
+   kernel, called 'Sentries'"). The real docs consistently use "the Sentry"
+   (singular proper noun); `g3doc/architecture_guide/intro_to_gvisor.md`
+   uses "Sentry" 9 times and "Sentries" zero times. Minor, but a real naming
+   error a grounded answer wouldn't make.
+8. **gvisor Q4, direct** — describes "gVisor's user-space kernel
+   (specifically, the `runsc` runtime)," conflating two distinct
+   components. `runsc` is confirmed real but is the OCI-compatible
+   *container runtime/CLI* (`README.md:16`: "an Open Container Initiative
+   (OCI) runtime called `runsc`") that launches and manages sandboxes — the
+   actual kernel that intercepts syscalls is the Sentry process runsc
+   starts, not runsc itself.
+
+The remaining 21 of 29 checked claims were accurate: `TestEventListener`,
+`TestEventListeners::Append`, `TestInfo::test_case_name()`/`name()`, and
+`UnitTest::GetInstance()` all real and correctly used (googletest Q2);
+`MatcherInterface`, `DescribeTo`/`DescribeNegationTo`, `PolymorphicMatcher`,
+`MakePolymorphicMatcher` all real (googletest Q4); the TEST/TEST_F macro
+static-registration model, `::testing::Test` base class, and `SetUp`/
+`TearDown` lifecycle (googletest Q3) all accurate at the conceptual level
+described; flatbuffers' claimed multi-language codegen targets (C++, Java,
+C#, Go, Python) all confirmed as real registered generators; gVisor's
+ptrace-based interception mechanism (`pkg/sentry/platform/ptrace`) and its
+VFS abstraction layer (`pkg/sentry/vfs`) both confirmed real (gvisor Q1, Q4).
+
+**Comparison to classic/DRP:** direct's error rate on claims it actually
+commits to is meaningfully worse than classic/DRP's — 8/29 (~28%) confirmed
+wrong vs. classic/DRP's 4/~30+ (~13%) from the prior pass — and direct's
+mistakes are more severe: 4 of its 8 errors are non-compiling fabricated API
+usage in a single answer (googletest Q2's listener example), stacking
+multiple independent wrong details into one code block, versus classic/DRP's
+errors being more isolated (one wrong constructor, one wrong struct name,
+one garbled path, one cross-file conflation, each in otherwise-correct
+answers). This makes sense given what each arm has to work with: classic/DRP
+had the real file content in context and mostly transcribed it faithfully,
+so their few errors are attention slips against a correct source. Direct has
+no source to transcribe from — every specific name, signature, or flag it
+states is reconstructed purely from training-data recall, so once it
+commits to a specific technical detail there's nothing to check itself
+against before answering, and errors compound within a single answer instead
+of being isolated. The flip side is direct's other major failure mode
+(zero-claim genericness in 5/12 answers) barely appears in classic/DRP,
+whose worst case is an honest "the provided file doesn't contain enough
+information" rather than staying vague — retrieval, even when it finds the
+wrong file, still anchors the answer to *something* concrete enough to
+either be right or be checkably wrong, whereas direct's fallback is to give
+advice that's true of any codebase and therefore un-falsifiable. Net effect:
+grounding materially changes the failure mode of these three arms, not
+just their surface-level correctness — direct trades fabrication risk on
+some answers for hollow genericness on others, while classic/DRP stay
+concrete throughout and are wrong less often when they do commit.
+
 ## Status
 
 | # | Repo | Language(s) | Queries run | Issues found | Issues fixed | Status |
