@@ -29,6 +29,7 @@ from uuid import uuid4
 
 from code_intelligence.index import CodeIntelligenceIndex
 from code_intelligence.locality import (
+    has_locality,
     locality_filtered_caller_files,
     locality_filtered_callers_of_name,
     locality_filtered_transitive_callees,
@@ -381,26 +382,42 @@ class ContextResolver:
         as the tie-break. Deterministic (stable sort, ties broken by
         symbol id last) -- same candidate set always ranks the same way.
 
-        Uses the LOCALITY-FILTERED caller functions (locality.py, hop
-        capped at 1 -- ranking only needs a direct-caller count, not a
-        full traversal), not CallGraph's raw caller_symbols_of/
-        caller_files_of directly. A first version of this method used
-        the raw counts and was caught failing its own real use case in
-        testing: when several same-named ambiguous candidates share one
-        real caller (an ambiguous call site resolves to ALL of them
-        equally, CallGraph's own documented fan-out), the raw count
-        credits every candidate identically, making it worthless for
-        telling the one with a REAL local caller apart from the rest --
-        exactly the corruption arcf_callgraph_locality_fix already
-        found and fixed once for hop-expansion; reusing that fix here
-        rather than reintroducing the same bug in a new place."""
+        Uses locality-filtered DIRECT caller counts, not CallGraph's raw
+        caller_symbols_of/caller_files_of directly. A first version of
+        this method used the raw counts and was caught failing its own
+        real use case in testing: when several same-named ambiguous
+        candidates share one real caller (an ambiguous call site
+        resolves to ALL of them equally, CallGraph's own documented
+        fan-out), the raw count credits every candidate identically,
+        making it worthless for telling the one with a REAL local
+        caller apart from the rest -- exactly the corruption
+        arcf_callgraph_locality_fix already found and fixed once for
+        hop-expansion.
+
+        Deliberately NOT `locality_filtered_transitive_callers` (a
+        second, real bug caught in testing, not assumed away): that
+        function rebuilds a full `{symbol.id: symbol}` dict over the
+        ENTIRE index on every single call, an O(1) cost when called at
+        most `_MAX_CANDIDATES_TO_EXPAND` times for real hop-expansion,
+        but catastrophic here -- this method is called once per
+        ambiguous candidate BEFORE truncation, and a real Consul "New"
+        query (159 raw candidates, tens of thousands of symbols in the
+        index) turned that into minutes, not milliseconds. Direct,
+        O(1)-per-lookup `symbol_index.get()` and `has_locality()` calls
+        below give the same locality-filtered hop-1 signal without ever
+        rebuilding anything per candidate."""
+        symbol_index = self._index.symbol_index
+        call_graph = self._index.call_graph
 
         def centrality(symbol: Symbol) -> tuple[int, int, str]:
-            caller_count = len(
-                locality_filtered_transitive_callers(
-                    self._index, self._index.call_graph, symbol.id, symbol.file_path, max_depth=1
-                )
-            ) + len(locality_filtered_caller_files(self._index, symbol.id, symbol.file_path))
+            caller_count = 0
+            for caller_id in call_graph.caller_symbols_of(symbol.id):
+                caller_symbol = symbol_index.get(caller_id)
+                if caller_symbol is not None and has_locality(
+                    self._index, caller_symbol.file_path, symbol.file_path
+                ):
+                    caller_count += 1
+            caller_count += len(locality_filtered_caller_files(self._index, symbol.id, symbol.file_path))
             file_size = self._index.token_counts.get(symbol.file_path, 0)
             return (caller_count, file_size, symbol.id)
 
