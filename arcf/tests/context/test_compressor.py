@@ -172,3 +172,105 @@ def test_ast_scope_header_ignores_trailing_blank_run(tmp_path: Path) -> None:
     header_end = compressor._header_end_line(lines)
 
     assert header_end == 1
+
+
+def _method_symbol(file_path: str, start: int, end: int, kind: SymbolKind = SymbolKind.FUNCTION) -> SymbolReference:
+    return SymbolReference(
+        symbol_id=f"{file_path}::fn#{start}",
+        name="fn",
+        qualified_name="fn",
+        kind=kind,
+        file_path=file_path,
+        start_line=start,
+        end_line=end,
+    )
+
+
+def test_skeleton_strips_single_line_go_signature_body(tmp_path: Path) -> None:
+    source = (
+        "package foo\n\n"
+        "func Register(name string) error {\n"
+        "\tif name == \"\" {\n"
+        "\t\treturn errors.New(\"empty\")\n"
+        "\t}\n"
+        "\treturn store.Save(name)\n"
+        "}\n"
+    )
+    (tmp_path / "a.go").write_text(source)
+    compressor = SymbolRangeCompressor(PermissionManager(tmp_path))
+
+    excerpt = compressor.extract_skeleton_only("a.go", [_method_symbol("a.go", 3, 7)])
+
+    assert "func Register(name string) error {" in excerpt
+    assert "implementation omitted" in excerpt
+    assert "errors.New" not in excerpt
+    assert "store.Save" not in excerpt
+
+
+def test_skeleton_strips_multiline_python_signature_body(tmp_path: Path) -> None:
+    source = (
+        "def handle(\n"
+        "    request,\n"
+        "    context,\n"
+        "):\n"
+        "    validate(request)\n"
+        "    return context.respond(request)\n"
+    )
+    (tmp_path / "a.py").write_text(source)
+    compressor = SymbolRangeCompressor(PermissionManager(tmp_path))
+
+    excerpt = compressor.extract_skeleton_only("a.py", [_method_symbol("a.py", 1, 6)])
+
+    assert "def handle(" in excerpt
+    assert "context,\n" in excerpt or "context," in excerpt  # multi-line signature kept
+    assert "):" in excerpt
+    assert "implementation omitted" in excerpt
+    assert "validate(request)" not in excerpt
+
+
+def test_skeleton_keeps_class_declaration_line_only(tmp_path: Path) -> None:
+    source = (
+        "class Widget:\n"
+        "    def method(self):\n"
+        "        do_real_work()\n"
+        "        return 1\n"
+    )
+    (tmp_path / "a.py").write_text(source)
+    compressor = SymbolRangeCompressor(PermissionManager(tmp_path))
+    class_symbol = SymbolReference(
+        symbol_id="a.py::Widget",
+        name="Widget",
+        qualified_name="Widget",
+        kind=SymbolKind.CLASS,
+        file_path="a.py",
+        start_line=1,
+        end_line=4,
+    )
+
+    excerpt = compressor.extract_skeleton_only(
+        "a.py", [class_symbol, _method_symbol("a.py", 2, 4, kind=SymbolKind.METHOD)]
+    )
+
+    assert "class Widget:" in excerpt
+    assert "def method(self):" in excerpt
+    assert "implementation omitted" in excerpt
+    assert "do_real_work" not in excerpt
+
+
+def test_skeleton_falls_back_to_omitting_nothing_when_no_boundary_found(tmp_path: Path) -> None:
+    # Pathological input with no `{` and no line ending in `:` --
+    # _find_body_start_line can't locate a boundary, so it under-omits
+    # (keeps everything) rather than guessing wrong.
+    (tmp_path / "a.txt").write_text("weird_declaration(a, b)\nsome content\nmore content\n")
+    compressor = SymbolRangeCompressor(PermissionManager(tmp_path))
+
+    excerpt = compressor.extract_skeleton_only("a.txt", [_method_symbol("a.txt", 1, 3)])
+
+    assert "implementation omitted" not in excerpt
+    assert "some content" in excerpt
+
+
+def test_skeleton_no_symbols_returns_empty_string(tmp_path: Path) -> None:
+    _make_file(tmp_path, "a.py", 5)
+    compressor = SymbolRangeCompressor(PermissionManager(tmp_path))
+    assert compressor.extract_skeleton_only("a.py", []) == ""

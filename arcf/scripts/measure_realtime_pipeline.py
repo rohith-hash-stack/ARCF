@@ -41,6 +41,7 @@ from code_intelligence.languages.go_analyzer import GoLanguageAnalyzer
 from code_intelligence.registry import LanguageRegistry
 from context.packager import ContextPackager
 from context.relevance_ranker import RelevanceRanker
+from context.task_profile import RetrievalTaskType
 from infrastructure.cost import CostEstimator
 from workspace.scanner import RepositoryScanner
 
@@ -66,8 +67,16 @@ async def _measure_one(index: CodeIntelligenceIndex, root: Path, name: str) -> d
     t1 = time.perf_counter()
 
     packager = ContextPackager(RelevanceRanker(), CostEstimator())
+    # Feature 3 (intent-based dynamic budget ceilings): these are bare
+    # single-word probes, not real natural-language queries -- genuinely
+    # un-classifiable by task_profile's own keyword heuristics, so
+    # UNKNOWN (the task spec's own explicit safety fallback, 2500
+    # tokens) is the honest choice here, not a guess.
     package, _ = await packager.package(
-        result, raw_request=f"(measurement probe for {name!r})", max_tokens=MAX_TOKENS_CONTEXT
+        result,
+        raw_request=f"(measurement probe for {name!r})",
+        max_tokens=MAX_TOKENS_CONTEXT,
+        task_type=RetrievalTaskType.UNKNOWN,
     )
     t2 = time.perf_counter()
 

@@ -70,6 +70,39 @@ there, budget remaining or not, rather than continuing to spend it on
 long-tail noise. This is independent of, and runs before, every
 budget/compression decision above: a candidate can lose to relevance
 falloff without ever reaching the "does it fit" question at all.
+
+Two-Tier AST Snippet Rendering, Feature 2 (2026-08-11, Safe High-
+Efficiency Payload Optimization): Feature C's `extract_with_ast_scope`
+gives every SUPPORTING/EXPERIMENTAL candidate a full implementation
+body. Measured cost: for a query with several secondary matches, most
+of those bodies are never what the query is actually about — the
+FIRST (highest-ranked) SUPPORTING candidate encountered, in
+`ranked_files`' already-sorted order, is the FOCAL one and keeps the
+full body; every one after it gets `extract_skeleton_only` instead
+(signature/type contract only, body stripped) UNLESS its own
+`justification_chain` shows it's directly (hop-1) call-graph-linked to
+whatever entry point it was reached from — a secondary file that's one
+hop from the real answer plausibly needs its own body to make sense of
+that link, so it's exempted from skeletonization rather than risking a
+genuinely load-bearing body being cut to chase a token number (same
+"don't guess wrong" posture as the boilerplate-truncation carve-out
+above).
+
+Intent-based dynamic budget ceilings, Feature 3 (2026-08-11, Safe
+High-Efficiency Payload Optimization): `max_tokens` has always been a
+single fixed ceiling the CALLER chooses (typically ~8000, the same for
+every query regardless of what it's actually asking). `select()` now
+takes an optional `task_type` (context/task_profile.py's
+RetrievalTaskType, the SAME deterministic classification RANKING_
+PROFILES already keys off of, reused rather than inventing a second
+classifier) and, when given, caps `max_tokens` FURTHER down to a
+tier-specific ceiling via `_BUDGET_TIER_BY_TASK_TYPE` -- never raises
+it above what the caller already asked for, only tightens it. A lookup
+task genuinely doesn't need 8000 tokens of context to answer "what is
+X"; a cross-module trace legitimately might need more room than a
+single-file bug fix. `task_type=None` (every existing caller, until
+threaded through) is fully backward compatible -- `max_tokens` passes
+through completely unchanged, byte-identical to before this feature.
 """
 
 from collections import defaultdict
@@ -77,6 +110,7 @@ from typing import Callable
 
 from context.compressor import SymbolRangeCompressor
 from context.relevance_ranker import RankedFile
+from context.task_profile import RetrievalTaskType
 from domain.context_package import PackagedFile
 from domain.context_resolution import ContextResolutionResult, EvidenceTier, SymbolReference
 from infrastructure.cost import CostEstimator
@@ -111,6 +145,51 @@ _BOILERPLATE_FILLER_MAX_TOKENS = 150
 # budget with it. See this module's own docstring for the full rationale.
 _RELATIVE_FALLOFF_GAMMA = 0.45
 
+# Feature 3 (intent-based dynamic budget ceilings): maps RetrievalTaskType
+# onto the task spec's three tiers (lookup/definition, logic/
+# implementation, cross-module trace). REPOSITORY_EXPLANATION and CI_CD
+# are typically single-file/config lookups -> lookup tier. PERFORMANCE
+# usually needs to read one function's real logic, not just its
+# signature -> logic tier. ARCHITECTURE_UNDERSTANDING, REFACTOR_
+# IMPACT_ANALYSIS, and LARGE_STRUCTURAL_CHANGE inherently span multiple
+# files/subsystems -> cross-module tier.
+#
+# BUG_FIX and UNKNOWN moved from the 2500 (logic) tier to 4500
+# (cross-module) after real Consul measurement (scripts/
+# validate_llm_grounding.py) caught the 2500 tier costing real grounding
+# quality: none of a 5-task real-query benchmark actually classified as
+# REPOSITORY_EXPLANATION/CI_CD or ARCHITECTURE_UNDERSTANDING/etc -- 4 of
+# 5 fell to UNKNOWN, 1 to BUG_FIX, meaning EVERY real query in that
+# benchmark hit the same 2500 ceiling regardless of what it actually
+# needed. One task (Catalog.Register validation/handling logic, a real
+# "trace how X validates and handles Y across its dependencies"
+# question) had previously scored a stable 5/5/4 grounding with ~8000
+# tokens of room; capped to 2500 it dropped to 3/4/4, the judge's own
+# rationale citing missing detail. UNKNOWN and BUG_FIX are exactly the
+# two categories real, unclassifiable-by-keyword queries fall into most
+# often -- treating them as "logic, tightly bounded" was too aggressive
+# for what they actually turned out to need in practice; "cross-module,
+# more room" is the safer default until keyword classification genuinely
+# narrows a query to something that provably needs less.
+_BUDGET_TIER_BY_TASK_TYPE: dict[RetrievalTaskType, int] = {
+    RetrievalTaskType.REPOSITORY_EXPLANATION: 1200,
+    RetrievalTaskType.CI_CD: 1200,
+    RetrievalTaskType.PERFORMANCE: 2500,
+    RetrievalTaskType.BUG_FIX: 4500,
+    RetrievalTaskType.UNKNOWN: 4500,
+    RetrievalTaskType.ARCHITECTURE_UNDERSTANDING: 4500,
+    RetrievalTaskType.REFACTOR_IMPACT_ANALYSIS: 4500,
+    RetrievalTaskType.LARGE_STRUCTURAL_CHANGE: 4500,
+}
+_DEFAULT_BUDGET_TIER = 2500
+
+# Feature 2 (Two-Tier AST Snippet Rendering): a compress-first candidate
+# reached at hop 1 has a 2-element justification_chain -- ("defines X",
+# "calls X") for a module-level caller, or ("defines X", "called by
+# Y")/("defines X", "calls Y") for a symbol-owning one at hop 1. Anything
+# longer is hop 2+.
+_HOP_ONE_CHAIN_LENGTH = 2
+
 
 class ContextBudgetManager:
     def __init__(
@@ -128,9 +207,18 @@ class ContextBudgetManager:
         ranked_files: list[RankedFile],
         result: ContextResolutionResult,
         max_tokens: int,
+        task_type: RetrievalTaskType | None = None,
     ) -> tuple[list[PackagedFile], int, int]:
-        """Returns (packaged_files, tokens_used, excluded_file_count)."""
+        """Returns (packaged_files, tokens_used, excluded_file_count).
+        `task_type`, when given (Feature 3), further tightens
+        `max_tokens` to that task's own ceiling -- see this module's own
+        docstring. Never loosens it: `min(max_tokens, tier)`."""
         symbols_by_file = self._symbols_by_file(result)
+
+        if task_type is not None:
+            max_tokens = min(
+                max_tokens, _BUDGET_TIER_BY_TASK_TYPE.get(task_type, _DEFAULT_BUDGET_TIER)
+            )
 
         packaged: list[PackagedFile] = []
         used = 0
@@ -145,6 +233,12 @@ class ContextBudgetManager:
         # off from.
         top_score = ranked_files[0].relevance_score if ranked_files else 0.0
         falloff_threshold = _RELATIVE_FALLOFF_GAMMA * top_score
+
+        # Feature 2: counts only compress-eligible (SUPPORTING/
+        # EXPERIMENTAL-with-symbols) candidates actually reached below --
+        # PRIMARY files don't compete for "focal" rank, since they
+        # already get full-body treatment regardless.
+        compress_first_seen = 0
 
         for index, ranked in enumerate(ranked_files):
             if ranked.relevance_score < falloff_threshold:
@@ -179,9 +273,26 @@ class ContextBudgetManager:
                 # task spec means -- PRIMARY's doesn't-fit-in-full path
                 # below keeps the plain extract() unchanged, since that's
                 # a confident direct match, not fan-out noise.
-                compressed = self._compress(
-                    ranked, symbols_in_file, remaining, extract=self._compressor.extract_with_ast_scope
+                #
+                # Feature 2 (Two-Tier AST Snippet Rendering): only the
+                # FIRST (focal, highest-ranked) compress-eligible
+                # candidate, or one directly (hop-1) call-graph-linked to
+                # its own entry point, gets the full body -- see this
+                # module's own docstring.
+                is_focal = compress_first_seen == 0
+                # An EMPTY chain means "no provenance info available",
+                # not "hop 1" -- must be non-empty as well as short, or
+                # every candidate with unset justification_chain would
+                # wrongly count as hop-1-linked and skeletonization would
+                # never trigger at all.
+                is_hop_one_linked = 0 < len(ranked.justification_chain) <= _HOP_ONE_CHAIN_LENGTH
+                compress_first_seen += 1
+                extract_fn = (
+                    self._compressor.extract_with_ast_scope
+                    if is_focal or is_hop_one_linked
+                    else self._compressor.extract_skeleton_only
                 )
+                compressed = self._compress(ranked, symbols_in_file, remaining, extract=extract_fn)
                 if compressed is not None:
                     packaged.append(compressed)
                     used += compressed.token_count

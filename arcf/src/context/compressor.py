@@ -63,6 +63,13 @@ _MEANINGFUL_HEADER_LINE_PATTERN = re.compile(r"^\s*\S")  # excludes blank lines
 _DANGLING_IMPORT_OPENER_PATTERN = re.compile(r"^\s*import\s*\(\s*$")
 _MAX_HEADER_SCAN_LINES = 15
 
+# Feature 2 (Two-Tier AST Snippet Rendering, 2026-08-11): placeholder
+# text substituted for an omitted function/method body -- deliberately
+# says WHY it's missing (not just "...") so a reader (human or LLM)
+# doesn't mistake it for truncation/corruption and knows a fuller
+# excerpt exists if this really is the symbol they need.
+_OMITTED_BODY_PLACEHOLDER = "    // ... implementation omitted (secondary candidate; see focal candidate or a directly call-linked file for the body) ..."
+
 
 class SymbolRangeCompressor:
     def __init__(
@@ -151,6 +158,103 @@ class SymbolRangeCompressor:
             f"# lines {start}-{end}\n" + "\n".join(lines[start - 1 : end]) for start, end in merged
         ]
         return "\n\n".join(excerpts)
+
+    def extract_skeleton_only(self, file_path: str, symbols: list[SymbolReference]) -> str:
+        """Feature 2 (Two-Tier AST Snippet Rendering) -- for RANK 2+
+        ("secondary") candidates: same header + class-declaration-line
+        treatment as `extract_with_ast_scope`, but a FUNCTION/METHOD
+        symbol's own implementation body is stripped and replaced with
+        `_OMITTED_BODY_PLACEHOLDER`, keeping only its signature (name,
+        parameters, return type) plus the `_AST_SCOPE_MARGIN_LINES`
+        buffer around it -- the struct/type CONTRACT a secondary file
+        usually needs to convey, without paying for the body's tokens.
+        Only the FOCAL (rank-1) candidate and any candidate directly
+        (hop-1) call-graph-linked to it get the full body — see
+        ContextBudgetManager's own docstring for that routing decision;
+        this method only knows how to skeletonize, not which candidates
+        should be.
+
+        `_find_body_start_line`'s own docstring explains the signature/
+        body boundary heuristic and its known limits — this is Phase 6
+        (domain-only, no tree-sitter access), so it's text-based, same
+        constraint `_header_end_line` already documents."""
+        if not symbols:
+            return ""
+
+        text = self._permissions.safe_read_text(file_path)
+        lines = text.splitlines()
+        total_lines = len(lines)
+
+        raw_ranges: list[tuple[int, int]] = []
+        omissions: list[tuple[int, int]] = []
+        header_end = self._header_end_line(lines)
+        if header_end > 0:
+            raw_ranges.append((1, header_end))
+        for symbol in symbols:
+            if symbol.kind is SymbolKind.CLASS:
+                raw_ranges.append((symbol.start_line, symbol.start_line))
+                continue
+            raw_ranges.append(
+                (
+                    max(1, symbol.start_line - _AST_SCOPE_MARGIN_LINES),
+                    min(total_lines, symbol.end_line + _AST_SCOPE_MARGIN_LINES),
+                )
+            )
+            if symbol.kind in (SymbolKind.FUNCTION, SymbolKind.METHOD):
+                body_start = self._find_body_start_line(lines, symbol.start_line, symbol.end_line)
+                if body_start <= symbol.end_line:
+                    omissions.append((body_start, symbol.end_line))
+        merged = self._merge(sorted(raw_ranges))
+
+        excerpts = [
+            self._render_with_omissions(lines, start, end, omissions) for start, end in merged
+        ]
+        return "\n\n".join(excerpts)
+
+    @staticmethod
+    def _render_with_omissions(
+        lines: list[str], start: int, end: int, omissions: list[tuple[int, int]]
+    ) -> str:
+        rendered: list[str] = []
+        line_number = start
+        while line_number <= end:
+            omission = next((o for o in omissions if o[0] <= line_number <= o[1]), None)
+            if omission is not None:
+                rendered.append(_OMITTED_BODY_PLACEHOLDER)
+                line_number = omission[1] + 1
+                continue
+            rendered.append(lines[line_number - 1])
+            line_number += 1
+        return f"# lines {start}-{end}\n" + "\n".join(rendered)
+
+    @staticmethod
+    def _find_body_start_line(lines: list[str], start_line: int, end_line: int) -> int:
+        """Returns the 1-indexed line where a function/method BODY
+        begins (the first line to omit) -- one past the signature's own
+        last line. Heuristic, not a parser: tracks parenthesis depth
+        across the declaration (so a parameter list spanning multiple
+        lines, or containing its own nested parens, doesn't fool it into
+        stopping early); once paren depth returns to zero, the first
+        line from there on that contains `{` (brace languages, K&R or
+        Allman style) or ends with `:` (Python) marks the signature's
+        end. Returns `end_line + 1` (a sentinel guaranteed greater than
+        `end_line`, so the caller's `body_start <= symbol.end_line`
+        check is False and NOTHING gets omitted) if neither pattern
+        appears within the symbol's own AST-derived range --
+        under-omitting is the safe failure mode; a body left in by
+        mistake just costs tokens, never loses information."""
+        paren_depth = 0
+        for line_number in range(start_line, min(end_line, len(lines)) + 1):
+            line = lines[line_number - 1]
+            for ch in line:
+                if ch == "(":
+                    paren_depth += 1
+                elif ch == ")":
+                    paren_depth = max(0, paren_depth - 1)
+            if paren_depth == 0:
+                if "{" in line or line.rstrip().endswith(":"):
+                    return line_number + 1
+        return end_line + 1
 
     @staticmethod
     def _header_end_line(lines: list[str]) -> int:

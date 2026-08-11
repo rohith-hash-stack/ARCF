@@ -347,7 +347,9 @@ async def _resolve_and_answer(
     # Real Phase 6 packaging (RelevanceRanker -> ContextBudgetManager),
     # not a hand-rolled reimplementation of it.
     packager = ContextPackager(RelevanceRanker(), CostEstimator())
-    package, _ = await packager.package(resolution, query, MAX_TOKENS_CONTEXT, ranking_profile)
+    package, _ = await packager.package(
+        resolution, query, MAX_TOKENS_CONTEXT, ranking_profile, task_type=retrieval_task_type
+    )
 
     # Real Phase 8 prompt assembly + generation — no "ONLY use the
     # provided files" instruction here; ContextGoalComposer's own

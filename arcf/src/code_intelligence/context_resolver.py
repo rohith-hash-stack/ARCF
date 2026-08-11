@@ -29,6 +29,8 @@ from uuid import uuid4
 
 from code_intelligence.index import CodeIntelligenceIndex
 from code_intelligence.locality import (
+    has_locality,
+    locality_filtered_caller_files,
     locality_filtered_callers_of_name,
     locality_filtered_transitive_callees,
     locality_filtered_transitive_callers,
@@ -150,11 +152,29 @@ class ContextResolver:
         ambiguous_targets: list[str] = []
         unresolved_symbols: list[str] = []
         file_ambiguity_confidence: dict[str, float] = {}
+        file_path_mask_confidence: dict[str, float] = {}
         reference_resolver = ReferenceResolver(self._index.symbol_index)
+
+        # Feature 1 (query-wide spatial path-hint masking, 2026-08-11):
+        # collected ONCE, up front, from every target name in the query --
+        # not per-entity in loop order. A real Consul regression showed
+        # SLM-1 returning the SAME two entities in a DIFFERENT order run
+        # to run (confirmed non-deterministic even at temperature=0.0):
+        # when a path-qualified entity like "agent/cache" was processed
+        # AFTER a plain entity like "New", "New" never benefited from
+        # "agent/cache"'s directory signal at all, since the old per-
+        # entity path_hint only ever filtered the entity that carried it.
+        # Computing the full set up front makes every entity in the query
+        # benefit from every path hint anywhere in it, regardless of
+        # extraction order.
+        query_path_hints = frozenset(
+            hint for name in target_names
+            if (hint := _split_path_hint(name)[1]) is not None
+        )
 
         resolved_count = 0
         for name in target_names:
-            symbol_candidate, path_hint = _split_path_hint(name)
+            symbol_candidate, _ = _split_path_hint(name)
             # Locality context is whatever's already been established as
             # relevant by earlier target names in this same call — the
             # "detected execution path" (ARCF hardening §3). The first
@@ -163,7 +183,7 @@ class ContextResolver:
                 symbol_candidate,
                 context_files=frozenset(candidate_files),
                 import_graph=self._index.import_graph,
-                path_hint=path_hint,
+                path_hints=query_path_hints,
             )
             matches = disambiguation.resolved
             if matches:
@@ -172,7 +192,6 @@ class ContextResolver:
                 unresolved_symbols.append(name)
             if disambiguation.ambiguous:
                 ambiguous_targets.append(name)
-            expand_matches = len(matches) <= _MAX_CANDIDATES_TO_EXPAND
             # Feature A (Tier-1 structural ambiguity decay): N is the raw
             # match count for THIS name, before any graph expansion runs —
             # a name matching many unrelated symbols (Go's bare `New`: 156
@@ -181,9 +200,60 @@ class ContextResolver:
             # match's role_score looks in isolation. N=1 keeps the
             # multiplier at exactly 1.0 (no penalty for an unambiguous
             # name), matching this field's None-is-neutral contract.
+            # Captured BEFORE Feature 4's truncation below -- ambiguity_
+            # confidence describes how ambiguous the raw resolution was,
+            # not how many candidates ended up seeded downstream.
             ambiguity_confidence = (
                 1.0 if len(matches) <= 1 else 1.0 / math.log2(len(matches) + 1)
             )
+            # Feature 1 safety fallback: query_path_hints existed but
+            # NONE of this entity's candidates matched any of them (a
+            # legitimate cross-package query, e.g. "How does agent/cache
+            # talk to Catalog.Register?" -- "Catalog.Register" has no
+            # reason to sit inside agent/cache/). Hard-pruning here would
+            # risk losing a real match the way path_hints already avoids
+            # for the single-hint case; instead every candidate is kept
+            # but soft-penalized, same opt-in-multiplier shape as
+            # ambiguity_confidence, so RelevanceRanker still prefers an
+            # on-mask candidate elsewhere in the same result set without
+            # ever silently dropping an off-mask one.
+            path_mask_confidence = (
+                0.15 if query_path_hints and not disambiguation.path_hint_matched else None
+            )
+            # Feature 4 (Top-K entry-point seed ranking, 2026-08-11, Safe
+            # High-Efficiency Payload Optimization) -- SCOPED DOWN from
+            # the original "truncate to top 5" spec after it broke a
+            # documented invariant from a real 2026-08-07 MemoryError
+            # crash fix (see test_wildly_ambiguous_target_name_skips_
+            # expansion_but_keeps_all_files's own docstring: "every
+            # matching file should still be recorded, never silently
+            # dropped"). Explicit decision: rank, never drop. A bare,
+            # unguided ambiguous name (N > 5 matches, no path hint
+            # anywhere in the query) previously got expand_matches=False
+            # for ALL N uniformly -- real Consul example: "New" alone,
+            # 156 matches, none hop-expanded at all. Every one of the N
+            # still becomes a candidate file exactly as before; what
+            # changes is WHICH ones are worth the expensive per-symbol
+            # expansion -- ranked by caller centrality (real call-graph
+            # signal, only available here since ReferenceResolver has no
+            # CallGraph access and giving it one would create a circular
+            # dependency with CallGraph itself), the top
+            # _MAX_CANDIDATES_TO_EXPAND get real hop-expansion attempted;
+            # the rest stay flat entry points, same as every match did
+            # before this feature existed. Total expansion attempts per
+            # target name stays bounded at _MAX_CANDIDATES_TO_EXPAND
+            # either way, so the crash this threshold exists to prevent
+            # is unaffected. Skipped when a path hint exists anywhere in
+            # the query -- that's already a stronger, caller-provided
+            # narrowing signal (Feature 1), and this heuristic ranking
+            # shouldn't second-guess it.
+            expand_matches = len(matches) <= _MAX_CANDIDATES_TO_EXPAND
+            expand_eligible_ids: frozenset[str] = frozenset()
+            if not expand_matches and not query_path_hints:
+                ranked_for_expansion = self._rank_by_caller_centrality(matches)
+                expand_eligible_ids = frozenset(
+                    s.id for s in ranked_for_expansion[:_MAX_CANDIDATES_TO_EXPAND]
+                )
             for symbol in matches:
                 entry_point_symbols.append(symbol)
                 self._add_file(
@@ -197,8 +267,10 @@ class ContextResolver:
                     entry_point_tier,
                     file_ambiguity_confidence,
                     ambiguity_confidence,
+                    file_path_mask_confidence,
+                    path_mask_confidence,
                 )
-                if not expand_matches:
+                if not expand_matches and symbol.id not in expand_eligible_ids:
                     continue
 
                 if symbol.kind in (SymbolKind.FUNCTION, SymbolKind.METHOD):
@@ -277,6 +349,7 @@ class ContextResolver:
                     justification_chain=file_chains.get(file_path, ()),
                     evidence_tier=file_tiers.get(file_path, EvidenceTier.SUPPORTING),
                     ambiguity_confidence=file_ambiguity_confidence.get(file_path),
+                    path_mask_confidence=file_path_mask_confidence.get(file_path),
                 )
                 for file_path in sorted(candidate_files)
             ],
@@ -299,6 +372,56 @@ class ContextResolver:
             unresolved_symbols=tuple(unresolved_symbols),
             unresolved_imports=tuple(unresolved_imports),
         )
+
+    def _rank_by_caller_centrality(self, symbols: list[Symbol]) -> list[Symbol]:
+        """Feature 4's ranking signal: total recorded caller count
+        (symbol-owning callers + module-level call sites, the same two
+        sources CallGraph itself distinguishes) as the primary key, file
+        size (token count, a proxy for "how substantial is this
+        declaration" per the task spec's own "file line count" fallback)
+        as the tie-break. Deterministic (stable sort, ties broken by
+        symbol id last) -- same candidate set always ranks the same way.
+
+        Uses locality-filtered DIRECT caller counts, not CallGraph's raw
+        caller_symbols_of/caller_files_of directly. A first version of
+        this method used the raw counts and was caught failing its own
+        real use case in testing: when several same-named ambiguous
+        candidates share one real caller (an ambiguous call site
+        resolves to ALL of them equally, CallGraph's own documented
+        fan-out), the raw count credits every candidate identically,
+        making it worthless for telling the one with a REAL local
+        caller apart from the rest -- exactly the corruption
+        arcf_callgraph_locality_fix already found and fixed once for
+        hop-expansion.
+
+        Deliberately NOT `locality_filtered_transitive_callers` (a
+        second, real bug caught in testing, not assumed away): that
+        function rebuilds a full `{symbol.id: symbol}` dict over the
+        ENTIRE index on every single call, an O(1) cost when called at
+        most `_MAX_CANDIDATES_TO_EXPAND` times for real hop-expansion,
+        but catastrophic here -- this method is called once per
+        ambiguous candidate BEFORE truncation, and a real Consul "New"
+        query (159 raw candidates, tens of thousands of symbols in the
+        index) turned that into minutes, not milliseconds. Direct,
+        O(1)-per-lookup `symbol_index.get()` and `has_locality()` calls
+        below give the same locality-filtered hop-1 signal without ever
+        rebuilding anything per candidate."""
+        symbol_index = self._index.symbol_index
+        call_graph = self._index.call_graph
+
+        def centrality(symbol: Symbol) -> tuple[int, int, str]:
+            caller_count = 0
+            for caller_id in call_graph.caller_symbols_of(symbol.id):
+                caller_symbol = symbol_index.get(caller_id)
+                if caller_symbol is not None and has_locality(
+                    self._index, caller_symbol.file_path, symbol.file_path
+                ):
+                    caller_count += 1
+            caller_count += len(locality_filtered_caller_files(self._index, symbol.id, symbol.file_path))
+            file_size = self._index.token_counts.get(symbol.file_path, 0)
+            return (caller_count, file_size, symbol.id)
+
+        return sorted(symbols, key=centrality, reverse=True)
 
     def _expand_calls(
         self,
@@ -632,6 +755,8 @@ class ContextResolver:
         tier: EvidenceTier,
         file_ambiguity_confidence: dict[str, float] | None = None,
         ambiguity_confidence: float | None = None,
+        file_path_mask_confidence: dict[str, float] | None = None,
+        path_mask_confidence: float | None = None,
     ) -> None:
         candidate_files.add(file_path)
         file_reasons.setdefault(file_path, reason)
@@ -655,6 +780,14 @@ class ContextResolver:
             and file_path not in file_ambiguity_confidence
         ):
             file_ambiguity_confidence[file_path] = ambiguity_confidence
+        # Feature 1 (query-wide spatial masking soft penalty): same
+        # first-write-wins discipline as ambiguity_confidence above.
+        if (
+            path_mask_confidence is not None
+            and file_path_mask_confidence is not None
+            and file_path not in file_path_mask_confidence
+        ):
+            file_path_mask_confidence[file_path] = path_mask_confidence
 
     def _to_symbol_reference(self, symbol: Symbol) -> SymbolReference:
         return SymbolReference(

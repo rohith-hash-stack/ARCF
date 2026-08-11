@@ -135,19 +135,21 @@ def test_path_hint_filters_out_directory_collision() -> None:
         "Cache", SymbolKind.CLASS, "Cache", file_path="internal/controller/cache/cache.go"
     )
     resolver = ReferenceResolver(SymbolIndex([real, unrelated]))
-    result = resolver.resolve_with_disambiguation("Cache", path_hint="agent/cache/")
+    result = resolver.resolve_with_disambiguation("Cache", path_hints=frozenset({"agent/cache/"}))
     assert result.ambiguous is False
     assert result.preferred == real
     assert result.resolved == [real]
+    assert result.path_hint_matched is True
 
 
 def test_path_hint_falls_back_to_full_set_when_it_matches_nothing() -> None:
     a = _symbol("helper", SymbolKind.FUNCTION, "module_a.helper", file_path="a.py")
     b = _symbol("helper", SymbolKind.METHOD, "Foo.helper", file_path="b.py")
     resolver = ReferenceResolver(SymbolIndex([a, b]))
-    result = resolver.resolve_with_disambiguation("helper", path_hint="nowhere/")
+    result = resolver.resolve_with_disambiguation("helper", path_hints=frozenset({"nowhere/"}))
     assert result.ambiguous is True
     assert {s.id for s in result.resolved} == {a.id, b.id}
+    assert result.path_hint_matched is False
 
 
 def test_path_hint_combines_with_locality_scoring_when_still_ambiguous() -> None:
@@ -156,10 +158,27 @@ def test_path_hint_combines_with_locality_scoring_when_still_ambiguous() -> None
     outside = _symbol("helper", SymbolKind.CLASS, "outside.py", file_path="outside/c.py")
     resolver = ReferenceResolver(SymbolIndex([same_dir, other_pkg_dir, outside]))
     result = resolver.resolve_with_disambiguation(
-        "helper", context_files=frozenset({"pkg/context.py"}), path_hint="pkg/"
+        "helper", context_files=frozenset({"pkg/context.py"}), path_hints=frozenset({"pkg/"})
     )
     assert result.ambiguous is True
     assert {s.id for s in result.resolved} == {same_dir.id, other_pkg_dir.id}
+
+
+def test_path_hints_union_semantics_multiple_hints() -> None:
+    # Feature 1 (query-wide spatial masking): a candidate matching ANY
+    # hint passes, not requiring all -- hints from different entities in
+    # the same query describe different concepts, not compounding
+    # constraints on the same one.
+    in_a = _symbol("helper", SymbolKind.FUNCTION, "pkg_a/helper", file_path="pkg_a/x.py")
+    in_b = _symbol("helper", SymbolKind.METHOD, "pkg_b/helper", file_path="pkg_b/x.py")
+    elsewhere = _symbol("helper", SymbolKind.CLASS, "pkg_c/helper", file_path="pkg_c/x.py")
+    resolver = ReferenceResolver(SymbolIndex([in_a, in_b, elsewhere]))
+    result = resolver.resolve_with_disambiguation(
+        "helper", path_hints=frozenset({"pkg_a/", "pkg_b/"})
+    )
+    assert result.ambiguous is True
+    assert {s.id for s in result.resolved} == {in_a.id, in_b.id}
+    assert result.path_hint_matched is True
 
 
 def test_permutation_fallback_recovers_single_word_from_prose() -> None:

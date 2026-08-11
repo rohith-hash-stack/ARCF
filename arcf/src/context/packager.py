@@ -33,6 +33,7 @@ from pathlib import Path
 from context.budget_manager import ContextBudgetManager
 from context.compressor import SymbolRangeCompressor
 from context.relevance_ranker import RelevanceRanker
+from context.task_profile import RetrievalTaskType
 from context.understanding import ContextUnderstandingAnalyzer
 from domain.context_package import ContextPackage
 from domain.context_resolution import ContextResolutionResult
@@ -61,6 +62,7 @@ class ContextPackager:
         raw_request: str,
         max_tokens: int,
         ranking_profile: dict[str, float] | None = None,
+        task_type: RetrievalTaskType | None = None,
     ) -> tuple[ContextPackage, LLMResponse | None]:
         permissions = PermissionManager(Path(result.repository_root))
         budget_manager = ContextBudgetManager(
@@ -69,7 +71,7 @@ class ContextPackager:
 
         ranked = await asyncio.to_thread(self._ranker.rank, result, ranking_profile)
         packaged_files, used_tokens, excluded_count = await asyncio.to_thread(
-            budget_manager.select, ranked, result, max_tokens
+            budget_manager.select, ranked, result, max_tokens, task_type
         )
 
         understanding_notes: list[str] = []

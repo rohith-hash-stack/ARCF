@@ -3,6 +3,7 @@ from pathlib import Path
 from context.budget_manager import ContextBudgetManager
 from context.compressor import SymbolRangeCompressor
 from context.relevance_ranker import RankedFile
+from context.task_profile import RetrievalTaskType
 from domain.code_intelligence import SymbolKind
 from domain.context_resolution import (
     ContextResolutionResult,
@@ -19,6 +20,7 @@ def _ranked(
     token_count: int,
     score: float = 0.9,
     evidence_tier: EvidenceTier = EvidenceTier.PRIMARY,
+    justification_chain: tuple[str, ...] = (),
 ) -> RankedFile:
     return RankedFile(
         file_path=file_path,
@@ -27,6 +29,7 @@ def _ranked(
         language="python",
         token_count=token_count,
         evidence_tier=evidence_tier,
+        justification_chain=justification_chain,
     )
 
 
@@ -504,6 +507,89 @@ def test_primary_evidence_compression_still_uses_plain_extract(tmp_path: Path) -
     assert "line 200" in content
 
 
+def _fn_symbol(file_path: str, name: str, start: int, end: int) -> SymbolReference:
+    return SymbolReference(
+        symbol_id=f"{file_path}::{name}",
+        name=name,
+        qualified_name=name,
+        kind=SymbolKind.FUNCTION,
+        file_path=file_path,
+        start_line=start,
+        end_line=end,
+    )
+
+
+def test_focal_supporting_candidate_keeps_full_body(tmp_path: Path) -> None:
+    (tmp_path / "focal.py").write_text(
+        "def handler():\n    do_real_work()\n    return 1\n"
+    )
+    manager = _manager(tmp_path)
+    ranked = [_ranked("focal.py", token_count=10, score=0.9, evidence_tier=EvidenceTier.SUPPORTING)]
+    result = _empty_result(entry_points=[_fn_symbol("focal.py", "handler", 1, 3)])
+
+    packaged, used, excluded = manager.select(ranked, result, max_tokens=10_000)
+
+    assert "do_real_work" in packaged[0].content
+    assert "implementation omitted" not in packaged[0].content
+
+
+def test_second_supporting_candidate_gets_skeleton_only(tmp_path: Path) -> None:
+    (tmp_path / "focal.py").write_text("def handler():\n    do_real_work()\n")
+    (tmp_path / "secondary.py").write_text(
+        "def helper():\n    unrelated_body_content()\n    return 2\n"
+    )
+    manager = _manager(tmp_path)
+    ranked = [
+        _ranked("focal.py", token_count=10, score=0.9, evidence_tier=EvidenceTier.SUPPORTING),
+        _ranked("secondary.py", token_count=10, score=0.8, evidence_tier=EvidenceTier.SUPPORTING),
+    ]
+    result = _empty_result(
+        entry_points=[
+            _fn_symbol("focal.py", "handler", 1, 2),
+            _fn_symbol("secondary.py", "helper", 1, 3),
+        ]
+    )
+
+    packaged, used, excluded = manager.select(ranked, result, max_tokens=10_000)
+
+    by_path = {p.file_path: p for p in packaged}
+    assert "do_real_work" in by_path["focal.py"].content
+    assert "unrelated_body_content" not in by_path["secondary.py"].content
+    assert "implementation omitted" in by_path["secondary.py"].content
+
+
+def test_hop_one_linked_secondary_candidate_keeps_full_body(tmp_path: Path) -> None:
+    # Feature 2 safety fallback: a secondary candidate reached via a
+    # direct (hop-1) call-graph edge is exempted from skeletonization.
+    (tmp_path / "focal.py").write_text("def handler():\n    do_real_work()\n")
+    (tmp_path / "linked.py").write_text(
+        "def caller():\n    linked_body_content()\n    return 3\n"
+    )
+    manager = _manager(tmp_path)
+    ranked = [
+        _ranked("focal.py", token_count=10, score=0.9, evidence_tier=EvidenceTier.SUPPORTING),
+        _ranked(
+            "linked.py",
+            token_count=10,
+            score=0.8,
+            evidence_tier=EvidenceTier.SUPPORTING,
+            justification_chain=("defines handler", "called by caller"),
+        ),
+    ]
+    result = _empty_result(
+        entry_points=[
+            _fn_symbol("focal.py", "handler", 1, 2),
+            _fn_symbol("linked.py", "caller", 1, 3),
+        ]
+    )
+
+    packaged, used, excluded = manager.select(ranked, result, max_tokens=10_000)
+
+    by_path = {p.file_path: p for p in packaged}
+    assert "linked_body_content" in by_path["linked.py"].content
+    assert "implementation omitted" not in by_path["linked.py"].content
+
+
 def test_falloff_gate_is_a_noop_for_a_single_candidate(tmp_path: Path) -> None:
     (tmp_path / "a.py").write_text("def foo():\n    pass\n")
     manager = _manager(tmp_path)
@@ -513,3 +599,67 @@ def test_falloff_gate_is_a_noop_for_a_single_candidate(tmp_path: Path) -> None:
 
     assert {p.file_path for p in packaged} == {"a.py"}
     assert excluded == 0
+
+
+def test_task_type_tightens_budget_ceiling(tmp_path: Path) -> None:
+    (tmp_path / "a.py").write_text("x = 1\n")
+    manager = _manager(tmp_path)
+    ranked = [_ranked("a.py", token_count=2000, score=0.9)]
+
+    packaged, used, excluded = manager.select(
+        ranked, _empty_result(), max_tokens=8000, task_type=RetrievalTaskType.REPOSITORY_EXPLANATION
+    )
+
+    # 2000 tokens is well under the plain 8000 ceiling but over the
+    # 1200 lookup-tier ceiling -- must be excluded, not included.
+    assert packaged == []
+    assert excluded == 1
+
+
+def test_task_type_never_raises_the_ceiling_above_max_tokens(tmp_path: Path) -> None:
+    (tmp_path / "a.py").write_text("x = 1\n")
+    manager = _manager(tmp_path)
+    ranked = [_ranked("a.py", token_count=2000, score=0.9)]
+
+    # A caller-set 1000-token ceiling is TIGHTER than the 4500
+    # cross-module tier -- task_type must never loosen it.
+    packaged, used, excluded = manager.select(
+        ranked, _empty_result(), max_tokens=1000, task_type=RetrievalTaskType.ARCHITECTURE_UNDERSTANDING
+    )
+
+    assert packaged == []
+    assert excluded == 1
+
+
+def test_task_type_none_leaves_max_tokens_unchanged(tmp_path: Path) -> None:
+    (tmp_path / "a.py").write_text("x = 1\n")
+    manager = _manager(tmp_path)
+    ranked = [_ranked("a.py", token_count=2000, score=0.9)]
+
+    packaged, used, excluded = manager.select(ranked, _empty_result(), max_tokens=8000)
+
+    assert {p.file_path for p in packaged} == {"a.py"}
+    assert excluded == 0
+
+
+def test_unknown_and_bug_fix_task_types_use_the_cross_module_tier(tmp_path: Path) -> None:
+    # Moved from the 2500 (logic) tier to 4500 (cross-module) after real
+    # Consul measurement showed a real query's grounding quality costed
+    # by the tighter cap -- see _BUDGET_TIER_BY_TASK_TYPE's own comment.
+    # 3500 proves this: it clears 2500 (the old tier) but not the plain
+    # 8000 max_tokens, so passing means the CURRENT (4500) tier is what's
+    # actually in effect, not the old one or no cap at all.
+    (tmp_path / "unknown.py").write_text("x = 1\n")
+    (tmp_path / "bugfix.py").write_text("x = 1\n")
+    manager = _manager(tmp_path)
+
+    for task_type, file_path in (
+        (RetrievalTaskType.UNKNOWN, "unknown.py"),
+        (RetrievalTaskType.BUG_FIX, "bugfix.py"),
+    ):
+        ranked = [_ranked(file_path, token_count=3500, score=0.9)]
+        packaged, used, excluded = manager.select(
+            ranked, _empty_result(), max_tokens=8000, task_type=task_type
+        )
+        assert {p.file_path for p in packaged} == {file_path}
+        assert excluded == 0
