@@ -57,8 +57,18 @@ class LiteLLMClient:
         model: str,
         max_tokens: int = 1024,
         response_format: dict[str, str] | None = None,
+        temperature: float | None = None,
     ) -> LLMResponse:
+        """`temperature` is opt-in and defaulted to `None` (provider
+        default, unchanged for every existing caller) — pass 0.0 for
+        deterministic structured-extraction calls where reproducibility
+        matters more than variation (see IntentExtractor, whose SLM-1
+        entity extraction was confirmed non-deterministic at the provider
+        default via scripts/slm1_determinism_experiment.py: the SAME
+        query's `entities` varied run to run with temperature unset,
+        converged to a single stable result at temperature=0)."""
         last_exc: Exception | None = None
+        extra_kwargs: dict[str, float] = {} if temperature is None else {"temperature": temperature}
 
         for attempt in range(1, self._max_retries + 1):
             try:
@@ -67,6 +77,7 @@ class LiteLLMClient:
                     messages=[{"role": "user", "content": prompt}],
                     max_tokens=max_tokens,
                     response_format=response_format,
+                    **extra_kwargs,
                 )
             except RETRYABLE_EXCEPTIONS as exc:
                 last_exc = exc

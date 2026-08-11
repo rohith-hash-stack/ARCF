@@ -75,6 +75,14 @@ class IntentExtractor:
                 self._model,
                 max_tokens=self._max_tokens,
                 response_format={"type": "json_object"},
+                # Structured extraction, not creative generation — a
+                # deterministic decode removes run-to-run entity variance
+                # confirmed by scripts/slm1_determinism_experiment.py
+                # (same query, unset temperature, 1-3 different results
+                # across 4 repeats; temperature=0, always 1). Doesn't fix
+                # under-extraction on its own (see that script's own
+                # findings) — only removes the coin-flip on top of it.
+                temperature=0.0,
             )
             try:
                 data = json.loads(completion.content)
