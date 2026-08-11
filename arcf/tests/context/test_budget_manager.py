@@ -3,6 +3,7 @@ from pathlib import Path
 from context.budget_manager import ContextBudgetManager
 from context.compressor import SymbolRangeCompressor
 from context.relevance_ranker import RankedFile
+from context.task_profile import RetrievalTaskType
 from domain.code_intelligence import SymbolKind
 from domain.context_resolution import (
     ContextResolutionResult,
@@ -596,5 +597,60 @@ def test_falloff_gate_is_a_noop_for_a_single_candidate(tmp_path: Path) -> None:
 
     packaged, used, excluded = manager.select(ranked, _empty_result(), max_tokens=10_000)
 
+    assert {p.file_path for p in packaged} == {"a.py"}
+    assert excluded == 0
+
+
+def test_task_type_tightens_budget_ceiling(tmp_path: Path) -> None:
+    (tmp_path / "a.py").write_text("x = 1\n")
+    manager = _manager(tmp_path)
+    ranked = [_ranked("a.py", token_count=2000, score=0.9)]
+
+    packaged, used, excluded = manager.select(
+        ranked, _empty_result(), max_tokens=8000, task_type=RetrievalTaskType.REPOSITORY_EXPLANATION
+    )
+
+    # 2000 tokens is well under the plain 8000 ceiling but over the
+    # 1200 lookup-tier ceiling -- must be excluded, not included.
+    assert packaged == []
+    assert excluded == 1
+
+
+def test_task_type_never_raises_the_ceiling_above_max_tokens(tmp_path: Path) -> None:
+    (tmp_path / "a.py").write_text("x = 1\n")
+    manager = _manager(tmp_path)
+    ranked = [_ranked("a.py", token_count=2000, score=0.9)]
+
+    # A caller-set 1000-token ceiling is TIGHTER than the 4500
+    # cross-module tier -- task_type must never loosen it.
+    packaged, used, excluded = manager.select(
+        ranked, _empty_result(), max_tokens=1000, task_type=RetrievalTaskType.ARCHITECTURE_UNDERSTANDING
+    )
+
+    assert packaged == []
+    assert excluded == 1
+
+
+def test_task_type_none_leaves_max_tokens_unchanged(tmp_path: Path) -> None:
+    (tmp_path / "a.py").write_text("x = 1\n")
+    manager = _manager(tmp_path)
+    ranked = [_ranked("a.py", token_count=2000, score=0.9)]
+
+    packaged, used, excluded = manager.select(ranked, _empty_result(), max_tokens=8000)
+
+    assert {p.file_path for p in packaged} == {"a.py"}
+    assert excluded == 0
+
+
+def test_unknown_task_type_uses_the_middle_safety_fallback_tier(tmp_path: Path) -> None:
+    (tmp_path / "a.py").write_text("x = 1\n")
+    manager = _manager(tmp_path)
+    ranked = [_ranked("a.py", token_count=2000, score=0.9)]
+
+    packaged, used, excluded = manager.select(
+        ranked, _empty_result(), max_tokens=8000, task_type=RetrievalTaskType.UNKNOWN
+    )
+
+    # 2000 fits the 2500 UNKNOWN-tier ceiling.
     assert {p.file_path for p in packaged} == {"a.py"}
     assert excluded == 0

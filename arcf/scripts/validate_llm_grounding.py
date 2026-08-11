@@ -311,7 +311,9 @@ async def _arm_a_arcf(
     ranking_profile = RANKING_PROFILES[retrieval_task_type]
 
     packager = ContextPackager(RelevanceRanker(), CostEstimator())
-    package, _ = await packager.package(resolution, query, MAX_TOKENS_CONTEXT, ranking_profile)
+    package, _ = await packager.package(
+        resolution, query, MAX_TOKENS_CONTEXT, ranking_profile, task_type=retrieval_task_type
+    )
 
     prompt = ContextGoalComposer().compose(contract, package, resolution)
     completion = await _stream_complete(prompt, GENERATION_MODEL, MAX_TOKENS_ANSWER)

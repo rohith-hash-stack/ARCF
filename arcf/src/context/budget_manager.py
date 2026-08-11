@@ -87,6 +87,22 @@ that link, so it's exempted from skeletonization rather than risking a
 genuinely load-bearing body being cut to chase a token number (same
 "don't guess wrong" posture as the boilerplate-truncation carve-out
 above).
+
+Intent-based dynamic budget ceilings, Feature 3 (2026-08-11, Safe
+High-Efficiency Payload Optimization): `max_tokens` has always been a
+single fixed ceiling the CALLER chooses (typically ~8000, the same for
+every query regardless of what it's actually asking). `select()` now
+takes an optional `task_type` (context/task_profile.py's
+RetrievalTaskType, the SAME deterministic classification RANKING_
+PROFILES already keys off of, reused rather than inventing a second
+classifier) and, when given, caps `max_tokens` FURTHER down to a
+tier-specific ceiling via `_BUDGET_TIER_BY_TASK_TYPE` -- never raises
+it above what the caller already asked for, only tightens it. A lookup
+task genuinely doesn't need 8000 tokens of context to answer "what is
+X"; a cross-module trace legitimately might need more room than a
+single-file bug fix. `task_type=None` (every existing caller, until
+threaded through) is fully backward compatible -- `max_tokens` passes
+through completely unchanged, byte-identical to before this feature.
 """
 
 from collections import defaultdict
@@ -94,6 +110,7 @@ from typing import Callable
 
 from context.compressor import SymbolRangeCompressor
 from context.relevance_ranker import RankedFile
+from context.task_profile import RetrievalTaskType
 from domain.context_package import PackagedFile
 from domain.context_resolution import ContextResolutionResult, EvidenceTier, SymbolReference
 from infrastructure.cost import CostEstimator
@@ -128,6 +145,28 @@ _BOILERPLATE_FILLER_MAX_TOKENS = 150
 # budget with it. See this module's own docstring for the full rationale.
 _RELATIVE_FALLOFF_GAMMA = 0.45
 
+# Feature 3 (intent-based dynamic budget ceilings): maps RetrievalTaskType
+# onto the task spec's three tiers (lookup/definition, logic/
+# implementation, cross-module trace). REPOSITORY_EXPLANATION and CI_CD
+# are typically single-file/config lookups -> lookup tier. BUG_FIX and
+# PERFORMANCE usually need to read one function's real logic, not just
+# its signature -> logic tier. ARCHITECTURE_UNDERSTANDING, REFACTOR_
+# IMPACT_ANALYSIS, and LARGE_STRUCTURAL_CHANGE inherently span multiple
+# files/subsystems -> cross-module tier. UNKNOWN is the task spec's own
+# explicit safety fallback (2500, the middle tier) -- an unclassified
+# query gets neither the tightest nor the loosest cap.
+_BUDGET_TIER_BY_TASK_TYPE: dict[RetrievalTaskType, int] = {
+    RetrievalTaskType.REPOSITORY_EXPLANATION: 1200,
+    RetrievalTaskType.CI_CD: 1200,
+    RetrievalTaskType.BUG_FIX: 2500,
+    RetrievalTaskType.PERFORMANCE: 2500,
+    RetrievalTaskType.UNKNOWN: 2500,
+    RetrievalTaskType.ARCHITECTURE_UNDERSTANDING: 4500,
+    RetrievalTaskType.REFACTOR_IMPACT_ANALYSIS: 4500,
+    RetrievalTaskType.LARGE_STRUCTURAL_CHANGE: 4500,
+}
+_DEFAULT_BUDGET_TIER = 2500
+
 # Feature 2 (Two-Tier AST Snippet Rendering): a compress-first candidate
 # reached at hop 1 has a 2-element justification_chain -- ("defines X",
 # "calls X") for a module-level caller, or ("defines X", "called by
@@ -152,9 +191,18 @@ class ContextBudgetManager:
         ranked_files: list[RankedFile],
         result: ContextResolutionResult,
         max_tokens: int,
+        task_type: RetrievalTaskType | None = None,
     ) -> tuple[list[PackagedFile], int, int]:
-        """Returns (packaged_files, tokens_used, excluded_file_count)."""
+        """Returns (packaged_files, tokens_used, excluded_file_count).
+        `task_type`, when given (Feature 3), further tightens
+        `max_tokens` to that task's own ceiling -- see this module's own
+        docstring. Never loosens it: `min(max_tokens, tier)`."""
         symbols_by_file = self._symbols_by_file(result)
+
+        if task_type is not None:
+            max_tokens = min(
+                max_tokens, _BUDGET_TIER_BY_TASK_TYPE.get(task_type, _DEFAULT_BUDGET_TIER)
+            )
 
         packaged: list[PackagedFile] = []
         used = 0
