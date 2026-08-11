@@ -142,3 +142,33 @@ def test_ast_scope_no_symbols_returns_empty_string(tmp_path: Path) -> None:
     _make_file(tmp_path, "a.py", 5)
     compressor = SymbolRangeCompressor(PermissionManager(tmp_path))
     assert compressor.extract_with_ast_scope("a.py", []) == ""
+
+
+def test_ast_scope_header_trims_dangling_go_import_opener(tmp_path: Path) -> None:
+    # Real Consul regression (2026-08-11, measure_realtime_pipeline.py):
+    # Go's `import (` block syntax means none of the individual quoted
+    # import paths on the lines after it match the header pattern, so
+    # the scan always used to stop right at the bare opener -- a line
+    # with zero real content that still cost tokens. Trimmed back to the
+    # last genuinely meaningful line instead.
+    (tmp_path / "a.go").write_text(
+        "package foo\n\nimport (\n\t\"fmt\"\n)\n\n"
+        + "\n".join(f"line {i}" for i in range(7, 30))
+        + "\n"
+    )
+    compressor = SymbolRangeCompressor(PermissionManager(tmp_path))
+
+    excerpt = compressor.extract_with_ast_scope("a.go", [_symbol("a.go", 20, 20)])
+
+    assert "package foo" in excerpt
+    assert "import (" not in excerpt
+
+
+def test_ast_scope_header_ignores_trailing_blank_run(tmp_path: Path) -> None:
+    lines = ["# a real header comment", ""] + [""] * 10 + [f"line {i}" for i in range(13, 30)]
+    (tmp_path / "a.py").write_text("\n".join(lines) + "\n")
+    compressor = SymbolRangeCompressor(PermissionManager(tmp_path))
+
+    header_end = compressor._header_end_line(lines)
+
+    assert header_end == 1

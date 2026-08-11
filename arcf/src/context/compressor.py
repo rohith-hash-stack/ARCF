@@ -39,10 +39,29 @@ _AST_SCOPE_MARGIN_LINES = 5
 # forms, plus block/line comments and blank lines) rather than
 # language-specific, since SymbolReference carries no language-grammar
 # detail Phase 6 could dispatch on beyond the file's own extension.
+#
+# Tuned down 2026-08-11 after measuring real Consul token costs
+# (scripts/measure_realtime_pipeline.py "Register" query): the original
+# 50-line cap and unbounded trailing-blank tolerance were never actually
+# the dominant cost (the 5-line AST-scope margin above was, ~3x more per
+# file in the measured case) but were still real, avoidable waste --
+# _MAX_HEADER_SCAN_LINES=50 was far more headroom than any real header
+# in this codebase's own source needs, and the pattern's own trailing
+# blank-line tolerance let a header "end" on a dangling `import (` line
+# (Go's multi-line import syntax: none of the individual quoted import
+# paths inside the parens match this pattern, so scanning always stops
+# right at the opener) or a run of blank lines with nothing after
+# them -- both cost tokens without adding any real content.
 _HEADER_LINE_PATTERN = re.compile(
     r'^\s*($|#|//|/\*|\*|"""|\'\'\'|package\s|import\s|from\s+\S+\s+import|using\s)'
 )
-_MAX_HEADER_SCAN_LINES = 50
+_MEANINGFUL_HEADER_LINE_PATTERN = re.compile(r"^\s*\S")  # excludes blank lines
+# Go's multi-line `import (` block: none of the individual quoted import
+# paths inside the parens match _HEADER_LINE_PATTERN, so the scan always
+# stops right at the opener -- trimmed off specifically since a bare
+# "import (" with nothing after it costs a line for zero real content.
+_DANGLING_IMPORT_OPENER_PATTERN = re.compile(r"^\s*import\s*\(\s*$")
+_MAX_HEADER_SCAN_LINES = 15
 
 
 class SymbolRangeCompressor:
@@ -135,13 +154,27 @@ class SymbolRangeCompressor:
 
     @staticmethod
     def _header_end_line(lines: list[str]) -> int:
-        end = 0
+        """Scans forward while lines look like header content, but the
+        returned boundary is the LAST line that had real (non-blank)
+        content, not wherever the scan happened to stop -- trims off a
+        trailing run of blank lines or a dangling opener line (e.g. Go's
+        `import (`, which nothing after it will ever match) that would
+        otherwise cost tokens for nothing. A header that's entirely
+        blank lines returns 0 (no header), same as never matching at
+        all."""
+        meaningful_line_numbers: list[int] = []
         for line_number, line in enumerate(lines[:_MAX_HEADER_SCAN_LINES], start=1):
-            if _HEADER_LINE_PATTERN.match(line):
-                end = line_number
-            else:
+            if not _HEADER_LINE_PATTERN.match(line):
                 break
-        return end
+            if _MEANINGFUL_HEADER_LINE_PATTERN.match(line):
+                meaningful_line_numbers.append(line_number)
+
+        while meaningful_line_numbers and _DANGLING_IMPORT_OPENER_PATTERN.match(
+            lines[meaningful_line_numbers[-1] - 1]
+        ):
+            meaningful_line_numbers.pop()
+
+        return meaningful_line_numbers[-1] if meaningful_line_numbers else 0
 
     @staticmethod
     def _merge(ranges: list[tuple[int, int]]) -> list[tuple[int, int]]:
