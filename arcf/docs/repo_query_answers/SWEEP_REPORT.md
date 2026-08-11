@@ -105,6 +105,66 @@ near-tie/no-signal cases), 858/858 full suite passing, zero regressions.
 - Small ground-truth sample (5 repos + 1 live spot-check). Suggestive and
   internally consistent, not a large-scale statistical proof.
 
+## Fix #4: boilerplate evidence-fallback filler was packaged in full
+
+**User's framing** (2026-08-11, following the direct-vs-ARCF cost investigation
+in [[arcf_direct_vs_arcf_cost]]): before trying to reduce ARCF's token cost
+relative to a direct/VSCode-style LLM call, check whether the existing
+~8,000-token budget has real slack — content that isn't contributing to
+answer quality — rather than assuming there's fat to trim.
+
+**Method**: a read-only, resolver-only falsification experiment
+([scripts/context_budget_filler_diagnosis.py](../../scripts/context_budget_filler_diagnosis.py),
+no LLM calls, reuses the real sweep's stored `entities_extracted` instead of
+re-extracting) re-ran classic resolution + packaging for all 12 stored sweep
+queries against the real cloned repos and bucketed every packaged file's
+tokens by its `reason`. Stated success criterion up front: boilerplate filler
+(`"evidence: <category>"` reasons whose category is config/build/CI-only,
+never prose) had to be >=30% of packaged tokens in at least half of the
+empty-entity queries to be worth acting on.
+
+**Result**: 4 of 8 empty-entity queries hit that bar; 3 of the 12 queries
+overall were 96-100% boilerplate by packaged-token count (all real content
+excluded purely because a large CI config or dependency manifest ate the
+whole budget first) — e.g. a single `.github/workflows/build.yml` at 6,393
+tokens. Aggregate: 31% of all packaged tokens across the 12 queries was
+boilerplate filler.
+
+**Important negative finding that shaped the fix's scope**: not all
+evidence-fallback filler is waste. gvisor's "Explain how gVisor separates
+application syscalls from the host kernel" was 96% filler by token count, but
+SWEEP_REPORT's own earlier repo-by-repo log (below) independently judged that
+answer as correctly grounded in real README content (the Sentry/Gofer
+architecture). Blanket-truncating every no-symbol SUPPORTING file would have
+risked cutting genuinely load-bearing content to chase a token number — the
+exact optimizing-for-a-positive-result trap [[feedback_falsification_experiments]]
+warns against.
+
+**Fix, scoped narrowly to what was actually verified safe**
+(`context/budget_manager.py`'s `_BOILERPLATE_EVIDENCE_CATEGORIES`): only
+categories whose patterns are unambiguous config/build/CI filenames
+(`dependency manifest`, `project metadata`, `build/workspace configuration`,
+`CI/workflow files`, `test framework/configuration`) are head-truncated to
+150 tokens when they have no symbol location to compress around. `project
+structure` (README*) and `test directories` are deliberately excluded —
+exactly the categories that can carry genuine prose or real test source, per
+the gvisor finding above.
+
+**Verified**: re-ran the same diagnostic after the fix. Boilerplate filler
+fell from 31% to 2.9% of packaged tokens across the 12 queries. The freed
+budget wasn't wasted — the packager reinvested it into real, previously-
+excluded content (e.g. flatbuffers "Explain why FlatBuffers can access
+serialized data..." went from 1 tiny reference file to 7 real compiler/
+binding source files; gvisor's README-grounded answer keeps its README
+content untouched, unaffected by the fix, while also gaining 2 real code
+files it didn't have room for before). Total packaged tokens per query stayed
+close to the 8,000 cap in most cases — this fix improves what's IN the
+budget, not the total cost, so it does not by itself close the ~12-15x
+token gap vs. a direct/no-context LLM call documented in
+[[arcf_direct_vs_arcf_cost]]. 3 new tests
+(`tests/context/test_budget_manager.py`), 867/867 full suite, zero
+regressions.
+
 ## Fix #2: test-harness prompt was over-restrictive (not an ARCF bug)
 
 **Reported by the user**: when ARCF's retrieval found no relevant files, it

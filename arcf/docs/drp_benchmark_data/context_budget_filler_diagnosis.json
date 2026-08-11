@@ -1,0 +1,938 @@
+[
+  {
+    "query": "Add a command-line option that emits additional schema validation diagnostics.",
+    "entities": [],
+    "total_tokens": 7952,
+    "filler_tokens": 6541,
+    "filler_fraction": 0.823,
+    "filler_files": [
+      [
+        "grpc/src/compiler/schema_interface.h",
+        "references: lexical-match",
+        57
+      ],
+      [
+        "dart/analysis_options.yaml",
+        "references: lexical-match",
+        9
+      ],
+      [
+        "docs/source/schema.md",
+        "references: lexical-match",
+        5974
+      ],
+      [
+        "grpc/examples/swift/Greeter/Sources/Commands/Commands.swift",
+        "references: lexical-match",
+        207
+      ],
+      [
+        "grpc/examples/swift/Greeter/Sources/Commands/Subcommands/ServerCommand.swift",
+        "references: lexical-match",
+        294
+      ]
+    ],
+    "real_files": [
+      [
+        "python/flatbuffers/flexbuffers.py",
+        "defines Adder",
+        788
+      ],
+      [
+        "include/flatbuffers/code_generator.h",
+        "defines CodeGenOptions",
+        45
+      ],
+      [
+        "include/flatbuffers/flatc.h",
+        "defines ValidateOptions",
+        282
+      ],
+      [
+        "python/flatbuffers/reflection/Field.py",
+        "defines AddOptional",
+        62
+      ],
+      [
+        "tests/FlatBuffers.Test/FlatBuffersFixedLengthArrayTests.cs",
+        "defines FixedLengthArray_LengthConstantsMatchSchema_ReturnTrue",
+        163
+      ],
+      [
+        "rust/flatbuffers/src/push.rs",
+        "called by ValidateOptions (hop 1)",
+        31
+      ],
+      [
+        "rust/flexbuffers/src/buffer.rs",
+        "called by ValidateOptions (hop 1)",
+        40
+      ]
+    ],
+    "repo": "flatbuffers"
+  },
+  {
+    "query": "Debug a generated accessor that produces incorrect results for nested tables.",
+    "entities": [],
+    "total_tokens": 8000,
+    "filler_tokens": 17,
+    "filler_fraction": 0.002,
+    "filler_files": [
+      [
+        ".github/workflows/build.yml",
+        "evidence: CI/workflow files",
+        16
+      ],
+      [
+        ".github/workflows/docs.yml",
+        "evidence: CI/workflow files",
+        1
+      ]
+    ],
+    "real_files": [
+      [
+        "kotlin/flatbuffers-kotlin/src/commonMain/kotlin/com/google/flatbuffers/kotlin/FlatBufferBuilder.kt",
+        "defines nested",
+        199
+      ],
+      [
+        "include/flatbuffers/reflection_generated.h",
+        "called by nested (hop 1)",
+        926
+      ],
+      [
+        "ts/builder.ts",
+        "calls nested",
+        4801
+      ],
+      [
+        "kotlin/flatbuffers-kotlin/src/commonMain/kotlin/com/google/flatbuffers/kotlin/Flatbuffers.kt",
+        "called by nested (hop 1)",
+        150
+      ],
+      [
+        "tests/ts/reflection/field.js",
+        "called by nested (hop 1)",
+        120
+      ],
+      [
+        "include/flatbuffers/vector_downward.h",
+        "called by nested (hop 1)",
+        46
+      ],
+      [
+        "java/src/main/java/com/google/flatbuffers/FlatBufferBuilder.java",
+        "called by nested (hop 1)",
+        40
+      ],
+      [
+        "java/src/main/java/com/google/flatbuffers/reflection/Field.java",
+        "called by nested (hop 1)",
+        205
+      ],
+      [
+        "rust/reflection/src/reflection_generated.rs",
+        "called by nested (hop 1)",
+        92
+      ],
+      [
+        "tests/ts/reflection/field.ts",
+        "called by nested (hop 1)",
+        61
+      ],
+      [
+        "src/idl_gen_kotlin.cpp",
+        "defines GenerateGetRootAsAccessors",
+        1313
+      ],
+      [
+        "tests/test_builder.cpp",
+        "defines CheckTestGeneratedIsValid",
+        30
+      ]
+    ],
+    "repo": "flatbuffers"
+  },
+  {
+    "query": "Explain why FlatBuffers can access serialized data without first deserializing the entire object graph.",
+    "entities": [],
+    "total_tokens": 7994,
+    "filler_tokens": 6369,
+    "filler_fraction": 0.797,
+    "filler_files": [
+      [
+        ".github/workflows/build.yml",
+        "evidence: CI/workflow files",
+        145
+      ],
+      [
+        ".github/workflows/docs.yml",
+        "evidence: CI/workflow files",
+        143
+      ],
+      [
+        ".github/workflows/label.yml",
+        "evidence: CI/workflow files",
+        143
+      ],
+      [
+        "README.md",
+        "evidence: project structure",
+        1238
+      ],
+      [
+        "android/app/build.gradle",
+        "evidence: dependency manifest",
+        136
+      ],
+      [
+        "android/build.gradle",
+        "evidence: dependency manifest",
+        147
+      ],
+      [
+        "benchmarks/swift/README.md",
+        "evidence: project structure",
+        41
+      ],
+      [
+        "dart/README.md",
+        "evidence: project structure",
+        213
+      ],
+      [
+        "docs/README.md",
+        "evidence: project structure",
+        100
+      ],
+      [
+        "examples/go-echo/README.md",
+        "evidence: project structure",
+        107
+      ],
+      [
+        "package.json",
+        "evidence: dependency manifest",
+        138
+      ],
+      [
+        "tests/.gitignore",
+        "evidence: test directories",
+        14
+      ],
+      [
+        "tests/Abc.nim",
+        "evidence: test directories",
+        86
+      ],
+      [
+        "tests/BUILD.bazel",
+        "evidence: test directories",
+        2160
+      ],
+      [
+        "tests/DartTest.sh",
+        "evidence: test directories",
+        384
+      ],
+      [
+        "tests/GoTest.sh",
+        "evidence: test directories",
+        732
+      ],
+      [
+        "tests/KotlinTest.sh",
+        "evidence: test directories",
+        385
+      ],
+      [
+        "tests/LobsterTest.bat",
+        "evidence: test directories",
+        57
+      ]
+    ],
+    "real_files": [
+      [
+        "grpc/examples/ts/greeter/src/greeter_grpc.js",
+        "defines deserialize_models_HelloReply",
+        72
+      ],
+      [
+        "include/flatbuffers/grpc.h",
+        "defines SerializationTraits<flatbuffers::grpc::Message<T>>",
+        298
+      ],
+      [
+        "kotlin/benchmark/src/jvmMain/kotlin/com/google/flatbuffers/kotlin/benchmark/FlatbufferBenchmark.kt",
+        "defines monstersDeserializationJava",
+        355
+      ],
+      [
+        "net/FlatBuffers/IFlatbufferObject.cs",
+        "defines IFlatbufferObject",
+        59
+      ],
+      [
+        "src/idl_gen_csharp.cpp",
+        "defines GenVectorAccessObject",
+        700
+      ],
+      [
+        "CMake/flatbuffers-config-version.cmake.in",
+        "references: tier4 incidental filename/path match",
+        95
+      ],
+      [
+        "include/flatbuffers/stl_emulation.h",
+        "called by AccessFlatBufferTest (hop 1)",
+        46
+      ]
+    ],
+    "repo": "flatbuffers"
+  },
+  {
+    "query": "Summarize the architecture used to turn a schema definition into generated serialization code.",
+    "entities": [],
+    "total_tokens": 7631,
+    "filler_tokens": 6839,
+    "filler_fraction": 0.896,
+    "filler_files": [
+      [
+        "tests/KotlinTest.kt",
+        "evidence: test directories",
+        470
+      ],
+      [
+        ".github/workflows/build.yml",
+        "evidence: CI/workflow files",
+        145
+      ],
+      [
+        ".github/workflows/docs.yml",
+        "evidence: CI/workflow files",
+        143
+      ],
+      [
+        ".github/workflows/label.yml",
+        "evidence: CI/workflow files",
+        143
+      ],
+      [
+        "README.md",
+        "evidence: project structure",
+        1238
+      ],
+      [
+        "android/app/build.gradle",
+        "evidence: dependency manifest",
+        136
+      ],
+      [
+        "android/build.gradle",
+        "evidence: dependency manifest",
+        147
+      ],
+      [
+        "benchmarks/swift/README.md",
+        "evidence: project structure",
+        41
+      ],
+      [
+        "dart/README.md",
+        "evidence: project structure",
+        213
+      ],
+      [
+        "docs/README.md",
+        "evidence: project structure",
+        100
+      ],
+      [
+        "examples/go-echo/README.md",
+        "evidence: project structure",
+        107
+      ],
+      [
+        "package.json",
+        "evidence: dependency manifest",
+        138
+      ],
+      [
+        "tests/.gitignore",
+        "evidence: test directories",
+        14
+      ],
+      [
+        "tests/Abc.nim",
+        "evidence: test directories",
+        86
+      ],
+      [
+        "tests/BUILD.bazel",
+        "evidence: test directories",
+        2160
+      ],
+      [
+        "tests/DartTest.sh",
+        "evidence: test directories",
+        384
+      ],
+      [
+        "tests/GoTest.sh",
+        "evidence: test directories",
+        732
+      ],
+      [
+        "tests/KotlinTest.sh",
+        "evidence: test directories",
+        385
+      ],
+      [
+        "tests/LobsterTest.bat",
+        "evidence: test directories",
+        57
+      ]
+    ],
+    "real_files": [
+      [
+        "rust/flexbuffers/src/reader/de.rs",
+        "defines DeserializationError",
+        60
+      ],
+      [
+        "src/bfbs_gen.h",
+        "defines GenerateFromSchema",
+        252
+      ],
+      [
+        "src/code_generators.cpp",
+        "defines FlatBuffersGeneratedWarning",
+        52
+      ],
+      [
+        "tests/FlatBuffers.Test/FlatBuffersFixedLengthArrayTests.cs",
+        "defines FixedLengthArray_LengthConstantsMatchSchema_ReturnTrue",
+        163
+      ],
+      [
+        "tests/test_builder.cpp",
+        "defines CheckTestGeneratedIsValid",
+        30
+      ],
+      [
+        "benchmarks/cpp/flatbuffers/bench_generated.h",
+        "references: tier4 incidental filename/path match",
+        130
+      ],
+      [
+        "android/app/src/main/cpp/generated/animal_generated.h",
+        "references: tier4 incidental filename/path match",
+        64
+      ],
+      [
+        "include/flatbuffers/code_generators.h",
+        "called by GenerateJsonSchema (hop 1)",
+        41
+      ]
+    ],
+    "repo": "flatbuffers"
+  },
+  {
+    "query": "A parameterized test suite is taking significantly longer than expected. Identify what parts of the framework could contribute to the overhead.",
+    "entities": [
+      "parameterized test suite",
+      "framework"
+    ],
+    "total_tokens": 7917,
+    "filler_tokens": 2048,
+    "filler_fraction": 0.259,
+    "filler_files": [
+      [
+        "CONTRIBUTING.md",
+        "references: lexical-match",
+        1288
+      ],
+      [
+        "CONTRIBUTORS",
+        "references: lexical-match",
+        760
+      ]
+    ],
+    "real_files": [
+      [
+        "googletest/include/gtest/gtest.h",
+        "defines TestSuite",
+        301
+      ],
+      [
+        "googletest/include/gtest/internal/gtest-internal.h",
+        "defines what",
+        40
+      ],
+      [
+        "googletest/src/gtest.cc",
+        "defines TestSuite",
+        3009
+      ],
+      [
+        "googletest/test/googletest-death-test_ex_test.cc",
+        "calls what",
+        795
+      ],
+      [
+        "googlemock/src/gmock-spec-builders.cc",
+        "defines AddExpectation",
+        236
+      ],
+      [
+        "googlemock/test/gmock-function-mocker_test.cc",
+        "defines ExpectCallTest",
+        57
+      ],
+      [
+        "googletest/include/gtest/gtest-assertion-result.h",
+        "defines AssertionResultExpectation",
+        66
+      ],
+      [
+        "googletest/test/googletest-filter-unittest.py",
+        "defines AdjustForParameterizedTests",
+        990
+      ],
+      [
+        "googletest/test/googletest-output-test_.cc",
+        "defines ExpectFailureTest",
+        220
+      ],
+      [
+        "googletest/test/googletest-param-test-test.cc",
+        "defines MacroNamingTestNonParametrized",
+        90
+      ],
+      [
+        "googletest/test/googletest-printers-test.cc",
+        "defines ExpectedTypeName",
+        65
+      ]
+    ],
+    "repo": "googletest"
+  },
+  {
+    "query": "Add support for a test listener that records the duration and final status of every test case.",
+    "entities": [],
+    "total_tokens": 7884,
+    "filler_tokens": 1342,
+    "filler_fraction": 0.17,
+    "filler_files": [
+      [
+        "googletest/test/googletest-listener-test.cc",
+        "references: lexical-match",
+        1342
+      ]
+    ],
+    "real_files": [
+      [
+        "googletest/src/gtest-death-test.cc",
+        "defines status",
+        3062
+      ],
+      [
+        "googletest/test/gtest_unittest.cc",
+        "defines TestListener",
+        2135
+      ],
+      [
+        "googletest/include/gtest/gtest.h",
+        "defines EmptyTestEventListener",
+        1150
+      ],
+      [
+        "googletest/test/gtest_xml_output_unittest_.cc",
+        "defines PropertyRecordingTest",
+        111
+      ],
+      [
+        "googletest/test/gtest_assert_by_exception_test.cc",
+        "extends EmptyTestEventListener",
+        84
+      ]
+    ],
+    "repo": "googletest"
+  },
+  {
+    "query": "Explain how GoogleTest discovers and executes individual test cases internally.",
+    "entities": [],
+    "total_tokens": 7524,
+    "filler_tokens": 3905,
+    "filler_fraction": 0.519,
+    "filler_files": [
+      [
+        "README.md",
+        "evidence: project structure",
+        1213
+      ],
+      [
+        "googlemock/README.md",
+        "evidence: project structure",
+        382
+      ],
+      [
+        "googlemock/docs/README.md",
+        "evidence: project structure",
+        32
+      ],
+      [
+        "googlemock/include/gmock/internal/custom/README.md",
+        "evidence: project structure",
+        144
+      ],
+      [
+        "googletest/README.md",
+        "evidence: project structure",
+        2134
+      ]
+    ],
+    "real_files": [
+      [
+        "googlemock/test/gmock-matchers_test.h",
+        "defines Explain",
+        1434
+      ],
+      [
+        "googlemock/src/gmock-internal-utils.cc",
+        "defines GoogleTestFailureReporter",
+        144
+      ],
+      [
+        "googlemock/src/gmock.cc",
+        "defines InitGoogleMockImpl",
+        1318
+      ],
+      [
+        "googletest/test/googletest-param-test-test.cc",
+        "defines FixtureConstructorExecuted",
+        149
+      ],
+      [
+        "googletest/src/gtest-internal-inl.h",
+        "references: tier4 incidental filename/path match",
+        386
+      ],
+      [
+        "googletest/include/gtest/gtest-printers.h",
+        "called by Explain (hop 1)",
+        136
+      ],
+      [
+        "googletest/include/gtest/internal/gtest-internal.h",
+        "references: tier4 incidental filename/path match",
+        52
+      ]
+    ],
+    "repo": "googletest"
+  },
+  {
+    "query": "Refactor a custom matcher implementation so that failure messages remain descriptive without duplicating formatting logic.",
+    "entities": [
+      "custom matcher"
+    ],
+    "total_tokens": 7979,
+    "filler_tokens": 6887,
+    "filler_fraction": 0.863,
+    "filler_files": [
+      [
+        "googlemock/include/gmock/gmock-matchers.h",
+        "references: lexical-match",
+        6259
+      ],
+      [
+        "googlemock/src/gmock-matchers.cc",
+        "references: lexical-match",
+        147
+      ],
+      [
+        "googlemock/include/gmock/gmock-more-matchers.h",
+        "references: lexical-match",
+        60
+      ],
+      [
+        ".clang-format",
+        "references: lexical-match",
+        33
+      ],
+      [
+        "googlemock/include/gmock/internal/custom/gmock-matchers.h",
+        "references: lexical-match",
+        388
+      ]
+    ],
+    "real_files": [
+      [
+        "googlemock/include/gmock/gmock-spec-builders.h",
+        "defines FormatUnexpectedCallMessageLocked",
+        430
+      ],
+      [
+        "googletest/include/gtest/gtest-assertion-result.h",
+        "defines failure_message",
+        88
+      ],
+      [
+        "googletest/include/gtest/gtest-printers.h",
+        "defines FormatForComparisonFailureMessage",
+        222
+      ],
+      [
+        "googletest/include/gtest/gtest.h",
+        "defines CmpHelperEQFailure",
+        352
+      ]
+    ],
+    "repo": "googletest"
+  },
+  {
+    "query": "Explain how gVisor separates application syscalls from the host kernel.",
+    "entities": [],
+    "total_tokens": 7970,
+    "filler_tokens": 7784,
+    "filler_fraction": 0.977,
+    "filler_files": [
+      [
+        ".github/workflows/auto_assign.js",
+        "evidence: CI/workflow files",
+        139
+      ],
+      [
+        ".github/workflows/auto_assign.yml",
+        "evidence: CI/workflow files",
+        141
+      ],
+      [
+        ".github/workflows/build.yml",
+        "evidence: CI/workflow files",
+        150
+      ],
+      [
+        "README.md",
+        "evidence: project structure",
+        1681
+      ],
+      [
+        "examples/seccheck/README.md",
+        "evidence: project structure",
+        1012
+      ],
+      [
+        "g3doc/README.md",
+        "evidence: project structure",
+        1897
+      ],
+      [
+        "go.mod",
+        "evidence: dependency manifest",
+        145
+      ],
+      [
+        "images/README.md",
+        "evidence: project structure",
+        569
+      ],
+      [
+        "images/agent/README.md",
+        "evidence: project structure",
+        78
+      ],
+      [
+        "images/benchmarks/node/package.json",
+        "evidence: dependency manifest",
+        149
+      ],
+      [
+        "sandboxexec/sandbox/python/pyproject.toml",
+        "evidence: dependency manifest",
+        143
+      ],
+      [
+        "test/BUILD",
+        "evidence: test directories",
+        21
+      ],
+      [
+        "test/README.md",
+        "evidence: test directories",
+        368
+      ],
+      [
+        "test/benchmarks/BUILD",
+        "evidence: test directories",
+        67
+      ],
+      [
+        "test/benchmarks/README.md",
+        "evidence: test directories",
+        1060
+      ],
+      [
+        "test/benchmarks/defs.bzl",
+        "evidence: test directories",
+        164
+      ]
+    ],
+    "real_files": [
+      [
+        "pkg/ring0/kernel.go",
+        "defines kernelSyscall",
+        94
+      ],
+      [
+        "pkg/sentry/kernel/kernel.go",
+        "defines ApplicationCores",
+        56
+      ],
+      [
+        "pkg/compressio/compressio_test.go",
+        "called by BenchmarkApplicationSyscall (hop 1)",
+        36
+      ]
+    ],
+    "repo": "gvisor"
+  },
+  {
+    "query": "Investigate a regression where sandbox startup time increases with the number of mounted paths.",
+    "entities": [
+      "sandbox"
+    ],
+    "total_tokens": 8000,
+    "filler_tokens": 1329,
+    "filler_fraction": 0.166,
+    "filler_files": [
+      [
+        "test/benchmarks/base/startup_test.go",
+        "evidence: test directories",
+        957
+      ],
+      [
+        "pkg/shim/v1/utils/utils.go",
+        "evidence: test support layer",
+        64
+      ],
+      [
+        "test/benchmarks/base/base.go",
+        "evidence: test directories",
+        179
+      ],
+      [
+        ".github/workflows/auto_assign.js",
+        "evidence: CI/workflow files",
+        122
+      ],
+      [
+        ".github/workflows/auto_assign.yml",
+        "evidence: CI/workflow files",
+        7
+      ]
+    ],
+    "real_files": [
+      [
+        "pkg/sentry/platform/platform.go",
+        "defines NoCPUNumbers",
+        105
+      ],
+      [
+        "pkg/sentry/seccheck/scsdk/client.go",
+        "defines NewSandboxClient",
+        141
+      ],
+      [
+        "pkg/tcpip/header/tcp.go",
+        "defines AckNumber",
+        63
+      ],
+      [
+        "pkg/test/dockerutil/container.go",
+        "defines NetworkSandboxKey",
+        611
+      ],
+      [
+        "runsc/boot/mount_hints.go",
+        "defines IsSandboxLocal",
+        66
+      ],
+      [
+        "runsc/cmd/sandboxsetup/process.go",
+        "defines ExecProcUmounter",
+        193
+      ],
+      [
+        "runsc/container/container.go",
+        "defines IsSandboxRoot",
+        4159
+      ],
+      [
+        "runsc/container/state_file.go",
+        "defines ListSandboxes",
+        1013
+      ],
+      [
+        "shim/shimutils/shimutils.go",
+        "defines NewSandboxSpec",
+        320
+      ]
+    ],
+    "repo": "gvisor"
+  },
+  {
+    "query": "Refactor a syscall implementation to share validation logic with related syscalls.",
+    "entities": [
+      "syscall"
+    ],
+    "total_tokens": 6213,
+    "filler_tokens": 0,
+    "filler_fraction": 0.0,
+    "filler_files": [],
+    "real_files": [
+      [
+        "test/cmd/test_app/main.go",
+        "defines syscall",
+        6213
+      ]
+    ],
+    "repo": "gvisor"
+  },
+  {
+    "query": "Trace the path of a filesystem operation from a sandboxed process to the underlying host filesystem.",
+    "entities": [],
+    "total_tokens": 7970,
+    "filler_tokens": 0,
+    "filler_fraction": 0.0,
+    "filler_files": [],
+    "real_files": [
+      [
+        "pkg/sentry/strace/strace.go",
+        "defines path",
+        7743
+      ],
+      [
+        "runsc/cmd/trace/trace.go",
+        "defines Trace",
+        31
+      ],
+      [
+        "test/kubernetes/benchmarks/profiling/profiling.go",
+        "defines operation",
+        61
+      ],
+      [
+        "pkg/metric/condmetric.go",
+        "defines FakeTimedOperation",
+        51
+      ],
+      [
+        "pkg/shim/v1/runsc/container.go",
+        "defines ExecdProcesses",
+        84
+      ]
+    ],
+    "repo": "gvisor"
+  }
+]
