@@ -219,6 +219,44 @@ say, even when retrieval is imperfect, because it can supplement weak
 context with general knowledge exactly like a real engineer would while
 still preferring grounded specifics when they're available.
 
+## Re-run (2026-08-11): repos 1-3 refreshed with the index-reuse and Fix #4 boilerplate-truncation fixes
+
+All 12 stored JSON files (googletest/flatbuffers/gvisor x 4 queries) were
+regenerated end-to-end (`--resolver both`, real LLM calls) using the SAME
+stored `entities_extracted`/queries as before, now through the fixed
+pipeline. **This means every claim below dated 2026-08-10 (the answer-
+content validation pass and the direct-LLM baseline validation pass) was
+checked against the PRE-fix JSON content, which this re-run has since
+overwritten** — those sections' pass/fail verdicts on retrieval quality
+and answer accuracy are historical findings about an earlier pipeline
+state, not a live description of the files currently in this directory.
+They're kept as-is (not re-run) since re-doing a full 24-answer
+fact-check pass wasn't asked for this round; only the token/latency
+comparison below reflects the current files.
+
+Token/latency, classic+DRP averaged across all 12 queries (real LLM
+calls, `gpt-4o-mini`, this session):
+
+| Metric | Before (original run) | After (index-reuse + Fix #4) |
+|---|---:|---:|
+| classic avg tokens/query | 9,129 | 9,191 |
+| classic avg latency/query | 23.2s | 18.7s (-19%) |
+| drp avg tokens/query | 7,580 | 7,364 |
+| drp avg latency/query | 27.7s | 20.0s (-28%) |
+| direct avg tokens/query | 606 | 601 (unchanged, as expected) |
+
+Confirms the two predictions made before building either fix: token count
+stayed essentially flat (the boilerplate fix improves what's IN the
+budget, not the total spent — the freed room gets reinvested into real
+content, not given back) while latency dropped meaningfully from the
+index-reuse cache, even though DRP's per-call `DrpIndexBuilder.build()`
+step (a separate taxonomy/TF-IDF build on top of the cached base index)
+is NOT covered by `index_cache` and stayed uncached — DRP's own resolve
+latency ranged 2-56s across queries in this run, spiking hardest on
+gvisor (the largest of the 3 repos). Flagged as a real, distinct
+follow-up opportunity, not fixed this round (out of the scope actually
+asked for).
+
 ## Answer-content validation pass (2026-08-10)
 
 Beyond retrieval-quality assessment (which repo-by-repo log entries below
