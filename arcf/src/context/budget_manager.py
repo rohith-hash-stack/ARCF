@@ -56,6 +56,20 @@ file present at resolution time may be gone (or unreadable) by the time
 packaging runs — that's a real race, not a hypothetical, and is treated
 the same as "didn't fit": excluded, not a hard failure of the whole
 package.
+
+Relative score falloff gate, Feature B (2026-08-11, Real-Time Token &
+Latency Optimization): everything above stops a file from being
+INCLUDED once it doesn't fit; nothing previously stopped a low-relevance
+file from being included just because token budget happened to remain
+— the "greedy token-filler" this feature is named for. `ranked_files`
+arrives sorted descending by RelevanceRanker's relevance_score, so once
+any candidate's score drops below `_RELATIVE_FALLOFF_GAMMA` times the
+top candidate's score, every remaining candidate (sorted lower still)
+is guaranteed to also qualify for the cutoff — packaging halts right
+there, budget remaining or not, rather than continuing to spend it on
+long-tail noise. This is independent of, and runs before, every
+budget/compression decision above: a candidate can lose to relevance
+falloff without ever reaching the "does it fit" question at all.
 """
 
 from collections import defaultdict
@@ -90,6 +104,12 @@ _BOILERPLATE_EVIDENCE_CATEGORIES = frozenset(
 )
 _BOILERPLATE_FILLER_MAX_TOKENS = 150
 
+# Feature B (relative score falloff gate): a candidate scoring below this
+# fraction of the top candidate's relevance_score is long-tail noise, not
+# a real secondary match — halts packaging rather than filling remaining
+# budget with it. See this module's own docstring for the full rationale.
+_RELATIVE_FALLOFF_GAMMA = 0.45
+
 
 class ContextBudgetManager:
     def __init__(
@@ -115,7 +135,25 @@ class ContextBudgetManager:
         used = 0
         excluded = 0
 
-        for ranked in ranked_files:
+        # Feature B: ranked_files is sorted descending by relevance_score
+        # (RelevanceRanker's contract), so the first score IS the top —
+        # no need to scan for a max. gamma * 0.0 is still 0.0, so an
+        # all-zero-score candidate set (e.g. every file at the shared
+        # default weight) never falls below its own threshold and this
+        # gate is a no-op, exactly as it should be with nothing to fall
+        # off from.
+        top_score = ranked_files[0].relevance_score if ranked_files else 0.0
+        falloff_threshold = _RELATIVE_FALLOFF_GAMMA * top_score
+
+        for index, ranked in enumerate(ranked_files):
+            if ranked.relevance_score < falloff_threshold:
+                # Every remaining candidate is sorted lower still, so all
+                # of them also fail this same threshold — halt entirely
+                # (not just skip this one) rather than keep spending
+                # budget on long-tail noise just because it remains.
+                excluded += len(ranked_files) - index
+                break
+
             remaining = max_tokens - used
             if remaining <= 0:
                 excluded += 1

@@ -388,3 +388,63 @@ def test_fastapi_style_scenario_keeps_small_primary_file_and_shrinks_large_suppo
     assert "def request_response" in by_path["routing.py"].content
     assert used < 49_000 + 20, "total tokens used must be far below the two files' full size"
     assert excluded == 0
+
+
+def test_falloff_gate_excludes_candidate_below_gamma_of_top_score(tmp_path: Path) -> None:
+    (tmp_path / "a.py").write_text("def foo():\n    pass\n")
+    (tmp_path / "b.py").write_text("def bar():\n    pass\n")
+    manager = _manager(tmp_path)
+    # 0.4 < 0.45 * 1.0, so b.py should be pruned even though plenty of
+    # budget remains.
+    ranked = [_ranked("a.py", token_count=10, score=1.0), _ranked("b.py", token_count=10, score=0.4)]
+
+    packaged, used, excluded = manager.select(ranked, _empty_result(), max_tokens=10_000)
+
+    assert {p.file_path for p in packaged} == {"a.py"}
+    assert excluded == 1
+
+
+def test_falloff_gate_keeps_candidate_at_or_above_gamma_of_top_score(tmp_path: Path) -> None:
+    (tmp_path / "a.py").write_text("def foo():\n    pass\n")
+    (tmp_path / "b.py").write_text("def bar():\n    pass\n")
+    manager = _manager(tmp_path)
+    # 0.45 == 0.45 * 1.0 exactly -- the gate is >=, not >, so this stays.
+    ranked = [_ranked("a.py", token_count=10, score=1.0), _ranked("b.py", token_count=10, score=0.45)]
+
+    packaged, used, excluded = manager.select(ranked, _empty_result(), max_tokens=10_000)
+
+    assert {p.file_path for p in packaged} == {"a.py", "b.py"}
+
+
+def test_falloff_gate_halts_rather_than_skips_once_triggered(tmp_path: Path) -> None:
+    # A pathological case where a LATER candidate would individually still
+    # clear the threshold on its own score, but the gate halts at the
+    # first failure rather than resuming -- ranked_files being sorted
+    # descending means this shouldn't occur from real RelevanceRanker
+    # output, but the halt behavior itself (not a per-item skip) is the
+    # documented contract and must hold regardless of input order.
+    (tmp_path / "a.py").write_text("def foo():\n    pass\n")
+    (tmp_path / "b.py").write_text("def mid():\n    pass\n")
+    (tmp_path / "c.py").write_text("def bar():\n    pass\n")
+    manager = _manager(tmp_path)
+    ranked = [
+        _ranked("a.py", token_count=10, score=1.0),
+        _ranked("b.py", token_count=10, score=0.1),
+        _ranked("c.py", token_count=10, score=0.9),
+    ]
+
+    packaged, used, excluded = manager.select(ranked, _empty_result(), max_tokens=10_000)
+
+    assert {p.file_path for p in packaged} == {"a.py"}
+    assert excluded == 2
+
+
+def test_falloff_gate_is_a_noop_for_a_single_candidate(tmp_path: Path) -> None:
+    (tmp_path / "a.py").write_text("def foo():\n    pass\n")
+    manager = _manager(tmp_path)
+    ranked = [_ranked("a.py", token_count=10, score=0.05)]
+
+    packaged, used, excluded = manager.select(ranked, _empty_result(), max_tokens=10_000)
+
+    assert {p.file_path for p in packaged} == {"a.py"}
+    assert excluded == 0
