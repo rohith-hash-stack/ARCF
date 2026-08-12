@@ -274,3 +274,65 @@ def test_skeleton_no_symbols_returns_empty_string(tmp_path: Path) -> None:
     _make_file(tmp_path, "a.py", 5)
     compressor = SymbolRangeCompressor(PermissionManager(tmp_path))
     assert compressor.extract_skeleton_only("a.py", []) == ""
+
+
+def _content(line_count: int) -> str:
+    return "\n".join(f"line {i}" for i in range(1, line_count + 1)) + "\n"
+
+
+def test_call_site_window_uses_default_eight_line_margin() -> None:
+    excerpt = SymbolRangeCompressor.extract_call_site_window(_content(100), line_number=50)
+
+    assert "line 42" in excerpt  # 50 - 8
+    assert "line 58" in excerpt  # 50 + 8
+    assert "line 41" not in excerpt
+    assert "line 59" not in excerpt
+
+
+def test_call_site_window_respects_custom_window_size() -> None:
+    excerpt = SymbolRangeCompressor.extract_call_site_window(
+        _content(100), line_number=50, window_size=3
+    )
+
+    assert "line 47" in excerpt
+    assert "line 53" in excerpt
+    assert "line 46" not in excerpt
+    assert "line 54" not in excerpt
+
+
+def test_call_site_window_clamped_to_file_start() -> None:
+    excerpt = SymbolRangeCompressor.extract_call_site_window(_content(20), line_number=2)
+
+    assert "line 1" in excerpt  # clamped, not a negative/zero line
+    assert excerpt.startswith("# lines 1-")
+
+
+def test_call_site_window_clamped_to_file_end() -> None:
+    excerpt = SymbolRangeCompressor.extract_call_site_window(_content(20), line_number=19)
+
+    assert "line 20" in excerpt  # clamped to the real last line
+    assert "line 21" not in excerpt  # never fabricates lines past EOF
+
+
+def test_call_site_window_empty_content_returns_empty_string() -> None:
+    assert SymbolRangeCompressor.extract_call_site_window("", line_number=1) == ""
+
+
+def test_call_site_window_line_number_below_one_returns_empty_string() -> None:
+    assert SymbolRangeCompressor.extract_call_site_window(_content(10), line_number=0) == ""
+    assert SymbolRangeCompressor.extract_call_site_window(_content(10), line_number=-5) == ""
+
+
+def test_call_site_window_line_number_past_end_of_file_returns_empty_string() -> None:
+    # A stale/mismatched line number (e.g. resolved against an older
+    # version of the file) degrades to "no excerpt" rather than raising
+    # an IndexError -- the caller falls back to a wider extraction.
+    assert SymbolRangeCompressor.extract_call_site_window(_content(10), line_number=11) == ""
+    assert SymbolRangeCompressor.extract_call_site_window(_content(10), line_number=500) == ""
+
+
+def test_call_site_window_single_line_file() -> None:
+    excerpt = SymbolRangeCompressor.extract_call_site_window("only line\n", line_number=1)
+
+    assert "only line" in excerpt
+    assert excerpt.startswith("# lines 1-1")

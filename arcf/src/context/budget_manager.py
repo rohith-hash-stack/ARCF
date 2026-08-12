@@ -103,7 +103,45 @@ X"; a cross-module trace legitimately might need more room than a
 single-file bug fix. `task_type=None` (every existing caller, until
 threaded through) is fully backward compatible -- `max_tokens` passes
 through completely unchanged, byte-identical to before this feature.
-"""
+
+Call-Site Slicing, Token Efficiency Optimization (2026-08-12): Feature
+2's `extract_skeleton_only` gives every secondary/tertiary candidate
+the WHOLE symbol scope (signature + 5-line margin each side) with just
+the body blanked -- still a wide, symbol-length-dependent cost per
+candidate. `_compress_call_site` (below) replaces that, for secondary/
+tertiary (non-focal, non-hop-1, SUPPORTING/EXPERIMENTAL-with-symbols)
+candidates only, with a fixed +/-8-line window (`compressor.
+_DEFAULT_CALL_SITE_WINDOW_LINES`) around each relevant symbol's own
+line -- focal and hop-1-linked candidates still get `extract_with_
+ast_scope`'s full body, completely unchanged. See `compressor.
+extract_call_site_window`'s own docstring for what "call site" means
+here (a symbol's declaration line, the closest anchor Phase 6's domain
+contract actually carries -- NOT a literal call-expression source line;
+that data lives only in code_intelligence/'s internal IR, deliberately
+never crossing the Phase 5/6 boundary).
+
+Measured on real Consul (--n-runs 3, scripts/validate_llm_grounding.py,
+compared against the pre-Call-Site-Slicing baseline): ~23% smaller
+packaged-token footprint for the same candidate sets, alongside
+improved mean Grounding (2.333 -> 2.6) and Composite (2.800 -> 2.867)
+judge scores -- a genuine token-efficiency win, adopted on that basis
+alone.
+
+An earlier version of this feature also added an "additive Hop-2
+filling pass" -- spending the tokens Call-Site Slicing frees up on
+candidates reached via a 2+-hop call-graph `justification_chain`
+(`_HOP_ONE_CHAIN_LENGTH`-plus). Removed (2026-08-12) after a direct
+trace against real Consul resolutions showed it was dead code in
+practice: `justification_chain` length never exceeded 1 across every
+candidate inspected (36 at length 0, 2 at length 1, zero at 2+) --
+real secondary evidence in this codebase's candidate sets comes
+overwhelmingly from single-step relationships (inheritance, evidence-
+category matches, lexical-probe recovery), which `justification_chain`
+is empty/short for BY DESIGN (see `FileReference.justification_chain`'s
+own docstring), not from deep multi-hop call-graph traversal. The
+mechanism this pass targeted essentially doesn't exist in the real
+candidate population it was meant to backfill from. Falloff gate
+(Feature B) is unchanged by either the addition or this removal."""
 
 from collections import defaultdict
 from typing import Callable
@@ -189,6 +227,14 @@ _DEFAULT_BUDGET_TIER = 2500
 # Y")/("defines X", "calls Y") for a symbol-owning one at hop 1. Anything
 # longer is hop 2+.
 _HOP_ONE_CHAIN_LENGTH = 2
+
+# Call-Site Slicing (2026-08-12): passed straight through to
+# SymbolRangeCompressor.extract_call_site_window -- kept as this
+# module's own named constant (rather than relying on that method's own
+# default) so the budget-rebalancing policy is readable from this file
+# alone, same "own the number where the policy lives" convention as
+# _RELATIVE_FALLOFF_GAMMA/_HOP_ONE_CHAIN_LENGTH above.
+_CALL_SITE_WINDOW_LINES = 8
 
 
 class ContextBudgetManager:
@@ -287,12 +333,16 @@ class ContextBudgetManager:
                 # never trigger at all.
                 is_hop_one_linked = 0 < len(ranked.justification_chain) <= _HOP_ONE_CHAIN_LENGTH
                 compress_first_seen += 1
-                extract_fn = (
-                    self._compressor.extract_with_ast_scope
-                    if is_focal or is_hop_one_linked
-                    else self._compressor.extract_skeleton_only
-                )
-                compressed = self._compress(ranked, symbols_in_file, remaining, extract=extract_fn)
+                if is_focal or is_hop_one_linked:
+                    compressed = self._compress(
+                        ranked, symbols_in_file, remaining,
+                        extract=self._compressor.extract_with_ast_scope,
+                    )
+                else:
+                    # Call-Site Slicing (2026-08-12) replaces
+                    # extract_skeleton_only here -- see this module's own
+                    # docstring for the token-budget rationale.
+                    compressed = self._compress_call_site(ranked, symbols_in_file, remaining)
                 if compressed is not None:
                     packaged.append(compressed)
                     used += compressed.token_count
@@ -374,6 +424,74 @@ class ContextBudgetManager:
 
         excerpt_tokens = self._token_estimator.count_tokens(excerpt, _TOKEN_ESTIMATE_MODEL)
         if excerpt_tokens > remaining:
+            return None
+
+        return PackagedFile(
+            file_path=ranked.file_path,
+            content=excerpt,
+            relevance_score=ranked.relevance_score,
+            reason=ranked.reason,
+            token_count=excerpt_tokens,
+            truncated=True,
+        )
+
+    def _compress_call_site(
+        self, ranked: RankedFile, symbols_in_file: list[SymbolReference], remaining: int
+    ) -> PackagedFile | None:
+        """Call-Site Slicing (2026-08-12) -- windows +/-`_CALL_SITE_
+        WINDOW_LINES` around each of `symbols_in_file`'s own declaration
+        lines (merging/deduping identical windows via a plain `set`,
+        since two symbols close enough to share a window is common and
+        cheap to dedupe), instead of `extract_skeleton_only`'s whole-
+        scope-with-blanked-body. Used for every secondary/tertiary
+        candidate -- see this module's own docstring for the token-
+        budget rationale and what "call site" means given Phase 6's
+        domain contract.
+
+        Fallback logic (per this module's own docstring / the task this
+        implements): if the file can't be read, or `symbols_in_file`'s
+        own line numbers don't resolve to anything (stale/mismatched
+        line, e.g. the file changed between resolution and packaging --
+        the same real race `_compress`'s own docstring already
+        documents), this degrades to `extract_skeleton_only` (scope
+        slicing) via `_compress` rather than dropping the candidate
+        outright -- windowing failure is a reason to fall back, not to
+        exclude a real candidate that the wider method could still
+        render. Never raises."""
+        try:
+            content = self._permissions.safe_read_text(ranked.file_path)
+        except _READ_ERRORS:
+            return None
+
+        windows: list[str] = []
+        seen_lines: set[int] = set()
+        for symbol in symbols_in_file:
+            if symbol.start_line in seen_lines:
+                continue
+            seen_lines.add(symbol.start_line)
+            window = self._compressor.extract_call_site_window(
+                content, symbol.start_line, _CALL_SITE_WINDOW_LINES
+            )
+            if window:
+                windows.append(window)
+
+        if not windows:
+            # Resolution failure (empty file, every symbol's line number
+            # out of range) -- fall back to the wider scope-slicing
+            # method rather than excluding a candidate windowing alone
+            # couldn't render.
+            return self._compress(
+                ranked, symbols_in_file, remaining, extract=self._compressor.extract_skeleton_only
+            )
+
+        excerpt = "\n\n".join(windows)
+        excerpt_tokens = self._token_estimator.count_tokens(excerpt, _TOKEN_ESTIMATE_MODEL)
+        if excerpt_tokens > remaining:
+            # A genuine budget miss, not a resolution failure -- the
+            # wider skeleton excerpt would only be MORE tokens, never
+            # fewer, so there's no wider fallback worth trying here;
+            # same "doesn't fit -> excluded" contract every other path
+            # in this file already has.
             return None
 
         return PackagedFile(

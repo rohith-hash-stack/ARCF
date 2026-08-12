@@ -533,11 +533,18 @@ def test_focal_supporting_candidate_keeps_full_body(tmp_path: Path) -> None:
     assert "implementation omitted" not in packaged[0].content
 
 
-def test_second_supporting_candidate_gets_skeleton_only(tmp_path: Path) -> None:
+def test_second_supporting_candidate_gets_call_site_window(tmp_path: Path) -> None:
+    # Call-Site Slicing (2026-08-12) replaced skeleton blanking for
+    # secondary/tertiary candidates -- a tight +/-8-line window around
+    # the symbol's own declaration line, not a whole-scope skeleton with
+    # the body stripped. Proven with a file long enough that the window
+    # boundary is actually observable: near-anchor content (inside the
+    # window) is kept, far-away content (outside it) is not.
     (tmp_path / "focal.py").write_text("def handler():\n    do_real_work()\n")
-    (tmp_path / "secondary.py").write_text(
-        "def helper():\n    unrelated_body_content()\n    return 2\n"
-    )
+    secondary_lines = [f"# padding {i}" for i in range(1, 99)]
+    secondary_lines += ["def helper():", "    near_anchor_content()", "    return 2"]
+    secondary_lines += [f"# padding {i}" for i in range(103, 140)]
+    (tmp_path / "secondary.py").write_text("\n".join(secondary_lines) + "\n")
     manager = _manager(tmp_path)
     ranked = [
         _ranked("focal.py", token_count=10, score=0.9, evidence_tier=EvidenceTier.SUPPORTING),
@@ -546,7 +553,7 @@ def test_second_supporting_candidate_gets_skeleton_only(tmp_path: Path) -> None:
     result = _empty_result(
         entry_points=[
             _fn_symbol("focal.py", "handler", 1, 2),
-            _fn_symbol("secondary.py", "helper", 1, 3),
+            _fn_symbol("secondary.py", "helper", 99, 101),
         ]
     )
 
@@ -554,8 +561,10 @@ def test_second_supporting_candidate_gets_skeleton_only(tmp_path: Path) -> None:
 
     by_path = {p.file_path: p for p in packaged}
     assert "do_real_work" in by_path["focal.py"].content
-    assert "unrelated_body_content" not in by_path["secondary.py"].content
-    assert "implementation omitted" in by_path["secondary.py"].content
+    assert "near_anchor_content" in by_path["secondary.py"].content  # within +/-8 of line 99
+    assert "padding 1\n" not in by_path["secondary.py"].content  # far outside the window
+    assert "padding 139" not in by_path["secondary.py"].content  # far outside the window
+    assert "implementation omitted" not in by_path["secondary.py"].content
 
 
 def test_hop_one_linked_secondary_candidate_keeps_full_body(tmp_path: Path) -> None:

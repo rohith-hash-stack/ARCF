@@ -70,6 +70,18 @@ _MAX_HEADER_SCAN_LINES = 15
 # excerpt exists if this really is the symbol they need.
 _OMITTED_BODY_PLACEHOLDER = "    // ... implementation omitted (secondary candidate; see focal candidate or a directly call-linked file for the body) ..."
 
+# Call-Site Slicing / Context Budget Re-balancing (2026-08-12): default
+# +/- line window around a single anchor line -- see
+# extract_call_site_window's own docstring for what "anchor" means here
+# (a symbol's own declaration line, not a literal call-expression source
+# line -- Phase 6's domain contract carries no such thing). Chosen to be
+# narrower than _AST_SCOPE_MARGIN_LINES's 5-line-each-side-of-the-WHOLE-
+# symbol-range (which for a multi-line function can span dozens of
+# lines even with the body blanked) -- an 8-line-each-side window
+# anchored on one line is a fixed, small cost regardless of how long the
+# underlying symbol's own range is.
+_DEFAULT_CALL_SITE_WINDOW_LINES = 8
+
 
 class SymbolRangeCompressor:
     def __init__(
@@ -210,6 +222,56 @@ class SymbolRangeCompressor:
             self._render_with_omissions(lines, start, end, omissions) for start, end in merged
         ]
         return "\n\n".join(excerpts)
+
+    @staticmethod
+    def extract_call_site_window(
+        file_content: str, line_number: int, window_size: int = _DEFAULT_CALL_SITE_WINDOW_LINES
+    ) -> str:
+        """Call-Site Slicing (2026-08-12, Context Budget Re-balancing) --
+        a tight +/-`window_size`-line window around a single 1-indexed
+        `line_number`, used by ContextBudgetManager for secondary/
+        tertiary candidates instead of `extract_skeleton_only`'s whole-
+        symbol-scope-with-blanked-body. Much smaller, fixed-size
+        footprint per candidate regardless of how long the underlying
+        symbol's own range is -- see budget_manager.py's own docstring
+        for what that funds (the additive Hop-2 filling pass).
+
+        Deliberately takes already-read `file_content` (not a
+        `file_path` + `PermissionManager` read, unlike every other
+        method on this class) and a bare `line_number` rather than a
+        `list[SymbolReference]` -- this is a low-level windowing
+        primitive, not a symbol-aware orchestrator; the caller (which
+        already has file content and knows which symbol(s) it's
+        anchoring on) is responsible for iterating/merging when a file
+        has more than one relevant line.
+
+        "Call site" here means whatever anchor line the caller resolved
+        -- in practice, a symbol's own declaration line (SymbolReference.
+        start_line), NOT a literal call-EXPRESSION source line. Phase 6's
+        domain contract (see this module's own docstring on the Phase
+        5/6 boundary) carries no call-expression location at all --
+        `CallReference.location` exists only in code_intelligence/'s
+        internal IR (domain/code_intelligence.py), deliberately never
+        crossing into domain/context_resolution.py's SymbolReference/
+        FileReference/CallEdge projections. This is the closest anchor
+        Phase 6 actually has, not a literal invocation line.
+
+        Boundary-safe by construction, never raises: empty `file_content`
+        or a `line_number` outside `[1, total_lines]` (a stale/mismatched
+        resolution) returns "" rather than raising, so a caller can
+        treat "no excerpt" as a uniform signal to fall back to a wider
+        extraction method -- see ContextBudgetManager._compress_call_site
+        for that fallback."""
+        if not file_content:
+            return ""
+        lines = file_content.splitlines()
+        total_lines = len(lines)
+        if total_lines == 0 or line_number < 1 or line_number > total_lines:
+            return ""
+
+        start = max(1, line_number - window_size)
+        end = min(total_lines, line_number + window_size)
+        return f"# lines {start}-{end}\n" + "\n".join(lines[start - 1 : end])
 
     @staticmethod
     def _render_with_omissions(
