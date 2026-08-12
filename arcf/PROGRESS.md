@@ -1,6 +1,6 @@
 # ARCF Progress Log
 
-**Last updated:** 2026-08-12 12:02 IST · **Base/main HEAD:** `ebdebb6` (unchanged) · **Tests:** 938/938 passing
+**Last updated:** 2026-08-12 12:40 IST · **Base/main HEAD:** `4f68f69` · **Tests:** 942/942 passing
 
 Read this file top-to-bottom to pick up where things stand — it's the fast-start doc for a new
 chat session. Detailed *why* for each entry lives in Claude's memory files (per-topic, e.g.
@@ -15,6 +15,36 @@ after each merge to `Base`, not after every small step.
   `Base`, merged back only once resolved. Never left half-done on `Base`/`main`.
 - Every merge to `Base` is preceded by a full `pytest` run (currently 930 tests) — zero regressions
   is the bar, not a goal.
+
+### 2026-08-12 — Shipped: Disambiguation-Driven Candidate Pruning (grew directly out of Arm 1's own root-cause finding)
+`ContextResolver.resolve()` computed `disambiguation.preferred`/`ambiguous` via
+`ReferenceResolver.resolve_with_disambiguation`'s locality scoring but never consumed it — every
+raw same-named match still became a candidate regardless of whether locality scoring had already
+narrowed a multi-symbol name to one confident winner (Arm 1's own precise finding, see below).
+Fixed on `fix/context-resolver-disambiguation-pruning`: `matches` now prunes to `[preferred]`
+whenever `disambiguation.ambiguous` is `False` and there was more than one raw match — same trust
+`path_hints` already extends to a caller-provided signal, now extended to the resolver's own
+locality-derived one. `ambiguity_confidence` still reflects the raw pre-prune match count,
+unchanged. 942/942 tests (4 new). Merged `4f68f69`.
+
+**Verified via same-process ablation (real Consul, all 6 tasks)**: `ambiguous_targets` now
+correctly reflects successful disambiguation (task5: 2 flagged-ambiguous entities → 0). Packaged-
+file count unchanged on these tasks — traced to a *separate* mechanism, `_expand_calls`'s own
+independent name-based call-graph expansion (`locality_filtered_callers_of_name`), which
+re-introduces same-named files regardless of this fix.
+
+**A natural follow-on (scoping that lookup to the disambiguated symbol ID instead of the bare
+name) was verified NOT to help *before being built***: `CallGraph.caller_files_of(cache.New's own
+ID)` already returns 460 files — `CallGraph`'s own construction-time resolution (`resolver.
+resolve()`, non-disambiguating) over-attributes every bare `New(...)` call site to *every*
+same-named symbol's ID, independent of which lookup later reads it. ID-scoped vs. name-scoped
+locality filtering produced 31 vs. 32 files — a 1-file difference, not a fix. Not implemented.
+**Documented as a genuinely different future hypothesis** (see Open/unresolved below): tightening
+`has_locality`'s transitive import-graph-reachability tier (same file/directory/import-reachable
+in either direction, currently unbounded-hop) is the real lever, but it's a separate, riskier
+change (affects every locality-filtered call site in the codebase) needing its own isolated
+falsification protocol, not a quick follow-up to this fix.
+→ memory: `arcf_disambiguation_pruning_shipped`
 
 ### 2026-08-12 — Competitive Multi-Frontier Experimentation: Arm 1 (Type Graph / G_type Indexing, Go-only) falsified — with the most precise root cause of the three arms so far
 Third arm of the planned 4-arm experiment (Arms 2 and 4 above; Arm 3 String Dispatch Index not
@@ -263,6 +293,16 @@ Fixed a false-positive tie where `"implement"` substring-matched inside `"implem
   hints specifically but the general case is still narrow.
 - **DRP's `subsystem_graph.py`** — never had the CallGraph locality filter applied; deliberately
   deferred, would need the full 5-repo DRP ground-truth sweep first.
+- **`has_locality`'s transitive import-graph-reachability tier is likely too permissive** — the
+  actual blocker preventing Disambiguation-Driven Candidate Pruning (above) from changing packaged
+  output on real Consul: for a foundational, widely-imported package like `agent/cache`, "import-
+  reachable in either direction" (currently unbounded-hop, `locality.py`) lets in most of the
+  `agent/*` tree regardless of real relevance. Verified NOT fixable by scoping
+  `locality_filtered_callers_of_name` to a symbol ID instead of a bare name (1-file difference out
+  of 34 — the real permissiveness is in `has_locality` itself, not which function reads it). A real
+  candidate for a future, ISOLATED falsification experiment (tighter reachability, e.g. direct-
+  import-only) — not a quick follow-up to any existing fix, since it would affect every locality-
+  filtered call site in the codebase, not just the disambiguation path.
 
 ## Maintenance note for Claude
 
