@@ -1,6 +1,6 @@
 # ARCF Progress Log
 
-**Last updated:** 2026-08-12 IST · **Base/main HEAD:** `407a999` · **Tests:** 942/942 passing
+**Last updated:** 2026-08-12 IST · **Base/main HEAD:** `d0476ad` · **Tests:** 945/945 passing
 
 Read this file top-to-bottom to pick up where things stand — it's the fast-start doc for a new
 chat session. Detailed *why* for each entry lives in Claude's memory files (per-topic, e.g.
@@ -18,6 +18,41 @@ after each merge to `Base`, not after every small step.
 - **`CHECKLIST.md`** (repo root) — the forward-looking backlog/tracker, separate from this file.
   Read its session-tracker block first when starting a session; this file (`PROGRESS.md`) stays the
   dated shipped/falsified log.
+
+### 2026-08-12 — CHECKLIST.md item #3 (Locality UPS Suppression) falsified — same disposition as Arms 1/2/4
+Package-level Utility Package Score (`indegree + cross_subsystem_usage`, top-5th-percentile
+threshold relative to each repo's own distribution, plus an absolute `indegree>=3` floor added
+after a unit test caught the percentile-only version over-flagging ordinary packages on small
+repos): `_locality_filtered_bfs` now stops expanding past a hub package's file instead of using it
+as a further bridge to unrelated files. `enable_ups_suppression` threaded through
+`locality_filtered_transitive_callers/callees` → `ContextResolver._expand_calls`/`resolve()` →
+`CodeIntelligenceContractService.attach_code_intelligence`/`_resolve` (plus a test-only
+`traversal_depth_override`), default `False`, zero behavior change for every existing caller.
+945/945 tests (3 new).
+
+**Free deterministic pre-check (real Consul, same-process ablation, `scripts/
+ups_suppression_ablation.py`)**: byte-identical at the default `traversal_depth=1` — traced (not
+assumed) to `_locality_filtered_bfs`'s own loop never recording hop-2+ into its result at
+`max_depth=1`, so the mechanism is structurally unreachable there. Real production varies depth by
+`RetrievalTaskType` (`TRAVERSAL_DEPTH`, `task_profile.py`) — swept depths 2/3 and found a real,
+purely-subtractive effect on synthetic bare-name probes: `Register` -36.6%/-35.6% token footprint,
+`New` -3.5%/-9.4%. Genuine cross-package ground truth (`task6`-style) unaffected at every depth,
+determinism 100%.
+
+**Real-LLM validation closed it out**: `classify_retrieval_task` against every existing benchmark
+query confirmed ALL of them classify to depth=1 by default — wired a `traversal_depth_override` to
+test at a real depth=2 anyway. A single free-to-check real-LLM run (gpt-4o-mini, real Consul)
+showed `candidate_count` **identical, on vs. off**, for both task1 and task5: real SLM-1 extraction
+pulled a qualified `Catalog.Register` (task1) and a path-hinted `['agent/cache', 'New']` (task5,
+where Feature 1's already-shipped query-wide path-hint masking narrows resolution before
+hop-expansion ever runs) — neither hits the bare-ambiguous-name path the synthetic probes used.
+Same shape as Arms 1/2/4: correctly built, real synthetic-probe effect, no real effect once real
+entity extraction and already-shipped upstream narrowing are in the loop. User chose to stop before
+the full paid `n_runs=5` statistical run given this pattern.
+
+**Outcome**: not merged — preserved unmerged on `experiment/locality-utility-suppression` as the
+historical record, same disposition as Arms 1/2/4.
+→ memory: `arcf_ups_suppression_falsified`
 
 ### 2026-08-12 — Added: `CHECKLIST.md` tracking doc
 User wrote a 15-section gap-analysis doc proposing ARCF improvements; reviewed against the real

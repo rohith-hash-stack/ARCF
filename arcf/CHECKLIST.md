@@ -34,21 +34,18 @@ Update this block at the end of every session so a new session (or a continuatio
 limit) can resume without re-deriving anything.
 
 - **Last updated:** 2026-08-12 (this session)
-- **Active branch:** `experiment/locality-utility-suppression` (off `Base`)
-- **Active item:** #3, Locality UPS suppression — item-only scope confirmed with user (not the
-  full Tier 1 batch)
-- **In-flight state:** implemented, unit-tested (945/945 green), committed to the branch
-  (`bec0cf7`). Deterministic same-process ablation run and passed with real, positive, but
-  query-dependent evidence (see item #3's own section for the full table) — `Register` clears the
-  user's ≥15% token-footprint gate (36.6%/35.6% at depth 2/3), `New` does not (3.5%/9.4%). Genuine
-  cross-package case unaffected at every depth; determinism 100%. Not yet merged to `Base` — the
-  statistical-significance gate (p<0.05 precision, needs `validate_llm_grounding.py --n-runs`,
-  real API cost) is still open, and per the user's own earlier choice that step was deliberately
-  deferred until the free pre-check looked promising.
-- **Next step:** get user go-ahead on spending the paid LLM-harness run (real cost/time) before
-  running it. If approved and it passes: full test suite green check, then merge to `Base` per the
-  zero-known-issues rule. If declined or it fails: report honestly, leave parked/unmerged on this
-  branch like Arms 1/2/4, update status here and in `PROGRESS.md` either way.
+- **Active branch:** none — item #3 closed out, `experiment/locality-utility-suppression` left
+  unmerged as a historical record (same treatment as `exp/enhanced-path-locality`,
+  `exp/semantic-reranker`, `exp/type-graph-indexing`)
+- **Active item:** none. Item #3 (Locality UPS suppression) is `Parked (falsified)` — see its own
+  section for the full evidence chain (free ablation → real disconfirming n=1 LLM check → user
+  chose to stop before the full paid run).
+- **In-flight state:** none. `main`/`Base` are clean, 945/945 tests green on the last checkpoint
+  before the experiment branch diverged. `PROGRESS.md` updated in the same session with the final
+  dated entry.
+- **Next step:** pick the next checklist item per the decided priority order above. #5 (Canonical
+  IR gap check) is next in Tier 1 and is a cheap verify-first spike, not a build — good next pick.
+  #10 (Symbol-Identity mode) is the other remaining Tier-1 item.
 
 ## Priority order (decided 2026-08-12)
 
@@ -122,7 +119,7 @@ items parked until new evidence shows up.
 
 ## 3. Locality — Utility Package Score (smooth suppression)
 
-- **Status:** In Progress
+- **Status:** Parked (falsified) — same disposition as Arms 1/2/4, not merged
 - **Source:** original doc §3
 - **Why promising:** aimed at the one concrete, still-open, documented lever from the most
   recently shipped work: `has_locality`'s transitive import-reachability tier is currently
@@ -256,9 +253,44 @@ items parked until new evidence shows up.
   promising, which it now does for at least one of the two flagship queries. **Not a clean pass —
   a real, non-zero, safe, but query-dependent effect**, reported as such, not rounded up.
 
-- **Status, revised:** `In Progress` — deterministic pre-check passed with real (if
-  query-dependent) evidence; full statistical LLM-harness run is the next step, pending user go-
-  ahead (real API cost/time). Branch: `experiment/locality-utility-suppression`.
+- **Real disconfirming evidence that closed this out (2026-08-12), found via a free n=1 sanity
+  check BEFORE spending on the full paid run:** the deterministic pre-check above used bare,
+  synthetic probes (`target_names=["Register"]`/`["New"]` directly) — not what real SLM-1 entity
+  extraction actually produces from the harness's own natural-language queries. Wired
+  `enable_ups_suppression` + a test-only `traversal_depth_override` through `service.py`
+  (`attach_code_intelligence`/`_resolve`) so the mechanism could be tested at a real depth (2,
+  matching `REPOSITORY_EXPLANATION`/`ARCHITECTURE_UNDERSTANDING`/`PERFORMANCE`) against real
+  entity-extracted queries — necessary because a direct check (`classify_retrieval_task` against
+  every existing benchmark query) confirmed ALL of them classify to depth=1 by default, where this
+  mechanism is structurally inert.
+
+  A single real-LLM run (gpt-4o-mini, real Consul, `scripts/ups_suppression_llm_validation.py`)
+  showed `candidate_count` **identical, on vs. off, for both task1 and task5** — not just a small
+  effect, zero:
+  - task1: real SLM-1 extraction pulled `Catalog.Register` (qualified), not bare `Register` — a
+    different resolution path than the synthetic probe, one that doesn't hit the ambiguous-fan-out
+    mechanism this fix targets at all (21 candidates, identical both conditions).
+  - task5: real SLM-1 extraction pulled `['agent/cache', 'New']` — the path hint is already present
+    in the query, and Feature 1 (query-wide path-hint masking, already shipped) narrows `New`'s
+    resolution *before* hop-expansion ever runs (13 candidates, identical both conditions). The
+    small packaged-token difference (4409→4435) traced to packaging-layer noise, not the
+    suppression mechanism, since the candidate set itself never changed.
+
+  **Same shape of finding as Arms 1/2/4**: correctly implemented, real unit-tested mechanism, real
+  effect on a synthetic worst-case probe — but on real queries, already-shipped upstream narrowing
+  (path hints, disambiguation-driven pruning) and real entity extraction's own qualification habits
+  mean the raw fan-out this fix targets rarely occurs in practice. Presented this single free result
+  to the user before spending on the full `n_runs=5` statistical run; user chose to stop rather than
+  spend further given the pattern.
+
+- **Status, final:** `Parked (falsified)` — not merged, same disposition as Arms 1/2/4. Preserved
+  on `experiment/locality-utility-suppression` (unmerged) as the historical record — a correctly
+  built, well-tested mechanism that real queries don't exercise, not a broken implementation. If
+  revisited, needs either a genuinely different target (the raw name-based
+  `locality_filtered_callers_of_name` path task1/task5 actually hit turned out NOT to be what was
+  modified here — see item 2's CallGraph-provenance idea for a mechanism that might reach it) or new
+  evidence that real queries do sometimes classify to depth≥2 with genuinely unqualified,
+  path-hint-free ambiguous names.
 
 ## 4. Grounding Quality — Structural vs. Behavioral
 
