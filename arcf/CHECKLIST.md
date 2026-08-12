@@ -524,12 +524,60 @@ the audit deliverable only, per the item's own "0 production code changes" succe
 
 ## 13. Observability & Telemetry
 
-- **Status:** Not Started
-- **Source:** original doc §14
+- **Status:** In Progress
+- **Source:** original doc §14, detailed spec supplied by user 2026-08-12
 - **Note:** real gap, no overlap with falsified work. High priority — pairs directly with item 11;
   neither is useful alone (telemetry needs something live to measure; deployment needs telemetry
   to know if a promotion is safe).
-- **Success criteria:** _not defined yet._
+
+- **Checked for existing infrastructure before building anything (not assumed clean-slate):**
+  `src/infrastructure/tracing.py` is real, existing OpenTelemetry span setup — trace-id-per-request,
+  export-optional — a different concern (distributed tracing) from structured retrieval-pipeline
+  telemetry. `src/telemetry/comparison_aggregator.py` + `domain/execution_ledger.py`'s
+  `ExecutionLedgerEntry` are a real, existing, *persisted* Phase 9 system (backed by
+  `arcf_execution_ledger.db`) for per-EXECUTION audit records (direct-vs-ARCF token/latency/cost
+  comparison) — coarser-grained, no origin-stage breakdown, no stage timing, a genuinely different
+  layer. This item is a new, complementary, in-memory capability, not a duplicate.
+
+- **Scope correction, found by reading `ContextPackager`/`ContextBudgetManager` directly:** the
+  spec's 4 named stage boundaries (`ast_extraction`, `graph_expansion`, `pruning`,
+  `final_selection`) don't map to 4 separately-callable functions in the real pipeline —
+  `ContextBudgetManager.select()` is ONE function that does the relative-score falloff gate
+  ("pruning") AND budget-fit/compression ("final_selection") together; `ContextResolver.resolve()`
+  similarly does entry-point matching AND graph expansion internally via private helpers
+  (`_expand_calls`/`_expand_subclasses`, already threaded twice this session for items #3 and #10).
+  Instrumenting inside those private methods a third time would mean invasive per-call-site timing
+  probes threaded through code already carrying two other opt-in mechanisms — real risk for
+  marginal gain. **Real design**: time the two genuine public boundaries as wholes
+  (`ContextResolver.resolve()`, `ContextPackager.package()`), and get the stage-level *counts* (not
+  timings) for free from data those calls already return — `origin_stage` per file (item #10's own
+  capability: `AST_DIRECT`+nothing-else-needed for "ast_extraction" count,
+  `SCOPED_GRAPH_EXPANSION`+`RAW_STRING_FALLBACK` for "graph_expansion" count) and
+  `ContextPackage.excluded_file_count`/`relevant_files` (already computed by `select()`) for
+  "pruning"/"final_selection" counts. Zero new internal instrumentation, zero new risk to code
+  already modified twice.
+
+- **Scope correction on "100% of telemetry payloads validate... across all 947+ tests":** the
+  collector is opt-in (a caller must attach it) — the existing 947 tests don't call it and won't be
+  retrofitted to (real scope creep across unrelated test files, against this session's own
+  discipline). Made literally true instead via an env-var-gated `conftest.py` wrapper
+  (`ARCF_TELEMETRY_VALIDATE=1`, default unset = zero behavior/overhead change to every existing
+  test) that monkeypatches `ContextResolver.resolve`/`ContextPackager.package` as pure
+  pass-throughs (same return value, same side effects) plus telemetry recording, for one explicit
+  verification run — not a permanent default.
+
+- **Success criteria:**
+  1. `TelemetryEvent` pydantic schema (query_id, classified_task, traversal_depth, stage latencies,
+     origin breakdown, budget signals) — required fields, not `Optional`, so "zero missing fields"
+     is enforced by construction, not a separate check.
+  2. `TelemetryCollector.get_run_summary()`/`assert_no_fallbacks()` — real, tested, and directly
+     callable from a CI-gate-style check (not just a demo).
+  3. `<2%` latency overhead — measured on real Consul, many iterations, real number reported, not
+     assumed.
+  4. 100% schema-valid payloads across the full 947+-test suite, real one-time verification run,
+     reported honestly (including if it's not 100%).
+- **Failure criteria:** any schema violation across the full-suite validation run, or measured
+  overhead ≥2%, means this stays unmerged/fixed before merge, not shipped with a caveat.
 
 ## 14. Failure Taxonomy & Automated Regression Attribution
 
