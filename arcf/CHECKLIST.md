@@ -33,16 +33,20 @@ first if you're picking up mid-item, `PROGRESS.md` for what's already landed.
 Update this block at the end of every session so a new session (or a continuation after a context
 limit) can resume without re-deriving anything.
 
-- **Last updated:** 2026-08-12 (this session — paused mid-gap-resolution, see "Production Readiness
-  Gap Resolution" section below)
-- **Active branch:** none. `experiment/locality-utility-suppression` left unmerged as a historical
-  record (same treatment as `exp/enhanced-path-locality`, `exp/semantic-reranker`,
-  `exp/type-graph-indexing`); `feature/symbol-identity-audit-trail`,
-  `feature/observability-telemetry`, `feature/operational-release-gate`,
-  `feature/incremental-index-equivalence`, `feature/negative-query-fpr-harness`,
-  `feature/grounding-structural-behavioral-split`, `feature/failure-taxonomy`,
-  `feature/validation-breadth-matrix`, and `feature/primary-priority-floor` all merged and deleted.
-- **Active item:** none — **Tier 1 AND Tier 2 fully closed out; Tier 3 items #9, #4, #14, and #8
+- **Last updated:** 2026-08-13 (this session — resuming gap #3 with a decided direction, see "3c"
+  under "Production Readiness Gap Resolution" below)
+- **Active branch:** `feature/local-inference-server`, off `Base`. Historical unmerged branches
+  unchanged: `experiment/locality-utility-suppression` (same treatment as `exp/enhanced-path-
+  locality`, `exp/semantic-reranker`, `exp/type-graph-indexing`, all left as historical record).
+  `feature/symbol-identity-audit-trail`, `feature/observability-telemetry`, `feature/operational-
+  release-gate`, `feature/incremental-index-equivalence`, `feature/negative-query-fpr-harness`,
+  `feature/grounding-structural-behavioral-split`, `feature/failure-taxonomy`, `feature/validation-
+  breadth-matrix`, and `feature/primary-priority-floor` all merged and deleted (unchanged from
+  before).
+- **Active item:** Gap #3 direction decided (self-hosted local inference server, not a paid API
+  vendor) — infra build in progress on `feature/local-inference-server`. See "3c" below for the
+  decision and its explicit success/failure criteria. Everything else unchanged — **Tier 1 AND Tier
+  2 fully closed out; Tier 3 items #9, #4, #14, and #8
   all shipped — Tier 3 fully closed out.** Item #4's real finding worth remembering: the new `G_struct`/`G_behav` split didn't
   just add a metric — run through the real Arm A pipeline it precisely diagnosed PROGRESS.md's own
   previously `unconfirmed` "Task 1 regression": the genuine entry-point file for tasks 1/3/5 is both
@@ -80,23 +84,26 @@ limit) can resume without re-deriving anything.
   (task4's file set changed but only by displacing non-ground-truth filler). `enable_primary_
   priority_floor` (default `False`) on `ContextBudgetManager.select()`/`ContextPackager.package()`,
   4 new unit tests, 992/992 total.
-- **In-flight state:** **PAUSED mid-work, 2026-08-12** — user is starting a separate, higher-priority
-  experiment. All 15 numbered checklist items are closed (shipped/falsified/parked/scoped-down, none
-  remain in Tier 3 or above). The active thread when paused is the **"Production Readiness Gap
-  Resolution"** section (below the item #15 entry, above Housekeeping) — read that section in full
-  before doing anything else in this area. Short version: 2 of 6 gaps done (composite score
-  re-verified and now clears 3.4/5.0 for the first time; SLM-1 determinism re-verified, closed), 2
-  are diagnosed with a fix ready to build but waiting on a go-ahead (`Listener` prompt bug; reranker
-  direction for the recall-gap boundary), 2 haven't been started (non-Go ground truth; release-gate
-  threshold calibration). `main`/`Base` clean and in sync, full test suite green (992/992) as of this
-  checkpoint commit.
-- **Next step:** Resume the "Production Readiness Gap Resolution" section. Do NOT start a fresh
-  investigation of any of its 6 gaps from scratch — every one already has real, traced evidence and
-  either a concrete next action or an explicit blocker recorded there. Separately, still flagged but
-  not scheduled from the earlier checklist work: (1) lexical-probe-recovery's real token/candidate-
-  count cost on adversarial queries (13–39 files even at correctly-low confidence, from item #9);
-  (2) resuming the paused 50-repo QA sweep ([[arcf_repo_sweep_50]], 3/50 done) — a genuinely separate
-  activity, never blocking anything above, still open on its own.
+- **In-flight state:** **RESUMED 2026-08-13.** The prior pause (2026-08-12, user starting a separate
+  higher-priority experiment — a Jina-Reranker-on-public-repos investigation) is superseded: that
+  investigation surfaced no API keys (Jina/GitHub) as the real blocker, which led to a direct
+  decision on gap #3's own open question instead of finishing the external benchmark. See "3c" below
+  for the decision. Gaps 2b (`Listener` prompt bug) and 3b (task6 multi-hint collision) are
+  unchanged — still diagnosed, not fixed, no go-ahead given yet. Gaps 4/5/6 still not started.
+  `main`/`Base` clean and in sync, full test suite green (992/992) as of the last checkpoint commit
+  (`4dbc3a3`) before this session's branch work began.
+- **Next step:** Build `feature/local-inference-server` per "3c"'s success criteria (self-hosted
+  SLM-1 endpoint reachable through the existing `LiteLLMClient`, zero new pip dependency; a reranker
+  HTTP client wired against a local TEI CPU server, returning real scores for a real candidate set).
+  Once that merges to `Base`, open `exp/reranker-pre-budget-candidate-selection` as its own child
+  branch to actually resolve gap #3 (fire only when `disambiguation.ambiguous is True`, real ground
+  truth = task1/task5/task6, same-process ablation per [[arcf_arm2_semantic_reranker_falsified]]'s
+  now-standard verification method) — do not conflate the infra branch with the experiment branch;
+  a working local server is not itself evidence the reranker placement helps. Do NOT start a fresh
+  investigation of gaps 2b/4/5/6 from scratch — each already has real, traced evidence recorded
+  above. Separately, still flagged but not scheduled: (1) lexical-probe-recovery's real token/
+  candidate-count cost on adversarial queries (13–39 files even at correctly-low confidence, from
+  item #9); (2) resuming the paused 50-repo QA sweep ([[arcf_repo_sweep_50]], 3/50 done).
 
 ## Priority order (decided 2026-08-12)
 
@@ -1398,6 +1405,47 @@ deterministic path already tried) — additive, not a replacement of the working
 Reuse `SymbolRangeCompressor` for candidate snippets, don't build new extraction. Real ground truth
 to test against: task5 ("New"), task1 ("Register"), and now also task6 (see 3b below — a second,
 independently-discovered real case this same mechanism should fix).
+
+### 3c. Direction decided (2026-08-13): self-hosted local inference server, not a paid API vendor
+
+Context: user started a separate deep-investigation brief (Jina Reranker evaluated against public
+repos — Traefik/SQLAlchemy pilot, issue→PR-mined ground truth) to answer gap #3's open "which
+vendor" question empirically. Scoping that investigation surfaced the real blocker before any
+benchmark ran: no `JINA_API_KEY`, no `GITHUB_TOKEN` (unauthenticated GitHub API capped at 60 req/hr,
+not enough to mine real ground truth), and this machine has no GPU. Rather than keep fighting API
+access, the user asked directly: can ARCF host its own SLM-1 model and its own reranker on one local
+server instead of paying/keying into a vendor, does it work, and does it violate ARCF's philosophy.
+
+**Decision: yes, self-hosted, on both counts.**
+- **Technically works, and fits existing code better than the vendor-API route did**:
+  `src/infrastructure/llm_client.py`'s `LiteLLMClient` is already provider-agnostic (`litellm.acompletion`)
+  — pointing SLM-1 at a self-hosted OpenAI-compatible endpoint (Ollama/vLLM/TGI/LM Studio) is an
+  `api_base` + model-string change, zero new dependency. Hugging Face's Text Embeddings Inference
+  (TEI) serves reranker models (BGE, Jina's open checkpoints) over HTTP and ships a CPU image — this
+  machine has no GPU (confirmed: no `nvidia-smi`, no `torch` installed) so CPU-only is the only
+  option here regardless, and it's sufficient at pilot/production query volumes for ARCF (reranking
+  fires only on already-ambiguous candidates, a small fraction of real queries per gap #3's own
+  scoping notes below).
+- **Does not violate ARCF's deterministic-first philosophy**: that philosophy is about *where*
+  non-determinism enters the pipeline and how contained/replaceable it is, not about who hosts the
+  model. A self-hosted pinned checkpoint is arguably *more* reproducible than an opaque vendor API
+  whose version you don't control. The real risk isn't vendor-vs-self-hosted — it's the *placement*
+  risk [[arcf_arm2_semantic_reranker_falsified]] already proved out: a reranker bolted on
+  post-packing is inert regardless of who serves the model. This carries forward unchanged into
+  `exp/reranker-pre-budget-candidate-selection` (see gap #3's own scoping notes above, unchanged):
+  fire only when `disambiguation.ambiguous is True`, pre-budget, additive not a replacement.
+
+**Success/failure criteria for `feature/local-inference-server` (this branch, infra only — no
+grounding-quality claims made or tested here, that's the separate follow-on experiment's job)**:
+- Success: a local server (Ollama/vLLM-equivalent + TEI CPU image, one compose stack) is reachable;
+  `LiteLLMClient.complete()` produces a real structured-extraction response through it with zero new
+  pip dependency beyond what `litellm`'s OpenAI-compatible path already requires; a new reranker HTTP
+  client in `src/infrastructure/` returns real relevance scores for a real (query, candidate-snippet)
+  batch against the local TEI server.
+- Failure: if the self-hosted SLM-1 model can't reliably produce the same structured JSON contract
+  `intent_extraction.py` requires (a real risk — smaller open models are often worse at strict
+  structured output than `gpt-4o-mini`), this branch stays scoped to infra + reranker only, and
+  SLM-1 hosting is flagged as its own separately-evidenced follow-on, not forced through.
 
 ### 3b. Task6 multi-path-hint collision — new finding, same family as #3, NOT fixed
 
