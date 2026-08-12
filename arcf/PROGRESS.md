@@ -1,6 +1,6 @@
 # ARCF Progress Log
 
-**Last updated:** 2026-08-12 IST · **Base/main HEAD:** `9bdb885` · **Tests:** 981/981 passing
+**Last updated:** 2026-08-12 IST · **Base/main HEAD:** `73aae6d` · **Tests:** 988/988 passing
 
 Read this file top-to-bottom to pick up where things stand — it's the fast-start doc for a new
 chat session. Detailed *why* for each entry lives in Claude's memory files (per-topic, e.g.
@@ -18,6 +18,37 @@ after each merge to `Base`, not after every small step.
 - **`CHECKLIST.md`** (repo root) — the forward-looking backlog/tracker, separate from this file.
   Read its session-tracker block first when starting a session; this file (`PROGRESS.md`) stays the
   dated shipped/falsified log.
+
+### 2026-08-12 — Shipped: CHECKLIST.md item #9 (Negative Queries / False-Positive Rate)
+New `ConfidenceLabel` enum + `TelemetryEvent.confidence_label` computed property
+(`EMPTY_CANDIDATE_SET`/`LOW_CONFIDENCE`/`CONFIDENT_MATCH`), derived from `origin_breakdown` data
+item #10/#13 already compute — real `#13` telemetry integration, not informal reuse. Negative-query
+FPR harness tested through the real `CodeIntelligenceContractService.attach_code_intelligence` —
+not bare `ContextResolver` — since the actual false-positive risk mechanisms (lexical-probe-
+recovery, `evidence_fallback.py`) live in `service.py`'s orchestration. `target_names` hand-
+specified per query (simulating a plausible-but-wrong SLM-1 extraction), real adversarial query
+text passed as `raw_request` so lexical probing gets a genuine chance to misfire.
+
+**Two wrong test premises caught and corrected before shipping**: a fixture built to "share a
+lexical root" with a fabricated name did NOT actually trigger `lexical_symbol_probe.py`'s real
+6-character-prefix rule (checked directly via `shares_lexical_root()`) — rebuilt with a genuine
+collision. "in this repository" wording did NOT trigger `RepositoryScopeClassifier`'s
+`repository_scope=True` — needed a documentation-word + repository-word combination, confirmed
+directly.
+
+**Decisive real finding**: the genuine collision revealed that origin_stage alone can't distinguish
+a confident exact-name match from a probabilistic lexical-probe recovery (both land in
+`AST_DIRECT`) — but `evidence_tier` already can (`PRIMARY` vs `SUPPORTING`, the system's own
+existing confidence signal). Refined the FPR formula to require both. **Real Consul verification
+(7 queries) made this decisive, not just theoretical**: raw origin-stage-only FPR (the spec's
+literal formula) = **100%** — diagnostically useless at real scale (28,174 symbols means *some*
+accidental 6-char-prefix collision fires for nearly any adversarial query). Every one of 166 real
+candidate files across the run was tagged `evidence_tier=SUPPORTING`, none `PRIMARY` — refined FPR
+= **0%**, clears the ≤5% gate cleanly. Both numbers reported, not just the passing one. A related
+cost (13–39 candidate files spent even at correctly-low confidence) flagged as a genuine future
+falsification-experiment candidate, deliberately not bundled into this item. 8 new tests, 988/988
+total. Merged `73aae6d`.
+→ memory: `arcf_negative_query_fpr_shipped`
 
 ### 2026-08-12 — CHECKLIST.md item #7 (Incremental Indexing) verified already solved — Tier 2 complete
 Before designing anything against the spec's elaborate Diff-Driven Scope Identification / Targeted
