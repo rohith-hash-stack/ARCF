@@ -1,6 +1,6 @@
 # ARCF Progress Log
 
-**Last updated:** 2026-08-12 IST · **Base/main HEAD:** `73aae6d` · **Tests:** 988/988 passing
+**Last updated:** 2026-08-12 IST · **Base/main HEAD:** `f6f1e47` · **Tests:** 988/988 passing
 
 Read this file top-to-bottom to pick up where things stand — it's the fast-start doc for a new
 chat session. Detailed *why* for each entry lives in Claude's memory files (per-topic, e.g.
@@ -48,7 +48,7 @@ recall-gap attempts.
 pipeline; task6's behavioral hit confirmed genuine `SCOPED_GRAPH_EXPANSION` (a real call-graph hop),
 not adjacency luck. Determinism verified: task6 run twice through the full pipeline produced
 byte-identical `packaged_files` and scores. All 4 user success gates met (see CHECKLIST.md item #4
-for the full table). 988/988 tests (unchanged — zero `src/` changes). Merged `<pending>`.
+for the full table). 988/988 tests (unchanged — zero `src/` changes). Merged `f6f1e47`.
 → memory: `arcf_grounding_structural_behavioral_shipped`
 
 ## How this project is organized
