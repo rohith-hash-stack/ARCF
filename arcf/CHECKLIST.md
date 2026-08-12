@@ -39,8 +39,8 @@ limit) can resume without re-deriving anything.
   `exp/type-graph-indexing`); `feature/symbol-identity-audit-trail`,
   `feature/observability-telemetry`, `feature/operational-release-gate`,
   `feature/incremental-index-equivalence`, `feature/negative-query-fpr-harness`,
-  `feature/grounding-structural-behavioral-split`, `feature/failure-taxonomy`, and
-  `feature/validation-breadth-matrix` all merged and deleted.
+  `feature/grounding-structural-behavioral-split`, `feature/failure-taxonomy`,
+  `feature/validation-breadth-matrix`, and `feature/primary-priority-floor` all merged and deleted.
 - **Active item:** none — **Tier 1 AND Tier 2 fully closed out; Tier 3 items #9, #4, #14, and #8
   all shipped — Tier 3 fully closed out.** Item #4's real finding worth remembering: the new `G_struct`/`G_behav` split didn't
   just add a metric — run through the real Arm A pipeline it precisely diagnosed PROGRESS.md's own
@@ -64,21 +64,37 @@ limit) can resume without re-deriving anything.
   symbols spanning two languages in one graph, for `vllm`), and surfaced a real Topology Drift
   finding: fallback ratio varies sharply by repo (Go 4% vs. Python 85.7%/Java 50%/Mixed 66.7%),
   plausibly repo-size-driven (small candidate sets mean less real call-graph to expand into) rather
-  than proven language-specific — flagged, not isolated, matching the standing discipline.
-- **In-flight state:** none. `main`/`Base` clean and in sync, full test suite green (988/988).
-- **Next step:** **All 14 checklist items now have a status** (shipped, falsified/parked, or
+  than proven language-specific — flagged, not isolated, matching the standing discipline. Item #15
+  (Oversized Entry-Point Budget Allocation, not in the original 15-section doc — a follow-on
+  falsification experiment against item #4's own "Task 1 regression" finding) then **recovered
+  task1's `G_struct` from 0.0 to 1.0** on the real full pipeline: traced the real mechanism first
+  (task1's entry point clears the falloff gate and its own compressed excerpt is tiny, 46-50 tokens
+  — the real cause is 19 `SUPPORTING`-tier fan-out files consuming 4,481 of a 4,500-token budget
+  before its turn ever comes), confirmed via monkey-patching `_compress`, not assumed. Built only
+  the "PRIMARY Node Priority Floor" mechanism from the spec's two proposed options — "AST Structural
+  Windowing" was checked and found to have zero marginal effect on this specific real case
+  (compression was never the bottleneck). Checked task6's opposite tier/rank shape for regression
+  risk BEFORE trusting the fix, via a real same-process ablation across all 6 `BENCHMARK_TASKS` —
+  tasks 2/3/5 byte-identical (correctly untouched, a different mechanism), task4/6 held at 1.0
+  (task4's file set changed but only by displacing non-ground-truth filler). `enable_primary_
+  priority_floor` (default `False`) on `ContextBudgetManager.select()`/`ContextPackager.package()`,
+  4 new unit tests, 992/992 total.
+- **In-flight state:** none. `main`/`Base` clean and in sync, full test suite green (992/992).
+- **Next step:** **All 15 checklist items now have a status** (shipped, falsified/parked, or
   correctly scoped-down) — no items remain in Tier 3 or above. Remaining Tier 4 items (**#2**
   CallGraph edge provenance, **#6** typed query dependency graph) and Parked items (**#1**, **#12**)
   stay exactly as their own entries describe (lower confidence of payoff / blocked on SLM-1
   determinism / same-shape-as-falsified pending new evidence) — nothing forces picking one up next.
   Flagged but not scheduled, for whenever a future session wants a concrete next step: (1)
   lexical-probe-recovery's real token/candidate-count cost on adversarial queries (13–39 files even
-  at correctly-low confidence, from item #9); (2) the ambiguity-decay-vs-oversized-entry-point
-  ranking interaction found by item #4 (a genuinely new angle on the closed recall-gap mechanism,
-  not yet attempted); (3) isolating repo-size from language-specific causes behind item #8's real
-  fallback-ratio topology drift finding, above; (4) resuming the paused 50-repo QA sweep
-  ([[arcf_repo_sweep_50]], 3/50 done) — a genuinely separate activity from item #8, never blocking
-  it, still open on its own.
+  at correctly-low confidence, from item #9); (2) bare-name fan-out
+  (`locality_filtered_callers_of_name`) — same shape as the 8-times-falsified recall-gap thread,
+  needs genuinely new evidence before reopening; (3) isolating repo-size from language-specific
+  causes behind item #8's real fallback-ratio topology drift finding, above; (4) resuming the
+  paused 50-repo QA sweep ([[arcf_repo_sweep_50]], 3/50 done) — a genuinely separate activity from
+  item #8, never blocking it, still open on its own; (5) tasks 2/3/5's own ambiguity-decay-at-the-
+  falloff-gate mechanism (distinct from item #15's budget-crowding mechanism, deliberately untouched
+  here) remains the same closed, 8-times-falsified recall-gap boundary — no new evidence yet.
 
 ## Priority order (decided 2026-08-12)
 
@@ -1184,6 +1200,95 @@ the audit deliverable only, per the item's own "0 production code changes" succe
   non-deterministic repeat classification, or a required `src/` change — did not occur.
 
 - **Result:** Merged to `Base`/`main`, zero known open issues, zero `src/` changes. 988/988 tests.
+
+## 15. Oversized Entry-Point Budget Allocation — PRIMARY Priority Floor
+
+- **Status:** Shipped — merged to `main`/`Base`, branch deleted after merge
+- **Source:** not in the original 15-section doc — a follow-on falsification experiment against
+  item #4/#14's own real finding (the "Task 1 regression"), detailed spec supplied by user
+  2026-08-12, added as its own numbered item per the same precedent as item #3 (a real experiment
+  outside the original doc's numbering still gets a full entry). Recommended over the alternative
+  candidates (bare-name fan-out — same shape as the 8-times-falsified recall-gap thread; fallback-
+  ratio disparity — a measurement exercise, not a fix) specifically because it targets a
+  mechanism *distinct* from every prior falsified attempt, with real numbers already in hand.
+
+- **Real mechanism traced BEFORE writing anything** (monkey-patching `ContextBudgetManager.
+  _compress` to observe real args/return on a real Consul run, not assumed): task1's real entry
+  point (`agent/consul/catalog_endpoint.go`) clears the relative score falloff gate (score 0.6309 >
+  threshold 0.36) and is ranked 20th of 25 real survivors — every one of the 19 candidates ranked
+  above it is `evidence_tier=SUPPORTING` (real call-graph fan-out from the `Register` target's own
+  38-way ambiguity), while it is the FIRST `PRIMARY` candidate in the whole list. `_compress` IS
+  called for it, with `remaining=19` tokens — its own compressed excerpt (confirmed via
+  `SymbolRangeCompressor`, both `extract()` and `extract_with_ast_scope()`) is only 46-50 tokens,
+  tiny, but still doesn't fit in the 19 tokens left after 19 SUPPORTING decoys consumed 4,481 of the
+  4,500-token `UNKNOWN`-tier budget first.
+
+- **Scope correction against the spec's own two proposed mechanisms:** "AST Structural Windowing"
+  was **not built** — the real trace above shows compression was never the bottleneck (a 46-50-token
+  excerpt is already about as small as anything could be); building a new windowing subsystem would
+  have zero marginal effect on this specific, real, traced case. Only "PRIMARY Node Priority Floor"
+  was implemented, since it's the mechanism the real data actually points at.
+
+- **Real regression risk found and checked BEFORE trusting the fix:** task6 has the OPPOSITE shape
+  from task1 — its real behavioral answer (`agent/auto-config/tls.go`, `SUPPORTING`) is ranked #1,
+  while its `PRIMARY` candidates (including the real structural entry point, `cache.go`) are ranked
+  LAST (7th of 7). A naive "PRIMARY always first" reorder could plausibly starve `tls.go`'s own
+  budget — checked directly via a same-process ablation across ALL 6 real `BENCHMARK_TASKS`, not
+  assumed safe from task1 alone.
+
+- **Design:** `ContextBudgetManager.select()` gained one new parameter,
+  `enable_primary_priority_floor: bool = False` (every existing caller byte-identical unaffected,
+  confirmed by the full 988/988 suite before any new test was added). The relative score falloff
+  gate still runs first, over the original score-sorted `ranked_files`, untouched — the flag never
+  changes WHICH candidates survive it. Once survivors are known, the flag reorders ONLY the
+  greedy-fill/compression pass: a stable two-group partition (every `PRIMARY` survivor, in its own
+  existing relative score order, packed before every `SUPPORTING`/`EXPERIMENTAL` survivor, also in
+  its own existing relative order) — never a re-sort by a new score. `ContextPackager.package()`
+  threads the same flag through, default `False`.
+
+- **Real same-process ablation, all 6 tasks (`scripts/primary_priority_floor_ablation.py`, real
+  Consul, no LLM calls):**
+
+  | task | `G_struct` off→on | `G_behav` off→on | file set changed | tokens used off→on |
+  |---|---|---|---|---|
+  | task1 | 0.0 → **1.0** | N/A | yes | 4481 → 4445 |
+  | task2 | 0.0 → 0.0 | 0.0 → 0.0 | no | 2844 → 2844 |
+  | task3 | 0.0 → 0.0 | N/A | no | 250 → 250 |
+  | task4 | 1.0 → 1.0 | 1.0 → 1.0 | yes (subtractive only) | 3757 → 4493 |
+  | task5 | 0.0 → 0.0 | N/A | no | 4477 → 4477 |
+  | task6 | 1.0 → 1.0 | 1.0 → 1.0 | no | 4012 → 4012 |
+
+  Tasks 2/3/5 are byte-identical, exactly as predicted: their failures happen at the falloff gate
+  (before the packing-order fix ever applies), a mechanism this flag deliberately never touches —
+  real confirmation the fix is scoped precisely to the one case it targets, not a broad reshuffle.
+  Task4's file-set change, checked directly (not just the score): `{agent/http.go,
+  agent/http_ce.go, agent/consul/state/memdb.go, agent/consul/state/state_store.go}` were displaced
+  — 4 `SUPPORTING`-tier filler files, none of them ground truth — a purely subtractive trade-off,
+  not a lucky coincidence. Task6, despite its opposite tier/rank shape, stays completely
+  byte-identical — its own budget usage (4012 of 4500) never had enough crowding pressure for
+  reordering to matter either way.
+
+- **Success criteria:**
+  1. Task 1 Grounding Recovery (`G_struct = 1.0`) — **met**: 0.0 → 1.0, confirmed on the real full
+     pipeline, not a synthetic fixture.
+  2. Budget Enforcement (≤ 8,000 tokens) — **met**: every task's real token usage stayed within its
+     own effective ceiling (all ≤ 4,500 in this run, well under 8,000).
+  3. No Regression on Tasks 4 & 6 (`G_struct = G_behav = 1.0` maintained) — **met**, both tasks;
+     task4's underlying file set changed but only by displacing non-ground-truth filler.
+  4. Pre-Check Falsification (a real, nonzero packing diff, not 0% change) — **met**: 2 of 6 tasks
+     show a real, explained diff (task1, task4); the other 4 are correctly, predictably unaffected
+     (not a sign of a no-op — a sign the mechanism only fires where it should).
+- **Failure criteria:** task1 not recovering, any task4/6 score regression, a budget overflow past
+  8,000 tokens, or a byte-identical result on every task (indicating the flag never actually
+  engages) — did not occur.
+
+- **Real unit test coverage added** (`tests/context/test_budget_manager.py`, 4 new): default-off
+  behavior unchanged (a regression guard, not just an ablation script), the flag's core effect
+  (a low-score `PRIMARY` displacing exactly one higher-score `SUPPORTING` file, not a free win),
+  relative order preserved within each tier on a deliberately un-sorted input, and confirmation the
+  flag never rescues a real falloff-gate casualty. 992/992 total tests (4 new).
+
+- **Result:** Merged to `Base`/`main`, zero known open issues. 992/992 tests.
 
 ---
 
