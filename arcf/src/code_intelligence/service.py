@@ -73,6 +73,7 @@ from domain.context_resolution import (
     ContextResolutionResult,
     EvidenceTier,
     FileReference,
+    OriginStage,
     TokenEstimate,
 )
 from domain.versioning import LivingContract
@@ -969,6 +970,10 @@ class CodeIntelligenceContractService:
                     token_count=token_estimator.count_tokens(content, "gpt-4o-mini"),
                     evidence_tier=EvidenceTier.EXPERIMENTAL,
                     anchor_confidence=anchor.confidence if enable_confidence_propagation else None,
+                    # checklist item #10: genuinely symbol-less (filename/
+                    # path match, same category as evidence_fallback.py's
+                    # own matches, no SymbolIndex lookup involved).
+                    origin_stage=OriginStage.EVIDENCE_FALLBACK_MATCH,
                 )
                 merged_files[ref.file_path] = ref
                 added += 1

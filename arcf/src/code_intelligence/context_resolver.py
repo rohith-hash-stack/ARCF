@@ -58,6 +58,7 @@ from domain.context_resolution import (
     DependencyEdge,
     EvidenceTier,
     FileReference,
+    OriginStage,
     SymbolReference,
     TokenEstimate,
 )
@@ -168,6 +169,8 @@ class ContextResolver:
         unresolved_symbols: list[str] = []
         file_ambiguity_confidence: dict[str, float] = {}
         file_path_mask_confidence: dict[str, float] = {}
+        file_origin_stage: dict[str, OriginStage] = {}
+        file_parent_symbol_id: dict[str, str] = {}
         reference_resolver = ReferenceResolver(self._index.symbol_index)
 
         # Feature 1 (query-wide spatial path-hint masking, 2026-08-11):
@@ -310,6 +313,10 @@ class ContextResolver:
                     ambiguity_confidence,
                     file_path_mask_confidence,
                     path_mask_confidence,
+                    file_origin_stage,
+                    OriginStage.AST_DIRECT,
+                    file_parent_symbol_id,
+                    symbol.id,
                 )
                 if not expand_matches and symbol.id not in expand_eligible_ids:
                     continue
@@ -328,6 +335,8 @@ class ContextResolver:
                             file_tiers,
                             impacted_symbols,
                             call_edges,
+                            file_origin_stage,
+                            file_parent_symbol_id,
                         ),
                     )
                 elif symbol.kind is SymbolKind.CLASS:
@@ -342,6 +351,8 @@ class ContextResolver:
                             file_chains,
                             file_tiers,
                             impacted_symbols,
+                            file_origin_stage,
+                            file_parent_symbol_id,
                         ),
                     )
 
@@ -391,6 +402,8 @@ class ContextResolver:
                     evidence_tier=file_tiers.get(file_path, EvidenceTier.SUPPORTING),
                     ambiguity_confidence=file_ambiguity_confidence.get(file_path),
                     path_mask_confidence=file_path_mask_confidence.get(file_path),
+                    origin_stage=file_origin_stage.get(file_path),
+                    parent_symbol_id=file_parent_symbol_id.get(file_path),
                 )
                 for file_path in sorted(candidate_files)
             ],
@@ -476,6 +489,8 @@ class ContextResolver:
         file_tiers: dict[str, EvidenceTier],
         impacted_symbols: dict[str, Symbol],
         call_edges: list[CallEdge],
+        file_origin_stage: dict[str, OriginStage] | None = None,
+        file_parent_symbol_id: dict[str, str] | None = None,
     ) -> int:
         max_hop = 0
         budget = _TokenBudget(self._index, candidate_files, max_expansion_tokens)
@@ -515,6 +530,10 @@ class ContextResolver:
                     f"calls {name}",
                     (f"defines {name}", f"calls {name}"),
                     EvidenceTier.SUPPORTING,
+                    file_origin_stage=file_origin_stage,
+                    origin_stage=OriginStage.RAW_STRING_FALLBACK,
+                    file_parent_symbol_id=file_parent_symbol_id,
+                    parent_symbol_id=symbol.id,
                 )
                 max_hop = max(max_hop, 1)
                 self._attach_call_site_symbols(caller_file, name, impacted_symbols)
@@ -561,6 +580,10 @@ class ContextResolver:
                 f"calls {name} (hop {hop})",
                 chain,
                 EvidenceTier.SUPPORTING,
+                file_origin_stage=file_origin_stage,
+                origin_stage=OriginStage.SCOPED_GRAPH_EXPANSION,
+                file_parent_symbol_id=file_parent_symbol_id,
+                parent_symbol_id=parent_id,
             )
             max_hop = max(max_hop, hop)
 
@@ -597,6 +620,10 @@ class ContextResolver:
                 f"called by {name} (hop {hop})",
                 chain,
                 EvidenceTier.SUPPORTING,
+                file_origin_stage=file_origin_stage,
+                origin_stage=OriginStage.SCOPED_GRAPH_EXPANSION,
+                file_parent_symbol_id=file_parent_symbol_id,
+                parent_symbol_id=parent_id,
             )
             max_hop = max(max_hop, hop)
 
@@ -612,7 +639,15 @@ class ContextResolver:
         file_chains: dict[str, tuple[str, ...]],
         file_tiers: dict[str, EvidenceTier],
         impacted_symbols: dict[str, Symbol],
+        file_origin_stage: dict[str, OriginStage] | None = None,
+        file_parent_symbol_id: dict[str, str] | None = None,
     ) -> int:
+        # checklist item #10: candidate_selector.subclasses_of(name, ...)
+        # calls SymbolIndex.find_by_name(name) internally -- confirmed by
+        # reading it directly, not assumed -- the exact same raw-name-
+        # repo-wide-bypass shape as locality_filtered_callers_of_name
+        # above, independent of which specific same-named CLASS `symbol`
+        # was actually disambiguated to.
         for subclass_file in self._index.candidate_selector.subclasses_of(name, traversal_depth):
             self._add_file(
                 candidate_files,
@@ -623,6 +658,10 @@ class ContextResolver:
                 f"extends {name}",
                 (),
                 EvidenceTier.SUPPORTING,
+                file_origin_stage=file_origin_stage,
+                origin_stage=OriginStage.RAW_STRING_FALLBACK,
+                file_parent_symbol_id=file_parent_symbol_id,
+                parent_symbol_id=symbol.id,
             )
         max_hop = 0
         for subclass_id in self._index.inheritance_graph.all_subclasses_of(
@@ -798,10 +837,31 @@ class ContextResolver:
         ambiguity_confidence: float | None = None,
         file_path_mask_confidence: dict[str, float] | None = None,
         path_mask_confidence: float | None = None,
+        file_origin_stage: dict[str, OriginStage] | None = None,
+        origin_stage: OriginStage | None = None,
+        file_parent_symbol_id: dict[str, str] | None = None,
+        parent_symbol_id: str | None = None,
     ) -> None:
         candidate_files.add(file_path)
         file_reasons.setdefault(file_path, reason)
         file_chains.setdefault(file_path, chain)
+        # Checklist item #10: first-write-wins, same discipline as
+        # file_reasons/file_chains above -- a file's FIRST-recorded origin
+        # is definitionally correct provenance (it's the actual mechanism
+        # that first pulled the file in); a later, unrelated visit to the
+        # same file via a different path shouldn't overwrite that history.
+        if (
+            origin_stage is not None
+            and file_origin_stage is not None
+            and file_path not in file_origin_stage
+        ):
+            file_origin_stage[file_path] = origin_stage
+        if (
+            parent_symbol_id is not None
+            and file_parent_symbol_id is not None
+            and file_path not in file_parent_symbol_id
+        ):
+            file_parent_symbol_id[file_path] = parent_symbol_id
         # PRIMARY always wins over SUPPORTING, regardless of which one this
         # file was FIRST reached through — target_names iteration order is
         # not a confidence ranking, so (unlike reason/chain above) this is

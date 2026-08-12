@@ -84,6 +84,51 @@ class EvidenceTier(StrEnum):
     EXPERIMENTAL = "experimental"
 
 
+class OriginStage(StrEnum):
+    """Checklist item #10 (arcf/CHECKLIST.md) — which pipeline mechanism
+    produced a given FileReference, so a candidate's provenance is a field
+    read instead of manual `justification_chain`-string reading (the
+    actual bottleneck in every prior ablation trace this session did by
+    hand: item #3's `NewBaseDeps`-bridge trace, arcf_arm1_type_graph_
+    falsified, arcf_arm4_path_locality_falsified).
+
+    AST_DIRECT: the direct "defines {name}" entry-point match — the
+    disambiguated Symbol itself IS the identity, no lookup involved.
+
+    SCOPED_GRAPH_EXPANSION: reached via a symbol-ID-scoped traversal
+    (`locality_filtered_transitive_callers`/`callees`, keyed by
+    `symbol.id`) — genuinely identity-propagated.
+
+    RAW_STRING_FALLBACK: reached via a raw-name lookup that re-searches
+    `SymbolIndex.find_by_name` for every same-named symbol repo-wide,
+    independent of which specific symbol was actually disambiguated
+    (`locality_filtered_callers_of_name`, `candidate_selector.
+    subclasses_of`) — confirmed by reading both directly, not assumed.
+    This is NOT a behavior change from today (arcf_disambiguation_
+    pruning_shipped already tested ID-scoping this specific lookup and
+    found it barely changes candidate output, since CallGraph's own
+    construction-time resolution over-attributes regardless of which
+    lookup reads it later) — the fallback keeps working exactly as it
+    does today, now honestly labeled instead of indistinguishable from
+    an identity-propagated match.
+
+    EVIDENCE_FALLBACK_MATCH: reached via `context/evidence_fallback.py`
+    (README/CI/test-config/dependency-manifest filler, the lexical
+    basename probe layer) or the anchor-classification Tier 4 filename
+    match (`service.py`'s `attach_code_intelligence`) — genuinely
+    symbol-less: a filename/path/glob match, not a symbol-name lookup at
+    all, so it's a distinct category from RAW_STRING_FALLBACK rather than
+    folded into it. Confirmed `expand_with_evidence` runs unconditionally
+    on the default classic path (`service.py`'s own comment: "not just
+    when classification.repository_scope"), so this is a real, reachable
+    origin on an ordinary query, not a rare edge case."""
+
+    AST_DIRECT = "ast_direct"
+    SCOPED_GRAPH_EXPANSION = "scoped_graph_expansion"
+    RAW_STRING_FALLBACK = "raw_string_fallback"
+    EVIDENCE_FALLBACK_MATCH = "evidence_fallback_match"
+
+
 class FileReference(BaseModel):
     model_config = ConfigDict(frozen=True)
 
@@ -154,6 +199,22 @@ class FileReference(BaseModel):
     Catalog.Register?") where a hard path filter would otherwise have
     zero candidates to fall back on for the off-path entity — soft
     de-prioritizes instead of ever silently dropping a real match."""
+    origin_stage: OriginStage | None = None
+    """Checklist item #10, 2026-08-12: which mechanism produced this
+    FileReference — see OriginStage's own docstring. `None` means "not
+    yet tagged at this construction site" (same opt-in-field discipline
+    as `anchor_confidence`/`ambiguity_confidence`/`path_mask_confidence`
+    above) — every `_add_file` call site in `ContextResolver` sets this
+    explicitly, so a real `None` on a genuine `resolve()` result would
+    indicate a call site this item's own audit missed, not a legitimate
+    "no stage" case."""
+    parent_symbol_id: str | None = None
+    """Checklist item #10: the SymbolID that triggered this file's
+    inclusion — the disambiguated entry-point symbol for AST_DIRECT/
+    RAW_STRING_FALLBACK, or the BFS's own real immediate-parent id for
+    SCOPED_GRAPH_EXPANSION (not just the original entry symbol — the
+    literal parent one hop back, already computed by
+    `_locality_filtered_bfs`'s own `parents` dict)."""
 
 
 class SymbolReference(BaseModel):
