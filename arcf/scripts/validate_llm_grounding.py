@@ -148,6 +148,30 @@ BENCHMARK_TASKS = [
         "ground_truth_files": ["agent/cache/cache.go"],
         "ground_truth_terms": ["Cache", "Options"],
     },
+    {
+        # Arm 4 (Enhanced Path-Hint & Locality Propagation, 2026-08-12):
+        # deliberately targets this arm's exact blind spot in tasks
+        # 1-5 -- every prior task's ground truth is the direct entry
+        # point (PRIMARY tier, already score-saturated, which Arm 4's
+        # boost structurally can never move). This task's ground truth
+        # includes a SECONDARY file reached only via real call-graph
+        # expansion from a SIBLING package, the one case Arm 4 can
+        # actually affect. Not assumed -- directly grepped from the
+        # real cloned Consul source: agent/cache/cache.go:970 defines
+        # `Prepopulate`; agent/auto-config/tls.go:103 is the only real,
+        # unambiguous (no name-collision, unlike "New") non-test caller
+        # of Cache.Prepopulate specifically, in a sibling directory
+        # under agent/ (agent/auto-config/ vs. agent/cache/, shared
+        # parent "agent/").
+        "id": "task6_path_hint_secondary_sibling",
+        "query": (
+            "How does the `agent/cache` package's Prepopulate method get used by sibling "
+            "packages like agent/auto-config to seed cache entries before RPC results are "
+            "available?"
+        ),
+        "ground_truth_files": ["agent/cache/cache.go", "agent/auto-config/tls.go"],
+        "ground_truth_terms": ["Prepopulate", "Cache"],
+    },
 ]
 
 JUDGE_PROMPT_TEMPLATE = """You are grading an AI assistant's answer to a code-navigation question about the open-source project "{repo_name}".
