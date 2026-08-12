@@ -30,6 +30,17 @@ DEFAULT_PRICING: dict[str, tuple[float, float]] = {
 }
 FALLBACK_PRICING: tuple[float, float] = (1.0, 2.0)
 
+# Self-hosted models (feature/local-inference-server) run on hardware ARCF
+# already owns, not a metered API -- billing them at FALLBACK_PRICING's
+# conservative paid-provider rate would be actively wrong (fabricated
+# nonzero cost for a free call, able to trip CostGuardrailExceededError
+# for no real reason), not merely imprecise the way it is for a genuinely
+# unrecognized paid model. Matched by LiteLLM provider prefix, not one
+# hardcoded tag, so any locally-served model (Ollama today, others later)
+# is covered without editing this table per model swap.
+_LOCAL_MODEL_PREFIXES: tuple[str, ...] = ("ollama_chat/", "ollama/")
+LOCAL_MODEL_PRICING: tuple[float, float] = (0.0, 0.0)
+
 
 class CostEstimate(BaseModel):
     model_config = ConfigDict(frozen=True)
@@ -61,6 +72,8 @@ class CostEstimator:
         return len(encoding.encode(text, disallowed_special=()))
 
     def _prices_for(self, model: str) -> tuple[float, float]:
+        if model.startswith(_LOCAL_MODEL_PREFIXES):
+            return LOCAL_MODEL_PRICING
         return self._pricing.get(model, FALLBACK_PRICING)
 
     def estimate(

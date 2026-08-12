@@ -32,6 +32,35 @@ def test_guardrail_rejects_expensive_request() -> None:
         guardrail.check("a reasonably long prompt " * 50, "gpt-4o", assumed_completion_tokens=4096)
 
 
+def test_local_ollama_chat_model_prices_at_zero() -> None:
+    # feature/local-inference-server: a self-hosted model isn't an
+    # unrecognized paid model -- FALLBACK_PRICING's conservative nonzero
+    # rate would fabricate cost for a genuinely free local call.
+    estimator = CostEstimator()
+    estimate = estimator.estimate(
+        "hello world", "ollama_chat/qwen2.5:1.5b-instruct", assumed_completion_tokens=100
+    )
+    assert estimate.estimated_cost_usd == 0.0
+
+
+def test_local_ollama_model_prefix_also_prices_at_zero() -> None:
+    estimator = CostEstimator()
+    estimate = estimator.estimate(
+        "hello world", "ollama/llama3.2", assumed_completion_tokens=100
+    )
+    assert estimate.estimated_cost_usd == 0.0
+
+
+def test_local_model_never_trips_the_cost_guardrail() -> None:
+    guardrail = CostGuardrail(CostEstimator(), max_cost_usd=0.0)
+    estimate = guardrail.check(
+        "a reasonably long prompt " * 500,
+        "ollama_chat/qwen2.5:1.5b-instruct",
+        assumed_completion_tokens=4096,
+    )
+    assert estimate.estimated_cost_usd == 0.0
+
+
 def test_actual_cost_uses_real_usage_numbers() -> None:
     # ARCF Issue #13 fix (2026-08-08): DEFAULT_PRICING is USD per 1M
     # tokens (real OpenAI rates), not per 1K — this test's old expected

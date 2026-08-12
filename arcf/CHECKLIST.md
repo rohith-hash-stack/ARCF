@@ -1447,6 +1447,35 @@ grounding-quality claims made or tested here, that's the separate follow-on expe
   structured output than `gpt-4o-mini`), this branch stays scoped to infra + reranker only, and
   SLM-1 hosting is flagged as its own separately-evidenced follow-on, not forced through.
 
+**Real result (2026-08-13, `scripts/local_slm1_verification.py`, real local Ollama, the 5 real
+BENCHMARK_TASKS queries reused verbatim from `validate_llm_grounding.py`)** — a genuinely mixed
+finding, reported honestly rather than rounded to a clean pass:
+- **JSON-contract compliance: 5/5 on both `qwen2.5:1.5b-instruct` and `llama3.2`.** The plumbing
+  works — real `LiteLLMClient` → `ollama_chat/*` → local Ollama → valid `RawIntentExtraction`,
+  zero source changes, zero `ValidationError`s. This is the success criterion stated above, met.
+- **Entity-extraction quality does NOT match production `gpt-4o-mini` on the same real ground
+  truth.** `qwen2.5:1.5b-instruct`: partial credit on task1 only (`Catalog`/`Register`, missed
+  `RegisterRequest`), zero ground-truth overlap on tasks 2-5. `llama3.2`: zero-to-partial on every
+  task, and ~1.8x slower (15.98s/query avg vs. qwen's 8.69s/query). Both models reproduced close
+  variants of the exact anti-pattern the prompt explicitly forbids — task2 extracted
+  `"downstream.service.check.listeners"` (qwen) / `"downstream service check listeners"` (llama) as
+  a fake entity, the same shape as the already-diagnosed-but-unfixed gap 2b `Listener` bug, just
+  worse (a full descriptive phrase instead of one fabricated word); task4 extracted the entire
+  descriptive phrase `"ACL binding rule list endpoint"` / `"ACLBindingRuleListEndpoint"` verbatim
+  instead of real symbols. Smaller instruct models appear meaningfully worse at this specific
+  prompt's "extract the identifier-shaped word, never the descriptive phrase" instruction than
+  `gpt-4o-mini` is.
+- **Scope correction, per the standing "don't merge as resolved when it's mixed" rule**: SLM-1
+  hosting is infra-complete (the capability to point at a local model exists, is tested, is real)
+  but is **NOT a drop-in production replacement** for `gpt-4o-mini` on real query quality —
+  `ARCF_SLM_MODEL` stays configurable (default unchanged, `gpt-4o-mini`) rather than flipping the
+  project default. Improving small-model entity-extraction quality (few-shot examples tuned for a
+  smaller model, a constrained-decoding grammar, or a different local model) is flagged as its own
+  separately-evidenced follow-on, not attempted here — this item's own scope is the local-server
+  capability, not closing the quality gap. The reranker half of this branch is architecturally
+  independent of this finding (a cross-encoder scoring (query, snippet) relevance is a different,
+  more forgiving task than strict identifier extraction) and proceeds regardless.
+
 ### 3b. Task6 multi-path-hint collision — new finding, same family as #3, NOT fixed
 
 Found while re-verifying gap #1: task6 was consistently `G_struct=1.0` in every hand-picked-name
