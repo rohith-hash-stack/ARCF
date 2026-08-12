@@ -1,6 +1,6 @@
 # ARCF Progress Log
 
-**Last updated:** 2026-08-12 IST · **Base/main HEAD:** `3b53144` · **Tests:** 947/947 passing
+**Last updated:** 2026-08-12 IST · **Base/main HEAD:** `bb0e596` · **Tests:** 957/957 passing
 
 Read this file top-to-bottom to pick up where things stand — it's the fast-start doc for a new
 chat session. Detailed *why* for each entry lives in Claude's memory files (per-topic, e.g.
@@ -18,6 +18,38 @@ after each merge to `Base`, not after every small step.
 - **`CHECKLIST.md`** (repo root) — the forward-looking backlog/tracker, separate from this file.
   Read its session-tracker block first when starting a session; this file (`PROGRESS.md`) stays the
   dated shipped/falsified log.
+
+### 2026-08-12 — Shipped: CHECKLIST.md item #13 (Observability & Telemetry)
+New `TelemetryCollector`/`TelemetryEvent` (`src/infrastructure/telemetry.py`): in-memory, zero
+external networking, opt-in — no existing caller/test affected unless it explicitly attaches a
+collector. Times the two real public pipeline boundaries (`ContextResolver.resolve()`,
+`ContextPackager.package()`) as wholes rather than adding new internal instrumentation; gets the
+"Origin Breakdown" the spec asked for free from item #10's `FileReference.origin_stage` data —
+zero new instrumentation needed there. `get_run_summary()` (mean/p50/p95/max latency, aggregated
+origin totals, overall fallback ratio, mean utilization) and `assert_no_fallbacks()` (a real
+release-gate helper for item #11) both built and tested.
+
+**Two scope corrections made explicit, not silently absorbed**: the spec's 4 named stage
+boundaries don't map to 4 separately-callable real functions (`ContextBudgetManager.select()` does
+"pruning" and "final_selection" together; `resolve()` does entry-point matching and graph expansion
+together via private helpers already threaded twice this session) — timed the two genuine
+boundaries instead. And "100% of telemetry payloads validate... across all 947+ tests" was made
+literally true via an opt-in `ARCF_TELEMETRY_VALIDATE=1` `tests/conftest.py` wrapper (default
+unset, zero behavior change — confirmed 957/957 either way) rather than retrofitting 947 unrelated
+test files.
+
+**All 4 user success gates verified with real measurements**: latency overhead **-2.224%**
+(`scripts/telemetry_overhead_measurement.py`, real Consul, 200 iterations/arm — telemetry arm was
+marginally *faster* on average, within noise); 100% Pipeline Coverage (both real boundaries
+wrapped); 100% schema validity across the full suite (real one-time run: 957/957 tests, 140 events,
+**0** schema/recording violations); programmatic interface ready for #11.
+
+**Real secondary finding, traced not dismissed**: the full-suite run surfaced 9 untagged
+candidates. Traced to `tests/context/test_packager.py`'s hand-built `ContextResolutionResult`
+fixtures (bypass the real resolver entirely to test `ContextPackager`'s own logic in isolation) —
+not a regression in item #10's coverage (still 100% on real Consul). 10 new unit tests. Merged
+`bb0e596`.
+→ memory: `arcf_observability_telemetry_shipped`
 
 ### 2026-08-12 — Shipped: CHECKLIST.md item #10 (Symbol-Identity Mode / Provenance Audit Trail)
 New `OriginStage` enum (`AST_DIRECT`, `SCOPED_GRAPH_EXPANSION`, `RAW_STRING_FALLBACK`,

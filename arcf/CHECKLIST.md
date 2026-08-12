@@ -34,17 +34,19 @@ Update this block at the end of every session so a new session (or a continuatio
 limit) can resume without re-deriving anything.
 
 - **Last updated:** 2026-08-12 (this session)
-- **Active branch:** none — Tier 1 complete. `experiment/locality-utility-suppression` left
-  unmerged as a historical record (same treatment as `exp/enhanced-path-locality`,
-  `exp/semantic-reranker`, `exp/type-graph-indexing`); `feature/symbol-identity-audit-trail` merged
-  and deleted.
-- **Active item:** none — **Tier 1 fully closed out**: #3 `Parked (falsified)` (free ablation →
-  real disconfirming n=1 LLM check → user chose to stop before the full paid run), #5 `Done`
-  (zero-code audit, no branch needed), #10 `Shipped` (merged to `Base`/`main`, 947/947 tests, all 3
-  user success gates verified on real Consul).
-- **In-flight state:** none. `main`/`Base` clean and in sync, 947/947 tests green.
-- **Next step:** Tier 1 done — move to Tier 2 (#13 Observability & Telemetry, then #11 Operational
-  Confidence, then #7 Incremental Indexing remaining gap), per the decided priority order above.
+- **Active branch:** none. `experiment/locality-utility-suppression` left unmerged as a historical
+  record (same treatment as `exp/enhanced-path-locality`, `exp/semantic-reranker`,
+  `exp/type-graph-indexing`); `feature/symbol-identity-audit-trail` and
+  `feature/observability-telemetry` both merged and deleted.
+- **Active item:** none — **Tier 1 fully closed out** (#3 `Parked (falsified)`, #5 `Done`, #10
+  `Shipped`), **Tier 2 item #13 (Observability & Telemetry) shipped** — `TelemetryCollector` +
+  `TelemetryEvent`, all 4 user success gates verified with real measurements (-2.224% overhead,
+  957/957 tests 0 schema violations, `get_run_summary()`/`assert_no_fallbacks()` ready for #11).
+- **In-flight state:** none. `main`/`Base` clean and in sync, 957/957 tests green.
+- **Next step:** Tier 2 continues — **#11 Operational Confidence** (deployment/versioning/canary/
+  rollback), now directly actionable since it can gate on `TelemetryCollector.assert_no_fallbacks()`
+  and `get_run_summary()`, then **#7 Incremental Indexing remaining gap**, per the decided priority
+  order above.
 
 ## Priority order (decided 2026-08-12)
 
@@ -64,6 +66,7 @@ items parked until new evidence shows up.
 
 **Tier 2 — required before "live" means anything**
 4. **#13** Observability & Telemetry — nothing to gate a promotion on without this first.
+   **Done 2026-08-12, shipped.**
 5. **#11** Operational Confidence (versioning/canary/shadow/rollback) — sequenced right after #13
    on purpose; a deployment flow with no metrics feeding it isn't a safety net.
 6. **#7** Incremental Indexing remaining gap — verify the narrower partial-recompute gap, close it;
@@ -524,7 +527,7 @@ the audit deliverable only, per the item's own "0 production code changes" succe
 
 ## 13. Observability & Telemetry
 
-- **Status:** In Progress
+- **Status:** Shipped — merged to `main`/`Base`, branch deleted after merge
 - **Source:** original doc §14, detailed spec supplied by user 2026-08-12
 - **Note:** real gap, no overlap with falsified work. High priority — pairs directly with item 11;
   neither is useful alone (telemetry needs something live to measure; deployment needs telemetry
@@ -578,6 +581,32 @@ the audit deliverable only, per the item's own "0 production code changes" succe
      reported honestly (including if it's not 100%).
 - **Failure criteria:** any schema violation across the full-suite validation run, or measured
   overhead ≥2%, means this stays unmerged/fixed before merge, not shipped with a caveat.
+
+- **Real result, all 4 gates verified:**
+  1. **Latency overhead**: measured on real Consul (`scripts/telemetry_overhead_measurement.py`,
+     200 iterations/arm, same process) — **-2.224%** (the telemetry arm was marginally *faster* on
+     average; well within noise given ~26-41ms stdev on a ~410ms mean). Gate (<2%): **PASS**.
+  2. **100% Pipeline Coverage**: both real public boundaries (`ContextResolver.resolve()`,
+     `ContextPackager.package()`) wrapped; origin-stage counts derived free from item #10's data.
+  3. **100% schema-valid payloads across the full suite**: `tests/conftest.py`'s opt-in
+     `ARCF_TELEMETRY_VALIDATE=1` wrapper, real one-time run — **957/957 tests passed, 140 events
+     recorded, 0 schema/recording violations**. Default (unset): confirmed byte-identical,
+     957/957 either way, zero behavior change.
+  4. **Programmatic interface ready for #11**: `get_run_summary()`/`assert_no_fallbacks()` both
+     real, tested (10 new unit tests), and directly callable — `assert_no_fallbacks()` raises with
+     a real diagnostic message when the aggregate `RAW_STRING_FALLBACK`+`EVIDENCE_FALLBACK_MATCH`
+     ratio exceeds a threshold, exactly the shape a CI release gate needs.
+
+- **Real secondary finding, traced not dismissed**: the full-suite run surfaced 9 candidates with
+  `origin_stage=None`. Traced (not assumed) to `tests/context/test_packager.py`'s hand-built
+  `ContextResolutionResult` fixtures, which construct `FileReference` objects directly to test
+  `ContextPackager`'s own ranking/budgeting logic in isolation — bypassing the real resolver
+  entirely. **Not a regression in item #10's coverage** (verified 100% on real Consul) — a
+  hand-built test double was never claimed to carry real provenance, same as any mock. Recorded in
+  the wrapper's own output, not silenced, so a genuinely new untagged source in the future doesn't
+  get lost among expected ones.
+
+- **Result**: Merged to `Base`/`main`, zero known open issues. 957/957 tests.
 
 ## 14. Failure Taxonomy & Automated Regression Attribution
 
