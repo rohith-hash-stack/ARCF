@@ -38,23 +38,31 @@ limit) can resume without re-deriving anything.
   record (same treatment as `exp/enhanced-path-locality`, `exp/semantic-reranker`,
   `exp/type-graph-indexing`); `feature/symbol-identity-audit-trail`,
   `feature/observability-telemetry`, `feature/operational-release-gate`,
-  `feature/incremental-index-equivalence`, `feature/negative-query-fpr-harness`, and
-  `feature/grounding-structural-behavioral-split` all merged and deleted.
-- **Active item:** none — **Tier 1 AND Tier 2 fully closed out; Tier 3 items #9 and #4 shipped.**
-  Item #4's real finding worth remembering: the new `G_struct`/`G_behav` split didn't just add a
-  metric — run through the real Arm A pipeline it precisely diagnosed PROGRESS.md's own previously
-  `unconfirmed` "Task 1 regression": the genuine entry-point file for tasks 1/3/5 is both unusually
-  large (9k–12k tokens, competing for an 8000-token budget) and ambiguity-decayed (2/7/224 same-named
-  matches), which drops it below decoy files in ranking (task5's real entry point ranked 70th of
-  224) — the same mechanism as the already-closed 8-times-falsified recall-gap thread, now shown to
-  also bite at the ranking/packaging stage. Deliberately not fixed (matches item #3/Arms 1-4's own
-  "flag, don't fix a pre-existing mechanism mid-item" discipline) — flagged as a new future
-  falsification-experiment candidate. Task2's `G_behav`=0 is the same closed boundary from a
-  different angle ("Notify" is 78-way ambiguous). Tasks 4/6 both cleanly pass (`G_struct`=`G_behav`=1.0,
-  task6's behavioral hit confirmed genuine `SCOPED_GRAPH_EXPANSION`).
+  `feature/incremental-index-equivalence`, `feature/negative-query-fpr-harness`,
+  `feature/grounding-structural-behavioral-split`, and `feature/failure-taxonomy` all merged and
+  deleted.
+- **Active item:** none — **Tier 1 AND Tier 2 fully closed out; Tier 3 items #9, #4, and #14
+  shipped.** Item #4's real finding worth remembering: the new `G_struct`/`G_behav` split didn't
+  just add a metric — run through the real Arm A pipeline it precisely diagnosed PROGRESS.md's own
+  previously `unconfirmed` "Task 1 regression": the genuine entry-point file for tasks 1/3/5 is both
+  unusually large (9k–12k tokens, competing for an 8000-token budget) and ambiguity-decayed
+  (2/7/224 same-named matches), which drops it below decoy files in ranking (task5's real entry
+  point ranked 70th of 224) — the same mechanism as the already-closed 8-times-falsified recall-gap
+  thread, now shown to also bite at the ranking/packaging stage. Deliberately not fixed (matches
+  item #3/Arms 1-4's own "flag, don't fix a pre-existing mechanism mid-item" discipline) — flagged
+  as a new future falsification-experiment candidate. Task2's `G_behav`=0 is the same closed
+  boundary from a different angle ("Notify" is 78-way ambiguous). Tasks 4/6 both cleanly pass
+  (`G_struct`=`G_behav`=1.0, task6's behavioral hit confirmed genuine `SCOPED_GRAPH_EXPANSION`).
+  Item #14 built the classifier that made all of the above precise instead of hand-traced, and
+  caught a real gap in item #4's own write-up along the way: task2's `G_struct` also failed, for a
+  *different* reason (ambiguity decay on `Cache` itself) than the already-documented `G_behav`
+  failure (the `Notify` collision) — corrected on item #4's own entry, not silently left wrong.
+  Real Consul run: 60% of real failures = `AMBIGUITY_DECAY_DROPPED`, 20% `OVERSIZED_FILE_EXCLUDED`,
+  20% `ZERO_CANDIDATE_EXTRACTION`.
 - **In-flight state:** none. `main`/`Base` clean and in sync, full test suite green (988/988).
-- **Next step:** Tier 3 continues — **#14 Failure taxonomy**, then **#8 Validation breadth**, per the
-  decided priority order above. Also flagged but not scheduled: (1) lexical-probe-recovery's real
+- **Next step:** Tier 3 continues — **#8 Validation breadth**, per the decided priority order above
+  (coupled with resuming the paused 50-repo sweep, per that item's own note). Also flagged but not
+  scheduled: (1) lexical-probe-recovery's real
   token/candidate-count cost on adversarial queries (13–39 files even at correctly-low confidence,
   from item #9); (2) the ambiguity-decay-vs-oversized-entry-point ranking interaction found by item
   #4, above — a genuinely new angle on the closed recall-gap mechanism, not yet attempted.
@@ -92,6 +100,7 @@ items parked until new evidence shows up.
 8. **#4** Grounding quality (structural/behavioral split) — real unmet target, but costs more than
    #9 (needs its own λ-tuning discipline). **Done 2026-08-12, shipped.**
 9. **#14** Failure taxonomy — more valuable once #13 exists to feed it real data, not one-off traces.
+   **Done 2026-08-12, shipped.**
 10. **#8** Validation breadth (topology/scale) — biggest effort; couple with resuming the paused
     50-repo sweep rather than standing alone.
 
@@ -399,6 +408,17 @@ items parked until new evidence shows up.
 - **Real positive result (tasks 4 and 6):** both `G_struct` and `G_behav` = **1.0** through the full
   real Arm A pipeline — `binder.go` and `tls.go` both genuinely survive packaging, and `tls.go`'s
   `origin_stage` is confirmed `SCOPED_GRAPH_EXPANSION` (a real call-graph hop, not adjacency luck).
+
+- **Self-correction (found while building checklist item #14's per-file classifier, not caught
+  here originally):** the real full-pipeline table above also shows task2's `G_struct = 0.0`, which
+  this entry's write-up didn't separately explain — it only discussed task2's `G_behav` failure
+  (the "Notify" 78-way-ambiguity resolution-stage miss). Item #14's classifier traced task2's
+  `G_struct` failure to a *different*, real mechanism: `cache.go` itself IS resolved
+  (`origin_stage=ast_direct`), but `Cache`'s own 3-way ambiguity this run decays its score to 0.333,
+  below the relative score falloff gate's 0.45 threshold at task2's real `BUG_FIX`-tier ranking — the
+  same ambiguity-decay-at-ranking mechanism diagnosed above for tasks 1/3/5, now confirmed to affect
+  task2 as well, independent of the separate Notify/`G_behav` finding. See item #14 for the full
+  per-file breakdown.
 
 - **Success criteria (defined from the real pre-check findings above, before final implementation,
   per the standing falsification-experiment discipline):**
@@ -985,12 +1005,91 @@ the audit deliverable only, per the item's own "0 production code changes" succe
 
 ## 14. Failure Taxonomy & Automated Regression Attribution
 
-- **Status:** Not Started
-- **Source:** original doc §15
+- **Status:** Shipped — merged to `main`/`Base`, branch deleted after merge
+- **Source:** original doc §15, detailed spec supplied by user 2026-08-12
 - **Note:** real gap. Would have shortened several past investigations (e.g. distinguishing "graph
   failure" from "locality failure" was exactly the manual work done in the Arm 1 and
-  disambiguation-pruning traces).
-- **Success criteria:** _not defined yet._
+  disambiguation-pruning traces) — and, as it turned out, shortened one from *this very session*
+  (see the self-correction on item #4, above, found while building this item).
+
+- **Reconciled against real code before writing anything:** the spec's "Candidate Ranks & Scores"
+  input maps to `RelevanceRanker.rank()`'s `RankedFile` list, not a new `TelemetryEvent` field —
+  `TelemetryEvent` (item #13) only stores aggregate `origin_breakdown` counts, never per-candidate
+  rank arrays, and adding one would be a real `src/` schema change this item's own "Zero Codebase
+  Impact" gate forbids. Read `ContextBudgetManager.select()` directly (`src/context/
+  budget_manager.py`) before designing the classifier — every one of the 5 `FailureCategory` values
+  maps to one real, already-shipped exclusion mechanism there, not an invented one:
+  1. The relative score falloff gate (`_RELATIVE_FALLOFF_GAMMA = 0.45`, item #B/2026-08-11) cuts a
+     candidate before the "does it fit" question is ever asked.
+  2. Task-type budget tiering (`_BUDGET_TIER_BY_TASK_TYPE`) means the EFFECTIVE ceiling a file
+     competes against is often far tighter than the caller's nominal `max_tokens` — `UNKNOWN`/
+     `BUG_FIX` = 4500, not 8000, a real fact that changes which files are actually "oversized."
+  3. Greedy fill order means a file can lose to budget crowding for reasons unrelated to its own
+     size or ambiguity.
+
+- **Design:** `scripts/failure_taxonomy.py` — `FailureCategory` (the user's exact 5 values),
+  `classify_grounding_failure(file_path, result, ranked_files, packaged_files, caller_max_tokens,
+  task_type)`, pure/deterministic, **imports** `_RELATIVE_FALLOFF_GAMMA`/`_BUDGET_TIER_BY_TASK_TYPE`
+  from `budget_manager.py` rather than duplicating them (zero drift risk), and
+  `aggregate_failure_distribution()` for the Diagnostic Aggregation Report. Decision tree, in order:
+  absent from `candidate_files` entirely → `ZERO_CANDIDATE_EXTRACTION` (secondary
+  `AMBIGUITY_DECAY_DROPPED` when `result.ambiguous_targets` is non-empty — real corroborating
+  evidence, not an assumption, that a same-named collision is the likely cause); present but below
+  the falloff threshold → `AMBIGUITY_DECAY_DROPPED` (if `ambiguity_confidence < 1.0`) or
+  `PROBABILISTIC_EDGE_DISCARD` (if reached via `SCOPED_GRAPH_EXPANSION` and not ambiguity-decayed);
+  present, cleared the falloff gate, but its own `token_count` exceeds the effective (task-tiered)
+  ceiling → `OVERSIZED_FILE_EXCLUDED`; otherwise → `CONTEXT_BUDGET_OVERFLOW` (crowded out by
+  earlier, lower-tier picks). Every branch resolves to a named category by construction — there is
+  no code path that returns `UNKNOWN`/unclassified.
+
+- **Scope correction: Arm A only, not Arm B.** `_arm_b_baseline`'s own docstring (already in this
+  file) says it deliberately bypasses `ContextBudgetManager` entirely (`_greedy_full_file_package`,
+  "no compression, no relative score falloff gate") — applying this classifier's falloff/tiering
+  logic to Arm B's output would misclassify against a mechanism Arm B never runs. Wired into
+  `_arm_a_arcf`'s result dict only, via underscore-prefixed `_resolution`/`_ranked_files`/
+  `_task_type` keys that `_run_one_task` consumes into a plain, JSON-serializable
+  `failure_diagnoses` list and then deletes — nothing non-serializable ever reaches
+  `raw_path.write_text()`. `main()` emits the Diagnostic Aggregation Report (category counts +
+  percentages across every task/run) to a new `..._failure_taxonomy_report.txt`, alongside the
+  existing markdown table. **Zero `src/` changes** — `budget_manager.py`'s constants are imported,
+  not modified; 988/988 existing tests unaffected.
+
+- **Real verification (`scripts/failure_taxonomy_real_consul_check.py`, real Consul, no LLM
+  calls, reusing item #4's own `BENCHMARK_TASKS`/`_structural_behavioral_grounding_metrics` to
+  decide which files are "failures" — the Telemetry Alignment gate):**
+
+  | task | file | primary | secondary |
+  |---|---|---|---|
+  | task1 | `catalog_endpoint.go` | `OVERSIZED_FILE_EXCLUDED` | `AMBIGUITY_DECAY_DROPPED` |
+  | task2 | `cache.go` | `AMBIGUITY_DECAY_DROPPED` | — |
+  | task2 | `watch.go` | `ZERO_CANDIDATE_EXTRACTION` | `AMBIGUITY_DECAY_DROPPED` |
+  | task3 | `config.go` | `AMBIGUITY_DECAY_DROPPED` | — |
+  | task5 | `cache.go` | `AMBIGUITY_DECAY_DROPPED` | — |
+
+  task1's real detail: `token_count=10069` exceeds the effective 4500-token ceiling (`UNKNOWN`
+  task-tier) on its own, independent of rank — a genuine size failure, with ambiguity decay as a
+  real compounding secondary factor (`Catalog`×2). Tasks 2/3/5's `cache.go`/`config.go` entries
+  cleared their own size ceiling but fell below the falloff gate purely from ambiguity decay
+  (`Cache`×3, `Config`×7, `New`×224). `watch.go` never became a candidate at all (the already-
+  diagnosed "Notify" 78-way collision). Diagnostic Aggregation Report on this real run: **60%
+  `AMBIGUITY_DECAY_DROPPED`, 20% `OVERSIZED_FILE_EXCLUDED`, 20% `ZERO_CANDIDATE_EXTRACTION`**, 0%
+  `PROBABILISTIC_EDGE_DISCARD`/`CONTEXT_BUDGET_OVERFLOW` on this benchmark (tasks 4/6 have zero
+  real failures to classify — both hit `G_struct`=`G_behav`=1.0 per item #4).
+
+- **Success criteria:**
+  1. Taxonomy Coverage — 100% of real failures mapped to a named category, never `UNKNOWN` —
+     **met by construction** (every decision-tree branch returns a real category) and confirmed on
+     5/5 real failures above.
+  2. Zero Codebase Impact — **met**: 0 `src/` changes, 988/988 tests unaffected.
+  3. Deterministic Categorization — **met**: task5's real classification re-run twice through the
+     full real pipeline produced byte-identical primary/secondary/detail output.
+  4. Telemetry Alignment — **met**: every classified run is recorded through a real
+     `TelemetryCollector.record()` call, and "what counts as a failure" is read directly from item
+     #4's own `_structural_behavioral_grounding_metrics`, not a second, disconnected definition.
+- **Failure criteria:** any real failure returning an unclassified/`None`-primary result, a
+  non-deterministic repeat classification, or a required `src/` change — did not occur.
+
+- **Result:** Merged to `Base`/`main`, zero known open issues, zero `src/` changes. 988/988 tests.
 
 ---
 

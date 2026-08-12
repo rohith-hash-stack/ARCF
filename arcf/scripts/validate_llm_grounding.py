@@ -109,6 +109,8 @@ from infrastructure.llm_client import LiteLLMClient
 from shared.errors import WorkspacePathError
 from workspace.permissions import PermissionManager
 
+from failure_taxonomy import classify_grounding_failure  # noqa: E402
+
 GENERATION_MODEL = "gpt-4o-mini"
 JUDGE_MODEL = GENERATION_MODEL
 MAX_TOKENS_CONTEXT = 8000
@@ -465,6 +467,16 @@ async def _arm_a_arcf(
         "packaged_tokens": package.budget_used_tokens,
         "excluded_count": package.excluded_file_count,
         "packaged_files": [f.file_path for f in package.relevant_files],
+        # Checklist item #14 (Failure Taxonomy) -- underscore-prefixed:
+        # real pipeline objects, not JSON-serializable, consumed and
+        # deleted in _run_one_task before the result dict is persisted.
+        # Arm A (real ContextBudgetManager) only -- Arm B deliberately
+        # bypasses the falloff gate/task-tiering this classifier is
+        # built around (see _arm_b_baseline's own docstring), so applying
+        # it there would misclassify against a mechanism Arm B never runs.
+        "_resolution": resolution,
+        "_ranked_files": RelevanceRanker().rank(resolution, ranking_profile),
+        "_task_type": retrieval_task_type,
     }
 
 
@@ -570,6 +582,7 @@ async def _run_one_task(
             result["key_term_check"] = None
             result["file_overlap"] = None
             result["structural_behavioral"] = None
+            result["failure_diagnoses"] = None
             result["judge"] = None
             continue
         result["key_term_check"] = _key_term_check(
@@ -582,6 +595,39 @@ async def _run_one_task(
             result.get("packaged_files", []),
             task["ground_truth_structural"], task["ground_truth_behavioral"],
         )
+        # Checklist item #14 (Failure Taxonomy): Arm A only -- consumes and
+        # deletes the private "_resolution"/"_ranked_files"/"_task_type"
+        # keys _arm_a_arcf stashed, so nothing non-JSON-serializable ever
+        # reaches raw_path.write_text() below. Only classifies files item
+        # #4's own structural_behavioral result says actually failed --
+        # this is the "Telemetry Alignment" gate, not a parallel notion of
+        # failure.
+        resolution = result.pop("_resolution", None)
+        ranked_files = result.pop("_ranked_files", None)
+        classified_task = result.pop("_task_type", None)
+        if resolution is not None:
+            missing_files: list[str] = []
+            sb = result["structural_behavioral"]
+            packaged_files = result.get("packaged_files", [])
+            if sb["g_struct"] != 1.0:
+                missing_files += [f for f in task["ground_truth_structural"] if f not in packaged_files]
+            if sb["g_behav"] is not None and sb["g_behav"] != 1.0:
+                missing_files += [f for f in task["ground_truth_behavioral"] if f not in packaged_files]
+            result["failure_diagnoses"] = [
+                {
+                    "file_path": d.file_path, "primary": d.primary.value,
+                    "secondary": d.secondary.value if d.secondary else None, "detail": d.detail,
+                }
+                for d in (
+                    classify_grounding_failure(
+                        f, resolution, ranked_files, packaged_files, MAX_TOKENS_CONTEXT, classified_task,
+                    )
+                    for f in missing_files
+                )
+                if d is not None
+            ]
+        else:
+            result["failure_diagnoses"] = None
         try:
             result["judge"] = await _judge(
                 client, repo_name, query, task["ground_truth_files"],
@@ -782,11 +828,37 @@ async def main() -> None:
     table_path = RESULTS_DIR / f"{args.repo_name}_grounding_validation_summary.md"
     table_path.write_text(table + "\n", encoding="utf-8")
 
+    # Checklist item #14 (Failure Taxonomy) -- Diagnostic Aggregation
+    # Report: primary-category distribution across every real Arm A
+    # failure_diagnoses entry recorded above, across every task/run.
+    all_primary = [
+        diag["primary"]
+        for task_result in all_task_results
+        for run in task_result["runs"]
+        for diag in (run["results"].get("arcf", {}).get("failure_diagnoses") or [])
+    ]
+    failure_counts: dict[str, int] = {}
+    for primary in all_primary:
+        failure_counts[primary] = failure_counts.get(primary, 0) + 1
+    failure_report_lines = ["\n=== Failure Taxonomy: Diagnostic Aggregation Report (Arm A) ==="]
+    total_failures = len(all_primary)
+    if total_failures == 0:
+        failure_report_lines.append("  No real grounding failures recorded across this run.")
+    else:
+        for category, count in sorted(failure_counts.items(), key=lambda kv: -kv[1]):
+            pct = round(100 * count / total_failures, 1)
+            failure_report_lines.append(f"  {category:28s} {count:3d}  ({pct}%)")
+    failure_report_text = "\n".join(failure_report_lines)
+    failure_report_path = RESULTS_DIR / f"{args.repo_name}_failure_taxonomy_report.txt"
+    failure_report_path.write_text(failure_report_text + "\n", encoding="utf-8")
+
     print("\n\n" + "=" * 80)
     print(table)
     print("=" * 80)
+    print(failure_report_text)
     print(f"\nRaw results: {raw_path}")
     print(f"Summary table: {table_path}")
+    print(f"Failure taxonomy report: {failure_report_path}")
 
 
 if __name__ == "__main__":
