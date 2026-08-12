@@ -1,6 +1,6 @@
 # ARCF Progress Log
 
-**Last updated:** 2026-08-12 08:30 IST · **Base/main HEAD:** `38ae7c5` · **Tests:** 930/930 passing
+**Last updated:** 2026-08-12 09:26 IST · **Base/main HEAD:** `966163f` · **Tests:** 938/938 passing
 
 Read this file top-to-bottom to pick up where things stand — it's the fast-start doc for a new
 chat session. Detailed *why* for each entry lives in Claude's memory files (per-topic, e.g.
@@ -17,6 +17,37 @@ after each merge to `Base`, not after every small step.
   is the bar, not a goal.
 
 ## Timeline (most recent first)
+
+### 2026-08-12 — Call-Site Slicing (token efficiency) shipped; Hop-2 budget-fill removed as dead code
+Child branch `feature/call-site-slicing-budget-rebalance` off `Base` `62aced2`. Two-part task:
+replace secondary/tertiary candidates' whole-scope skeleton blanking with a tight +/-8-line
+window around a symbol's own declaration line (`SymbolRangeCompressor.extract_call_site_window`,
+`ContextBudgetManager._compress_call_site`), then spend the freed budget on an additive pass
+packing Hop-2+ call-graph-linked candidates.
+
+**Shipped — Call-Site Slicing, as a token-efficiency optimization:** real Consul measurement
+(`--n-runs 3`) showed ~23% smaller packaged-token footprint for the same candidate sets, plus
+improved mean Grounding (2.333 → 2.6) and Composite (2.800 → 2.867) judge scores. Focal and
+hop-1-linked candidates are completely untouched (still full `extract_with_ast_scope` body);
+`extract_skeleton_only` itself is kept as `_compress_call_site`'s own fallback when windowing
+can't resolve a symbol's line, not removed.
+
+**Removed — additive Hop-2 budget-fill pass, confirmed dead code:** the first implementation
+also tried spending the tokens Call-Site Slicing frees up on candidates reached via a 2+-hop
+`justification_chain`, to raise Context Budget Utilization from its measured ~50% toward
+80–85%. Measured effect was the *opposite* of the goal (utilization fell to 0.382, not up) —
+traced directly (not inferred from the aggregate score) by resolving a real Consul query and
+inspecting every candidate's `justification_chain` length: **0 candidates ever exceeded length
+1** (36 at length 0, 2 at length 1, zero at 2+). Real secondary evidence in this codebase's
+candidate sets comes overwhelmingly from single-step relationships (inheritance, evidence-
+category matches, lexical-probe recovery) that populate `justification_chain` as empty/short
+*by design* — not from deep multi-hop call-graph traversal, the population this pass needed to
+exist to do anything. Removed (`hop_two_leftover` tracking, `packaged_paths` dedup set, the
+post-loop retry block, its 3 dedicated unit tests) rather than kept as unreachable code. Post-
+removal benchmark run is statistically consistent with the pre-removal one (0.406 vs 0.382 mean
+utilization, within noise), confirming the removal changed nothing real — it was genuinely dead,
+not a regression introduced by deleting it.
+→ evidence: `docs/llm_grounding_validation/consul_grounding_validation_summary_CALL_SITE_SLICING_FINAL.md`
 
 ### 2026-08-12 — Grounding-harness statistics (P/R/F1, multi-pass) + 8th recall-gap falsification
 A static codebase audit (child branch `fix/grounding-metrics-and-lexical-probe` off `Base`
