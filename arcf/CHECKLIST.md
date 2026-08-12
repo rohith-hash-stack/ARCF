@@ -34,11 +34,15 @@ Update this block at the end of every session so a new session (or a continuatio
 limit) can resume without re-deriving anything.
 
 - **Last updated:** 2026-08-12 (this session)
-- **Active branch:** none — no item started yet
-- **Active item:** none
-- **In-flight state:** none
-- **Next step:** start **item 3** (Locality UPS suppression) — first in the decided priority order
-  below.
+- **Active branch:** `experiment/locality-utility-suppression` (off `Base`)
+- **Active item:** #3, Locality UPS suppression — item-only scope confirmed with user (not the
+  full Tier 1 batch)
+- **In-flight state:** success/failure criteria written into item #3's own section below. Not yet
+  implemented. Next concrete step is measuring real UPS values (`agent/cache/cache.go` indegree +
+  cross-subsystem-usage) on real Consul (`.benchmark_repos/consul`) to ground the suppression
+  threshold before writing the suppression logic itself.
+- **Next step:** write the diagnostic measurement script (no source changes yet), run it, then
+  implement the suppression in `locality.py` per item #3's success criteria.
 
 ## Priority order (decided 2026-08-12)
 
@@ -112,7 +116,7 @@ items parked until new evidence shows up.
 
 ## 3. Locality — Utility Package Score (smooth suppression)
 
-- **Status:** Not Started — highest-signal candidate
+- **Status:** In Progress
 - **Source:** original doc §3
 - **Why promising:** aimed at the one concrete, still-open, documented lever from the most
   recently shipped work: `has_locality`'s transitive import-reachability tier is currently
@@ -124,7 +128,61 @@ items parked until new evidence shows up.
   different place to intervene.
 - **Constraint:** stays a filter over `has_locality` in `locality.py`, not a `CallGraph` change —
   same off-limits boundary as item 2.
-- **Success criteria:** _not defined yet — must include a same-process ablation (real resolution,
+
+- **Started 2026-08-12, branch `experiment/locality-utility-suppression`.**
+
+- **Precise target, checked against real code before writing anything:** `has_locality(file_a,
+  file_b)` itself (same file / same directory / *direct* import edge either direction — confirmed
+  `ImportGraph.imports_of`/`importers_of` are direct-edge-only, not transitive) is not itself
+  "unbounded-hop." The unboundedness lives one level up, in `_locality_filtered_bfs`: it calls
+  `has_locality` fresh at every hop with `max_depth=None` at most real call sites, so a chain of
+  individually-real direct-import edges can still fan out arbitrarily far when it passes through a
+  hub file (e.g. `agent/cache/cache.go`) that many unrelated files import. The suppression point is
+  therefore **the BFS's per-node expansion decision**, not `has_locality`'s own boolean contract —
+  `has_locality` keeps its existing meaning and every other caller (disambiguation's
+  `_locality_score` is a separate, already-fixed mechanism and is untouched by this).
+
+- **UPS formula, deliberately simplified from the original 3-term proposal, reasoned up front
+  rather than tuned after the fact:** `UPS(file) = indegree(file) + cross_subsystem_usage(file)`,
+  where `indegree(file) = |ImportGraph.importers_of(file)|` and `cross_subsystem_usage(file)` =
+  number of *distinct directories* among those importers (using `SymbolIndex.same_package`'s own
+  directory granularity, for consistency with the rest of this module). **`outdegree` is dropped**
+  from the original `α·indegree + β·outdegree + γ·cross_subsystem_usage` — outdegree measures how
+  much a file imports, which has no relationship to whether that file acts as a fan-out *bridge*
+  for other people's unrelated call chains (the actual mechanism being suppressed). Adding a term
+  that doesn't map to the mechanism would be scope creep, not rigor.
+
+- **Suppression mechanism:** when `_locality_filtered_bfs` is about to expand past a frontier node,
+  compute `UPS` for that node's file. If it exceeds a threshold (to be set from real measured
+  values on Consul, not guessed — see below), that node stays in the result (it was reached via a
+  genuine, real locality relationship) but does **not** get expanded further — a utility/hub file
+  can be a destination, never a further bridge to more distant, unrelated files. This is the
+  smooth-vs-hard-cap distinction from the original proposal translated honestly into this
+  boolean-gated BFS: the *score* is computed continuously; only the final expand/stop decision is
+  binary, because the BFS itself needs one.
+
+- **Hypothesis (falsifiable, stated before implementation):** suppressing BFS expansion past
+  high-UPS files reduces cross-subsystem fan-out on real ambiguous-name queries ("New", "Register"
+  against real Consul — the same cases documented in
+  `scripts/callgraph_fanout_impact_experiment.py` and this module's own docstring) without
+  incorrectly dropping a real, direct, meaningful cross-package call chain (the
+  `task6_path_hint_secondary_sibling` case — `agent/cache/cache.go`'s `Prepopulate` called from
+  `agent/auto-config/tls.go` — must still resolve correctly, since `agent/cache` itself being
+  high-UPS must not block *reaching* it, only block using it as a further bridge).
+
+- **Success criteria (checked BEFORE any implementation begins, per the standing methodology):**
+  1. Real UPS values for `agent/cache/cache.go` and a handful of ordinary files must be measured on
+     real Consul first, so the threshold is grounded in real data, not a guessed constant.
+  2. A same-process ablation (identical resolution, suppression on vs. off) must show a real
+     reduction in `candidate_files`/distinct-subsystems-touched count on the "New"/"Register" cases
+     — an aggregate score change alone is not sufficient evidence, per
+     [[arcf_arm2_semantic_reranker_falsified]] and [[arcf_arm4_path_locality_falsified]].
+  3. The same ablation must show the `task6_path_hint_secondary_sibling` ground-truth case is
+     unaffected (still resolves `agent/cache.Prepopulate` → `agent/auto-config/tls.go` correctly).
+  4. Full test suite must stay green.
+- **Failure criteria:** any of the above three checks failing, or the mechanism requiring a fudged
+  threshold that only works on hand-picked cases, means this stays `Parked`/unmerged on its branch,
+  reported honestly, same as Arms 1/2/4 — *not* merged "for now."
   UPS-adjusted vs. δ=0) per the standard established by [[arcf_arm2_semantic_reranker_falsified]]
   and [[arcf_arm4_path_locality_falsified]]: an aggregate score movement alone is not sufficient
   evidence._
