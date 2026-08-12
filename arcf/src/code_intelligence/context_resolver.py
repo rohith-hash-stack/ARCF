@@ -92,6 +92,16 @@ _CONSTRUCTOR_MATCHES_CLASS_NAME_LANGUAGES = frozenset({"java", "csharp"})
 # match.
 _MAX_CANDIDATES_TO_EXPAND = 5
 
+# Checklist item #10: precedence for _add_file's origin_stage merge --
+# lower rank wins when a file is reachable via more than one mechanism.
+# Declaration order of OriginStage itself (most identity-confident first).
+_ORIGIN_STAGE_PRECEDENCE = {
+    OriginStage.AST_DIRECT: 0,
+    OriginStage.SCOPED_GRAPH_EXPANSION: 1,
+    OriginStage.RAW_STRING_FALLBACK: 2,
+    OriginStage.EVIDENCE_FALLBACK_MATCH: 3,
+}
+
 # Feature 2 (path-aware reference resolution, 2026-08-11,
 # arcf-grounding-validation-entity-extraction-gap): SLM-1's refined
 # entity contract can now emit path-qualified hints like "agent/cache"
@@ -845,23 +855,30 @@ class ContextResolver:
         candidate_files.add(file_path)
         file_reasons.setdefault(file_path, reason)
         file_chains.setdefault(file_path, chain)
-        # Checklist item #10: first-write-wins, same discipline as
-        # file_reasons/file_chains above -- a file's FIRST-recorded origin
-        # is definitionally correct provenance (it's the actual mechanism
-        # that first pulled the file in); a later, unrelated visit to the
-        # same file via a different path shouldn't overwrite that history.
-        if (
-            origin_stage is not None
-            and file_origin_stage is not None
-            and file_path not in file_origin_stage
-        ):
-            file_origin_stage[file_path] = origin_stage
-        if (
-            parent_symbol_id is not None
-            and file_parent_symbol_id is not None
-            and file_path not in file_parent_symbol_id
-        ):
-            file_parent_symbol_id[file_path] = parent_symbol_id
+        # Checklist item #10: precedence-based merge, NOT first-write-wins
+        # (unlike file_reasons/file_chains above) -- a real bug caught by
+        # this feature's own unit test: locality_filtered_callers_of_name
+        # (RAW_STRING_FALLBACK) is not module-level-only despite its call
+        # site's own comment -- CallGraph.caller_files_of returns every
+        # same-named caller file regardless of whether the call is
+        # symbol-owned, so it can reach the SAME file a properly ID-scoped
+        # caller_hops walk also reaches. That loop runs first in code
+        # order, so first-write-wins let code order (not evidence
+        # strength) decide the label -- a file that IS reachable via a
+        # genuine identity-propagated path deserves that stronger tag even
+        # if a weaker raw-name lookup happened to visit it first. Same
+        # "stronger evidence wins" shape as file_tiers' PRIMARY-always-
+        # wins rule below, precedence AST_DIRECT > SCOPED_GRAPH_EXPANSION
+        # > RAW_STRING_FALLBACK > EVIDENCE_FALLBACK_MATCH (declaration
+        # order of OriginStage itself, most identity-confident first).
+        if origin_stage is not None and file_origin_stage is not None:
+            existing_stage = file_origin_stage.get(file_path)
+            if existing_stage is None or _ORIGIN_STAGE_PRECEDENCE[origin_stage] < (
+                _ORIGIN_STAGE_PRECEDENCE[existing_stage]
+            ):
+                file_origin_stage[file_path] = origin_stage
+                if parent_symbol_id is not None and file_parent_symbol_id is not None:
+                    file_parent_symbol_id[file_path] = parent_symbol_id
         # PRIMARY always wins over SUPPORTING, regardless of which one this
         # file was FIRST reached through — target_names iteration order is
         # not a confidence ranking, so (unlike reason/chain above) this is
