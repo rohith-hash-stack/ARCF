@@ -117,6 +117,15 @@ class TelemetryEvent(BaseModel):
     tokens_utilized: int | None = None
     utilization_ratio: float | None = Field(default=None, ge=0.0)
 
+    precision: float | None = Field(default=None, ge=0.0, le=1.0)
+    """Checklist item #11: caller-supplied, from real ground truth (e.g. a
+    grounding harness's set-overlap precision) -- TelemetryCollector has
+    no way to compute this itself, it only instruments the pipeline. None
+    means "no ground truth available for this event," a real and common
+    case (most production queries have none), not a missing-data bug."""
+    recall: float | None = Field(default=None, ge=0.0, le=1.0)
+    """Same caller-supplied contract as `precision`."""
+
     recorded_at: datetime = Field(default_factory=utc_now)
 
 
@@ -138,6 +147,8 @@ class TelemetryCollector:
         package: ContextPackage | None = None,
         package_latency_ms: float | None = None,
         classified_task: RetrievalTaskType | None = None,
+        precision: float | None = None,
+        recall: float | None = None,
     ) -> TelemetryEvent:
         utilization_ratio = None
         if package is not None and package.budget_max_tokens > 0:
@@ -152,6 +163,8 @@ class TelemetryCollector:
             token_budget_capacity=package.budget_max_tokens if package is not None else None,
             tokens_utilized=package.budget_used_tokens if package is not None else None,
             utilization_ratio=utilization_ratio,
+            precision=precision,
+            recall=recall,
         )
         self._events.append(event)
         return event
@@ -171,11 +184,15 @@ class TelemetryCollector:
                 "event_count": 0, "resolve_latency_ms": None, "package_latency_ms": None,
                 "origin_breakdown_totals": OriginStageBreakdown().model_dump(),
                 "overall_fallback_ratio": 0.0, "mean_utilization_ratio": None,
+                "quality_data_available": False, "mean_precision": None, "mean_recall": None,
+                "min_recall": None,
             }
 
         resolve_latencies = [e.resolve_latency_ms for e in self._events]
         package_latencies = [e.package_latency_ms for e in self._events if e.package_latency_ms is not None]
         utilizations = [e.utilization_ratio for e in self._events if e.utilization_ratio is not None]
+        precisions = [e.precision for e in self._events if e.precision is not None]
+        recalls = [e.recall for e in self._events if e.recall is not None]
 
         totals = OriginStageBreakdown(
             ast_direct=sum(e.origin_breakdown.ast_direct for e in self._events),
@@ -194,6 +211,16 @@ class TelemetryCollector:
             "mean_utilization_ratio": (
                 round(statistics.mean(utilizations), 4) if utilizations else None
             ),
+            # Checklist item #11: True only when at least one recorded event
+            # carried real ground-truth-derived precision/recall -- lets a
+            # release gate distinguish "quality checked and fine" from "quality
+            # was never checked," which a bare None on the aggregate can't do
+            # (an empty list and "everyone scored exactly 0" look identical
+            # without this flag).
+            "quality_data_available": bool(precisions or recalls),
+            "mean_precision": round(statistics.mean(precisions), 4) if precisions else None,
+            "mean_recall": round(statistics.mean(recalls), 4) if recalls else None,
+            "min_recall": round(min(recalls), 4) if recalls else None,
         }
 
     def assert_no_fallbacks(self, max_fallback_ratio: float = 0.0) -> None:
