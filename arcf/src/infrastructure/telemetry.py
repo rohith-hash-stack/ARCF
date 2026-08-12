@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import statistics
 from datetime import datetime
+from enum import StrEnum
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -30,6 +31,31 @@ from context.task_profile import RetrievalTaskType
 from domain.context_package import ContextPackage
 from domain.context_resolution import ContextResolutionResult, OriginStage
 from shared.clock import utc_now
+
+
+class ConfidenceLabel(StrEnum):
+    """Checklist item #9 (arcf/CHECKLIST.md): derived from `origin_breakdown`
+    data already present on every `TelemetryEvent` — no new schema surface,
+    just a real classification of data item #10/#13 already computed.
+
+    EMPTY_CANDIDATE_SET: zero candidates at all (the resolver found
+    nothing, and no fallback mechanism added anything either).
+
+    LOW_CONFIDENCE: candidates exist, but every one of them is
+    RAW_STRING_FALLBACK or EVIDENCE_FALLBACK_MATCH — no confident,
+    identity-propagated match. On a negative/adversarial query, this is
+    the expected, correct outcome (evidence-fallback's baseline files are
+    not a false positive by the checklist item #9 FPR formula, which
+    counts only non-fallback candidates).
+
+    CONFIDENT_MATCH: at least one AST_DIRECT or SCOPED_GRAPH_EXPANSION
+    candidate exists — a real, identity-propagated match. On a negative
+    query, this is exactly what the FPR metric counts as a false
+    positive."""
+
+    EMPTY_CANDIDATE_SET = "empty_candidate_set"
+    LOW_CONFIDENCE = "low_confidence"
+    CONFIDENT_MATCH = "confident_match"
 
 
 class OriginStageBreakdown(BaseModel):
@@ -127,6 +153,20 @@ class TelemetryEvent(BaseModel):
     """Same caller-supplied contract as `precision`."""
 
     recorded_at: datetime = Field(default_factory=utc_now)
+
+    @property
+    def confidence_label(self) -> ConfidenceLabel:
+        """See `ConfidenceLabel`'s own docstring. A computed property, not
+        a stored field — always consistent with `origin_breakdown`, never
+        a second source of truth that could drift from it."""
+        if self.origin_breakdown.total == 0:
+            return ConfidenceLabel.EMPTY_CANDIDATE_SET
+        non_fallback = (
+            self.origin_breakdown.ast_direct + self.origin_breakdown.scoped_graph_expansion
+        )
+        if non_fallback == 0:
+            return ConfidenceLabel.LOW_CONFIDENCE
+        return ConfidenceLabel.CONFIDENT_MATCH
 
 
 class TelemetryCollector:
