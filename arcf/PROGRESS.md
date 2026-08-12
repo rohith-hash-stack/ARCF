@@ -1,6 +1,6 @@
 # ARCF Progress Log
 
-**Last updated:** 2026-08-12 IST · **Base/main HEAD:** `a8910e6` · **Tests:** 988/988 passing
+**Last updated:** 2026-08-12 IST · **Base/main HEAD:** `fa81a27` · **Tests:** 988/988 passing
 
 Read this file top-to-bottom to pick up where things stand — it's the fast-start doc for a new
 chat session. Detailed *why* for each entry lives in Claude's memory files (per-topic, e.g.
@@ -34,7 +34,7 @@ with a plausible but *not proven* cause (small repos/candidate sets mean less re
 structure for `SCOPED_GRAPH_EXPANSION` to find, independent of language per se) — isolating
 repo-size from language-specific dynamic-dispatch effects needs its own dedicated experiment,
 explicitly flagged rather than force-fit into this item's scope. 988/988 tests (unchanged). Merged
-`<pending>`.
+`fa81a27`.
 → memory: `arcf_validation_breadth_matrix_shipped`
 
 ### 2026-08-12 — Shipped: CHECKLIST.md item #14 (Failure Taxonomy & Automated Regression Attribution)
