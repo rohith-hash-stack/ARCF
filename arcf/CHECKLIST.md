@@ -37,12 +37,18 @@ limit) can resume without re-deriving anything.
 - **Active branch:** `experiment/locality-utility-suppression` (off `Base`)
 - **Active item:** #3, Locality UPS suppression — item-only scope confirmed with user (not the
   full Tier 1 batch)
-- **In-flight state:** success/failure criteria written into item #3's own section below. Not yet
-  implemented. Next concrete step is measuring real UPS values (`agent/cache/cache.go` indegree +
-  cross-subsystem-usage) on real Consul (`.benchmark_repos/consul`) to ground the suppression
-  threshold before writing the suppression logic itself.
-- **Next step:** write the diagnostic measurement script (no source changes yet), run it, then
-  implement the suppression in `locality.py` per item #3's success criteria.
+- **In-flight state:** implemented, unit-tested (945/945 green), committed to the branch
+  (`bec0cf7`). Deterministic same-process ablation run and passed with real, positive, but
+  query-dependent evidence (see item #3's own section for the full table) — `Register` clears the
+  user's ≥15% token-footprint gate (36.6%/35.6% at depth 2/3), `New` does not (3.5%/9.4%). Genuine
+  cross-package case unaffected at every depth; determinism 100%. Not yet merged to `Base` — the
+  statistical-significance gate (p<0.05 precision, needs `validate_llm_grounding.py --n-runs`,
+  real API cost) is still open, and per the user's own earlier choice that step was deliberately
+  deferred until the free pre-check looked promising.
+- **Next step:** get user go-ahead on spending the paid LLM-harness run (real cost/time) before
+  running it. If approved and it passes: full test suite green check, then merge to `Base` per the
+  zero-known-issues rule. If declined or it fails: report honestly, leave parked/unmerged on this
+  branch like Arms 1/2/4, update status here and in `PROGRESS.md` either way.
 
 ## Priority order (decided 2026-08-12)
 
@@ -183,9 +189,76 @@ items parked until new evidence shows up.
 - **Failure criteria:** any of the above three checks failing, or the mechanism requiring a fudged
   threshold that only works on hand-picked cases, means this stays `Parked`/unmerged on its branch,
   reported honestly, same as Arms 1/2/4 — *not* merged "for now."
-  UPS-adjusted vs. δ=0) per the standard established by [[arcf_arm2_semantic_reranker_falsified]]
-  and [[arcf_arm4_path_locality_falsified]]: an aggregate score movement alone is not sufficient
-  evidence._
+
+- **User-specified refinements (2026-08-12, mid-implementation):** the user independently supplied
+  a more detailed spec matching this diagnosis almost exactly (package-level indegree, hard-block
+  past a UPS node rather than a decay multiplier, an explicit ablation toggle) plus stricter success
+  gates: ≥15% context-budget-token reduction, statistically significant (p<0.05) precision
+  improvement, 0% primary-path-recall regression, 100% run determinism. Two points reconciled with
+  the user directly: (a) the spec's "or core standard/utility namespace" trigger is structurally
+  redundant for this specific mechanism — `ImportGraph` only records *resolved* (intra-repo) import
+  edges, so stdlib/third-party packages (`fmt`, `errors`, `context`) never become graph nodes at
+  all; skipped, not implemented. (b) validation done as a free deterministic pre-check first, full
+  paid LLM-harness statistical run only if that looks promising — per the user's own choice.
+
+- **Real bug caught by this item's own unit tests, fixed in the same flow (not deferred):** the
+  first version thresholded on percentile-rank alone. On small/typical package counts this breaks —
+  e.g. 3 packages where two both have exactly 1 importer tie for "the top rank" and both get
+  flagged, even though a single genuine caller is definitionally not a fan-out hub (caught by
+  `test_ups_suppression_does_not_affect_a_genuine_low_fan_out_chain` before this ever reached real
+  Consul data). Fixed by adding an absolute `indegree >= 3` floor alongside the percentile check —
+  a generic minimum, not tuned to Consul (real Consul's own hub, `agent/cache`, clears it by two
+  orders of magnitude). See `_MIN_INDEGREE_FOR_UTILITY_BRIDGE` in `locality.py`.
+
+- **Real bug caught by the ablation itself, before reporting any result:** the first same-process
+  ablation run (target_names=["New"]/["Register"], default `traversal_depth`) came back
+  byte-identical on/off — but rather than reporting that as the falsification result immediately,
+  traced *why* first (matching Arms 1/2/4's own discipline): `ContextResolver.resolve()`'s
+  `traversal_depth` defaults to 1, and `_locality_filtered_bfs`'s own loop structure means hop-2+
+  nodes are computed internally but never written to its returned `result` when `max_depth=1` —
+  UPS suppression (which only prevents hop-2+ *expansion*) is structurally unreachable at that
+  depth, independent of whether the suppression logic itself is correct. Checked `grep` for every
+  real caller of `traversal_depth` (not assumed): production actually varies this per
+  `RetrievalTaskType` via `TRAVERSAL_DEPTH` (`src/context/task_profile.py`) —
+  `BUG_FIX`/`CI_CD`/`UNKNOWN`=1 (where this item's mechanism genuinely never fires), but
+  `REPOSITORY_EXPLANATION`/`ARCHITECTURE_UNDERSTANDING`/`PERFORMANCE`=2,
+  `REFACTOR_IMPACT_ANALYSIS`=3, `LARGE_STRUCTURAL_CHANGE`=unbounded. Re-ran the ablation sweeping
+  depths 1/2/3 (`scripts/ups_suppression_ablation.py`) instead of depth=1 alone.
+
+- **Real result of the depth-swept ablation (2026-08-12):**
+
+  | query | depth | candidates off→on | token footprint off→on | reduction |
+  |---|---|---|---|---|
+  | Register (38 raw matches) | 1 | 23→23 | 75754→75754 | 0% (structurally unreachable, see above) |
+  | Register | 2 | 32→29 | 224775→142529 | **36.6%** |
+  | Register | 3 | 34→31 | 231050→148804 | **35.6%** |
+  | New (159 raw matches) | 1 | 224→224 | 870212→870212 | 0% (structurally unreachable) |
+  | New | 2 | 256→250 | 1097211→1059035 | 3.5% |
+  | New | 3 | 289→269 | 1331397→1205788 | 9.4% |
+
+  `added by suppression` was 0 in every single case (purely subtractive, as designed) and the
+  genuine `task6`-style case (`agent/auto-config/tls.go` → `agent/cache.Prepopulate`) was
+  byte-identical on/off at every depth — `tls.go` always present, candidate count unchanged.
+  Determinism check (identical call repeated) passed every time. Directly traced (not inferred) why
+  the dropped files are real noise, not a regression: e.g. `agent/acl_test.go`,
+  `agent/agent_endpoint_test.go`, `agent/testagent.go` were all reached via
+  `defines Register → called by NewBaseDeps → called by {NewTestACLAgent,newDefaultBaseDeps,Start}`
+  — `NewBaseDeps` sits in the `agent` package, itself a measured real hub (UPS=225, top-25 on real
+  Consul) — these are test/bootstrap files pulled in only because they call a hub bootstrap
+  function that happens to also call `Register`, not because of any real relationship to ACL
+  registration.
+
+  **Honest read against the user's 4 stated gates:** ≥15% token-footprint reduction — met for
+  `Register` (36.6%/35.6%), NOT met for `New` (3.5%/9.4%). 0% primary-path-recall regression — met
+  (genuine case untouched at every depth). 100% determinism — met. Statistically significant
+  (p<0.05) precision improvement — not yet checked, needs the paid multi-run LLM grounding harness
+  (`validate_llm_grounding.py --n-runs`), deliberately deferred until the free pre-check looked
+  promising, which it now does for at least one of the two flagship queries. **Not a clean pass —
+  a real, non-zero, safe, but query-dependent effect**, reported as such, not rounded up.
+
+- **Status, revised:** `In Progress` — deterministic pre-check passed with real (if
+  query-dependent) evidence; full statistical LLM-harness run is the next step, pending user go-
+  ahead (real API cost/time). Branch: `experiment/locality-utility-suppression`.
 
 ## 4. Grounding Quality — Structural vs. Behavioral
 
