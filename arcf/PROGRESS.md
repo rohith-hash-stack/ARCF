@@ -1,6 +1,6 @@
 # ARCF Progress Log
 
-**Last updated:** 2026-08-12 IST · **Base/main HEAD:** `f6f1e47` · **Tests:** 988/988 passing
+**Last updated:** 2026-08-12 IST · **Base/main HEAD:** `a8910e6` · **Tests:** 988/988 passing
 
 Read this file top-to-bottom to pick up where things stand — it's the fast-start doc for a new
 chat session. Detailed *why* for each entry lives in Claude's memory files (per-topic, e.g.
@@ -37,7 +37,7 @@ byte-identical output.
 silently left wrong**: task2's `G_struct` also failed in the full pipeline (not just `G_behav`),
 for a different real reason (`Cache` itself is 3-way ambiguous and falls below the falloff gate)
 than the already-documented `Notify`-collision `G_behav` failure — item #4's entry didn't
-separately call this out originally. 988/988 tests (unchanged). Merged `<pending>`.
+separately call this out originally. 988/988 tests (unchanged). Merged `a8910e6`.
 → memory: `arcf_failure_taxonomy_shipped`
 
 ### 2026-08-12 — Shipped: CHECKLIST.md item #4 (Grounding Quality — Structural vs. Behavioral Split)
