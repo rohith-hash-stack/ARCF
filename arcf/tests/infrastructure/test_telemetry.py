@@ -11,7 +11,12 @@ from context.packager import ContextPackager
 from context.relevance_ranker import RelevanceRanker
 from context.task_profile import RetrievalTaskType
 from infrastructure.cost import CostEstimator
-from infrastructure.telemetry import OriginStageBreakdown, TelemetryCollector, TelemetryEvent
+from infrastructure.telemetry import (
+    ConfidenceLabel,
+    OriginStageBreakdown,
+    TelemetryCollector,
+    TelemetryEvent,
+)
 from workspace.scanner import RepositoryScanner
 
 
@@ -214,3 +219,29 @@ def test_origin_stage_breakdown_untagged_signals_a_real_coverage_gap() -> None:
     breakdown = OriginStageBreakdown(ast_direct=2, untagged=1)
     assert breakdown.total == 3
     assert breakdown.fallback_count == 0
+
+
+def _event_with_breakdown(**kwargs) -> TelemetryEvent:
+    from uuid import uuid4
+    return TelemetryEvent(
+        query_id=uuid4(), traversal_depth=0, resolve_latency_ms=1.0,
+        origin_breakdown=OriginStageBreakdown(**kwargs),
+    )
+
+
+def test_confidence_label_empty_candidate_set() -> None:
+    event = _event_with_breakdown()
+    assert event.confidence_label is ConfidenceLabel.EMPTY_CANDIDATE_SET
+
+
+def test_confidence_label_low_confidence_when_only_fallback_candidates() -> None:
+    event = _event_with_breakdown(raw_string_fallback=2, evidence_fallback_match=1)
+    assert event.confidence_label is ConfidenceLabel.LOW_CONFIDENCE
+
+
+def test_confidence_label_confident_match_when_any_non_fallback_candidate() -> None:
+    event = _event_with_breakdown(ast_direct=1, raw_string_fallback=5)
+    assert event.confidence_label is ConfidenceLabel.CONFIDENT_MATCH
+
+    event2 = _event_with_breakdown(scoped_graph_expansion=1)
+    assert event2.confidence_label is ConfidenceLabel.CONFIDENT_MATCH
