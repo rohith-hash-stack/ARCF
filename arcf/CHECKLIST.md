@@ -484,12 +484,62 @@ the audit deliverable only, per the item's own "0 production code changes" succe
 
 ## 9. Benchmark Coverage — Negative Queries / False-Positive Rate
 
-- **Status:** Not Started
-- **Source:** original doc §9
+- **Status:** In Progress
+- **Source:** original doc §9, detailed spec supplied by user 2026-08-12
 - **Note:** real, currently-uncovered gap — the existing harness (`validate_llm_grounding.py`)
   only measures recall/precision against a real positive ground truth, never a
   should-return-nothing case.
-- **Success criteria:** _not defined yet._
+
+- **Real synergy, found before designing anything:** the spec's own FPR formula — "Negative
+  Queries yielding > 0 **non-fallback** candidate files" — is *exactly* item #10's
+  `OriginStage`/item #13's `fallback_ratio` split (`AST_DIRECT`+`SCOPED_GRAPH_EXPANSION` =
+  non-fallback, `RAW_STRING_FALLBACK`+`EVIDENCE_FALLBACK_MATCH` = fallback). No new telemetry event
+  types needed — `LOW_CONFIDENCE`/`EMPTY_CANDIDATE_SET` are derived classifications
+  (`EMPTY_CANDIDATE_SET` = 0 candidates; `LOW_CONFIDENCE` = candidates present but all
+  fallback-origin), not new schema surface on already-shipped code.
+
+- **Scope correction: must test through the real `service.py` layer, not bare `ContextResolver`.**
+  Checked directly: the lexical-probe-recovery path ("Classifier-gap fix, layer 3" in `service.py`)
+  and `evidence_fallback.py`'s query-referenced/evidence-contract matching — the actual mechanisms
+  that could produce a false positive on an adversarial query — both live in
+  `CodeIntelligenceContractService._resolve`, not in `ContextResolver.resolve()` itself. Testing
+  only the bare resolver would miss the real risk surface entirely (a fabricated name would
+  trivially resolve to nothing at that layer, making the test vacuous). Uses
+  `service.attach_code_intelligence(...)` — the real production entry point — for every negative
+  query.
+
+- **SLM-1 bypassed deliberately, for determinism/cost/speed, not by oversight:** `target_names` are
+  hand-specified per negative query rather than extracted from query text via real SLM-1 — matches
+  the spec's own "Fast & Self-Contained... runs deterministically" requirement, and SLM-1
+  non-determinism is a well-documented, standing issue on this project
+  ([[arcf_payload_optimization_path_masking]]) this item has no need to reintroduce. No LLM calls
+  anywhere in this item — the FPR metric is about candidate FILES (resolver/packager output), never
+  about a generated answer, so no judge call is needed either.
+
+- **Negative query suite grounded in real Consul, not assumed** (verified via direct `grep` before
+  writing any query, catching one real near-miss: a generic test-fixture resource string literal
+  `"autoscaler"` exists in `internal/storage/conformance/conformance.go`, unrelated to any
+  Kubernetes-autoscaling feature — confirmed Consul implements no such feature before using it as a
+  negative example). Also deliberately picked a real lexical-collision case, not a trivially-safe
+  one: `SyncExternalDatabase` shares a prefix with real functions (`StateSyncer`,
+  `syncChangesEventFn`, etc. in `agent/ae/ae.go`) — a genuine test of whether the lexical-probe
+  fallback path can be fooled into a false positive, not a query guaranteed to resolve to nothing
+  trivially. Consul UI's actual framework confirmed via its own `package.json` (`ember build`,
+  `ember-template-lint`) — genuinely no React code exists, unlike an assumption that could've been
+  wrong.
+
+- **Success criteria:**
+  1. FPR ≤ 5% — computed via `origin_breakdown`'s non-fallback count, real Consul, real service
+     layer, no LLM calls.
+  2. Zero positive regression — no source code changes in this item at all (pure test/harness
+     addition), verified by the full existing suite staying green.
+  3. Telemetry integration — every negative query's result recorded through a real
+     `TelemetryCollector.record()` call without exception, `EMPTY_CANDIDATE_SET`/`LOW_CONFIDENCE`
+     correctly derived from real `origin_breakdown` data.
+  4. Fast, deterministic, self-contained — no LLM calls, runs as a normal part of the pytest suite.
+- **Failure criteria:** any negative query producing a real (non-fallback) match, or any
+  `TelemetryCollector.record()` call raising, means investigate before reporting FPR as passing —
+  not silently excluded from the denominator.
 
 ## 10. Expansion Consistency — Symbol-Identity Mode
 
