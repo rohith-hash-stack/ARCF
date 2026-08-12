@@ -693,6 +693,41 @@ class CodeIntelligenceContractService:
                         }
                     )
 
+        # ARCF Task 3 (2026-08-12, "un-gate lexical_symbol_probe"): every
+        # branch above (multi-axis / anchor-classification / plain
+        # lexical-probe recovery) only ever runs when
+        # symbol_resolution_found_nothing is True — if SLM-1 returned
+        # ANY resolvable target name, however partial or low-confidence,
+        # the deterministic regex/prefix probe never ran at all, so a
+        # real symbol match sitting right next to a weak or incomplete
+        # SLM-1 match was silently never added. Run the plain probe here
+        # as a standing, always-on corroboration source instead — set-
+        # unioned additively via the same evidence-preserving merge the
+        # zero-result path uses (_merge_lexical_probe_result), at the
+        # same conservative recovery depth/token budget that path already
+        # uses, so this can only ever ADD candidate files a name-only
+        # resolution missed, never replace or outrank one SLM-1 already
+        # found.
+        if not symbol_resolution_found_nothing and index is not None:
+            standing_lexical_names = probe_symbol_names(raw_request, index.symbol_index)
+            if standing_lexical_names:
+                standing_lexical_result = ContextResolver(index).resolve(
+                    resolved_root,
+                    contract_id,
+                    resolved_root,
+                    [*target_names, *standing_lexical_names],
+                    traversal_depth=_LEXICAL_PROBE_RECOVERY_DEPTH,
+                    max_expansion_tokens=_TIER3_EXPANSION_TOKEN_BUDGET,
+                    entry_point_tier=EvidenceTier.SUPPORTING,
+                )
+                result = self._merge_lexical_probe_result(
+                    result,
+                    standing_lexical_result,
+                    standing_lexical_names,
+                    "Standing lexical symbol probing (parallel corroboration of SLM-1's own "
+                    "resolution, not a zero-result fallback):",
+                )
+
         evidence_task_type = detect_task_type_for_evidence(raw_request) or classification.task_type
         contract = build_evidence_contract(evidence_task_type)
         if contract:
@@ -806,6 +841,71 @@ class CodeIntelligenceContractService:
             target_names=target_names,
         )
         return result
+
+    def _merge_lexical_probe_result(
+        self,
+        result: ContextResolutionResult,
+        lexical_result: ContextResolutionResult,
+        lexical_names: list[str],
+        note: str,
+    ) -> ContextResolutionResult:
+        """Additively merges a lexical-probe recovery resolution into
+        `result` — new candidate files/entry_points/impacted_symbols
+        only, never a replacement of what's already there. Shared by
+        both the zero-result fallback path (inline in
+        attach_code_intelligence, kept as-is to avoid touching its own
+        already-tested subsystem-localization branching) and the
+        always-on standing-probe path added for ARCF Task 3 (2026-08-12,
+        "un-gate lexical_symbol_probe") below — both need the identical
+        evidence-preserving merge (ContextBudgetManager needs
+        entry_points/impacted_symbols merged too, not just
+        candidate_files — see the zero-result path's own comment for the
+        regression this fixed: a SUPPORTING file with no merged symbol
+        location silently fell back to full-file-if-it-fits)."""
+        existing_paths = {ref.file_path for ref in result.candidate_files}
+        new_refs = [
+            ref for ref in lexical_result.candidate_files if ref.file_path not in existing_paths
+        ]
+        if not new_refs:
+            return result
+
+        merged_files = sorted([*result.candidate_files, *new_refs], key=lambda ref: ref.file_path)
+        selected_tokens = sum(ref.token_count for ref in merged_files)
+        raw_tokens = result.token_estimate.raw_context_tokens
+
+        existing_entry_ids = {s.symbol_id for s in result.entry_points}
+        merged_entry_points = [
+            *result.entry_points,
+            *(s for s in lexical_result.entry_points if s.symbol_id not in existing_entry_ids),
+        ]
+        existing_impacted_ids = {s.symbol_id for s in result.impacted_symbols}
+        merged_impacted_symbols = [
+            *result.impacted_symbols,
+            *(s for s in lexical_result.impacted_symbols if s.symbol_id not in existing_impacted_ids),
+        ]
+
+        shown = ", ".join(lexical_names[:5])
+        more = "..." if len(lexical_names) > 5 else ""
+        return result.model_copy(
+            update={
+                "candidate_files": merged_files,
+                "entry_points": merged_entry_points,
+                "impacted_symbols": merged_impacted_symbols,
+                "resolution_reason": (
+                    f"{result.resolution_reason} {note} matched {len(lexical_names)} real "
+                    f"symbol name(s) from the query's wording ({shown}{more}), adding "
+                    f"{len(new_refs)} file(s)."
+                ),
+                "token_estimate": result.token_estimate.model_copy(
+                    update={
+                        "selected_context_tokens": selected_tokens,
+                        "compression_ratio": (
+                            round(selected_tokens / raw_tokens, 4) if raw_tokens else 0.0
+                        ),
+                    }
+                ),
+            }
+        )
 
     def _resolve_via_anchor_classification(
         self,

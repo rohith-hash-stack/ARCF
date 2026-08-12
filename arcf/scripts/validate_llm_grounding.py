@@ -63,7 +63,14 @@ them from the query text, so this doesn't cherry-pick target_names to
 bias the outcome in either direction.
 
 Usage:
-    uv run python scripts/validate_llm_grounding.py --repo-path <path> --repo-name consul
+    uv run python scripts/validate_llm_grounding.py --repo-path <path> --repo-name consul \
+        [--n-runs 3]
+
+--n-runs (default 3) repeats every task that many times and reports
+mean +/- stddev per arm/metric, since SLM-1 entity extraction is
+non-deterministic in content (not just order) even at temperature=0.0
+-- a single-run score delta cannot be attributed to a real cause without
+this (see PROGRESS.md's "Benchmark noise floor" entry).
 """
 
 from __future__ import annotations
@@ -71,6 +78,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import statistics
 import time
 import traceback
 from pathlib import Path
@@ -256,6 +264,24 @@ def _greedy_full_file_package(
     )
 
 
+def _file_overlap_metrics(packaged_files: list[str], ground_truth_files: list[str]) -> dict:
+    """Deterministic retrieval-accuracy check -- set-overlap precision/
+    recall/F1 of the actually PACKAGED files against ground truth, as
+    opposed to _key_term_check's check of the generated answer text."""
+    packaged_set = set(packaged_files)
+    truth_set = set(ground_truth_files)
+    hits = packaged_set & truth_set
+    precision = round(len(hits) / len(packaged_set), 3) if packaged_set else 0.0
+    recall = round(len(hits) / len(truth_set), 3) if truth_set else 0.0
+    f1 = round(2 * precision * recall / (precision + recall), 3) if (precision + recall) else 0.0
+    return {
+        "hits": sorted(hits),
+        "precision": precision,
+        "recall": recall,
+        "f1": f1,
+    }
+
+
 def _key_term_check(answer: str, ground_truth_files: list[str], ground_truth_terms: list[str]) -> dict:
     """Deterministic reference-assertion check -- independent of and a
     sanity check against the LLM judge's factual_grounding score."""
@@ -435,10 +461,14 @@ async def _run_one_task(
     for arm_name, result in results.items():
         if "error" in result:
             result["key_term_check"] = None
+            result["file_overlap"] = None
             result["judge"] = None
             continue
         result["key_term_check"] = _key_term_check(
             result["answer"], task["ground_truth_files"], task["ground_truth_terms"]
+        )
+        result["file_overlap"] = _file_overlap_metrics(
+            result.get("packaged_files", []), task["ground_truth_files"]
         )
         try:
             result["judge"] = await _judge(
@@ -456,52 +486,130 @@ def _fmt(value) -> str:
     return "-" if value is None else str(value)
 
 
+def _mean_std(values: list[float]) -> tuple[float | None, float | None]:
+    """Population stddev (not sample) so a single-run n_runs=1 invocation
+    degrades to stddev=0.0 instead of raising StatisticsError."""
+    if not values:
+        return None, None
+    mean = round(statistics.mean(values), 3)
+    std = round(statistics.pstdev(values), 3) if len(values) > 1 else 0.0
+    return mean, std
+
+
+def _fmt_mean_std(values: list[float]) -> str:
+    mean, std = _mean_std(values)
+    return "-" if mean is None else f"{mean} ± {std}"
+
+
+def _extract_run_metrics(result: dict) -> dict[str, float | None]:
+    """Pulls the Task-1 grounding metrics + budget utilization out of a
+    single arm's single-run result dict, for cross-run aggregation."""
+    overlap = result.get("file_overlap") or {}
+    key_term = result.get("key_term_check") or {}
+    packaged_tokens = result.get("packaged_tokens")
+    budget_utilization = (
+        round(packaged_tokens / MAX_TOKENS_CONTEXT, 3) if packaged_tokens is not None else None
+    )
+    return {
+        "precision": overlap.get("precision"),
+        "recall": overlap.get("recall"),
+        "f1": overlap.get("f1"),
+        "budget_utilization": budget_utilization,
+        "key_term_score": key_term.get("hit_rate"),
+    }
+
+
+_METRIC_LABELS = {
+    "precision": "File Precision",
+    "recall": "File Recall",
+    "f1": "File F1",
+    "budget_utilization": "Context Budget Utilization",
+    "key_term_score": "Key-Term Hit Rate",
+}
+
+
 def _build_markdown_table(all_task_results: list[dict]) -> str:
+    """all_task_results: list of {"task_id", "query", "runs": [task_result, ...]}
+    where each task_result is one _run_one_task() call's return value (one
+    pass). Every metric is reported as mean ± stddev across the n_runs
+    passes for that task/arm, to surface LLM/SLM-1 non-determinism rather
+    than hide it behind a single-sample number."""
     lines = [
         "| Task | Metric | Arm A (ARCF) | Arm B (Raw Baseline) | Arm C (Zero Context) |",
         "| :--- | :--- | :--- | :--- | :--- |",
     ]
     arm_keys = ["arcf", "baseline_raw", "zero_context"]
-    totals: dict[str, list[float]] = {k: [] for k in arm_keys}
-    grounding_totals: dict[str, list[float]] = {k: [] for k in arm_keys}
+    metric_names = ["precision", "recall", "f1", "budget_utilization", "key_term_score"]
+    overall_metric_values: dict[str, dict[str, list[float]]] = {
+        arm: {m: [] for m in metric_names} for arm in arm_keys
+    }
+    overall_grounding: dict[str, list[float]] = {k: [] for k in arm_keys}
+    overall_composite: dict[str, list[float]] = {k: [] for k in arm_keys}
 
     for task_result in all_task_results:
         task_id = task_result["task_id"]
-        results = task_result["results"]
+        runs = task_result["runs"]
+        n_runs = len(runs)
 
-        tokens_row = [task_id, "Prompt Tokens / TTFT(s) / Total Latency(s)"]
-        score_row = ["", "Grounding / Completeness / Conciseness"]
+        status_row = [task_id, f"Runs OK (of {n_runs})"]
+        tokens_row = ["", "Prompt Tokens / TTFT(s) / Latency(s), mean ± stddev"]
+        score_row = ["", "Grounding / Completeness / Conciseness, mean ± stddev"]
+        metric_rows = {m: ["", f"{_METRIC_LABELS[m]}, mean ± stddev"] for m in metric_names}
+
         for arm in arm_keys:
-            r = results.get(arm, {})
-            if "error" in r:
-                tokens_row.append("ERROR")
-                score_row.append("ERROR")
-                continue
-            tokens_row.append(
-                f"{_fmt(r.get('prompt_tokens'))} / {_fmt(r.get('ttft_seconds'))} / "
-                f"{_fmt(r.get('generation_latency_seconds'))}"
-            )
-            judge = r.get("judge") or {}
-            if "error" in judge:
-                score_row.append("judge error")
-            else:
-                fg, cm, cc = judge.get("factual_grounding"), judge.get("completeness"), judge.get("conciseness")
-                score_row.append(f"{_fmt(fg)} / {_fmt(cm)} / {_fmt(cc)}")
-                if isinstance(fg, (int, float)):
-                    grounding_totals[arm].append(fg)
-                    totals[arm].append((fg + (cm or 0) + (cc or 0)) / 3)
+            arm_results = [run["results"].get(arm, {}) for run in runs]
+            ok_results = [r for r in arm_results if "error" not in r]
+            status_row.append(f"{len(ok_results)}/{n_runs}")
 
+            prompt_tokens = [r["prompt_tokens"] for r in ok_results if r.get("prompt_tokens") is not None]
+            ttft = [r["ttft_seconds"] for r in ok_results if r.get("ttft_seconds") is not None]
+            latency = [
+                r["generation_latency_seconds"] for r in ok_results
+                if r.get("generation_latency_seconds") is not None
+            ]
+            tokens_row.append(
+                f"{_fmt_mean_std(prompt_tokens)} / {_fmt_mean_std(ttft)} / {_fmt_mean_std(latency)}"
+            )
+
+            fg_vals, cm_vals, cc_vals = [], [], []
+            for r in ok_results:
+                judge = r.get("judge") or {}
+                fg, cm, cc = judge.get("factual_grounding"), judge.get("completeness"), judge.get("conciseness")
+                if isinstance(fg, (int, float)):
+                    fg_vals.append(fg)
+                    overall_grounding[arm].append(fg)
+                if isinstance(cm, (int, float)):
+                    cm_vals.append(cm)
+                if isinstance(cc, (int, float)):
+                    cc_vals.append(cc)
+                if isinstance(fg, (int, float)) and isinstance(cm, (int, float)) and isinstance(cc, (int, float)):
+                    overall_composite[arm].append((fg + cm + cc) / 3)
+            score_row.append(f"{_fmt_mean_std(fg_vals)} / {_fmt_mean_std(cm_vals)} / {_fmt_mean_std(cc_vals)}")
+
+            run_metrics_list = [_extract_run_metrics(r) for r in ok_results]
+            for m in metric_names:
+                values = [rm[m] for rm in run_metrics_list if rm.get(m) is not None]
+                overall_metric_values[arm][m].extend(values)
+                metric_rows[m].append(_fmt_mean_std(values))
+
+        lines.append("| " + " | ".join(status_row) + " |")
         lines.append("| " + " | ".join(tokens_row) + " |")
         lines.append("| " + " | ".join(score_row) + " |")
+        for m in metric_names:
+            lines.append("| " + " | ".join(metric_rows[m]) + " |")
 
-    overall_row = ["**Overall**", "**Avg. Grounding / Avg. Composite Score**"]
+    overall_row = ["**Overall**", "**Avg. Grounding / Avg. Composite (mean ± stddev)**"]
     for arm in arm_keys:
-        g = grounding_totals[arm]
-        t = totals[arm]
-        avg_g = round(sum(g) / len(g), 2) if g else None
-        avg_t = round(sum(t) / len(t), 2) if t else None
-        overall_row.append(f"**{_fmt(avg_g)} / {_fmt(avg_t)}**")
+        overall_row.append(
+            f"**{_fmt_mean_std(overall_grounding[arm])} / {_fmt_mean_std(overall_composite[arm])}**"
+        )
     lines.append("| " + " | ".join(overall_row) + " |")
+
+    for m in metric_names:
+        metric_overall_row = ["**Overall**", f"**{_METRIC_LABELS[m]} (mean ± stddev)**"]
+        for arm in arm_keys:
+            metric_overall_row.append(f"**{_fmt_mean_std(overall_metric_values[arm][m])}**")
+        lines.append("| " + " | ".join(metric_overall_row) + " |")
 
     return "\n".join(lines)
 
@@ -514,7 +622,19 @@ async def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--repo-path", required=True)
     parser.add_argument("--repo-name", required=True)
+    parser.add_argument(
+        "--n-runs", type=int, default=3,
+        help=(
+            "Number of times to repeat each benchmark task (default: 3). "
+            "SLM-1 entity extraction is non-deterministic in content even at "
+            "temperature=0.0 (see PROGRESS.md); repeating runs and reporting "
+            "mean +/- stddev surfaces that noise instead of hiding it behind "
+            "a single-sample score."
+        ),
+    )
     args = parser.parse_args()
+    if args.n_runs < 1:
+        parser.error("--n-runs must be >= 1")
     root = Path(args.repo_path)
 
     client = LiteLLMClient(max_retries=3, base_delay_seconds=0.5)
@@ -526,8 +646,13 @@ async def main() -> None:
 
     all_task_results = []
     for task in BENCHMARK_TASKS:
-        task_result = await _run_one_task(root, args.repo_name, task, client, service, contract_store)
-        all_task_results.append(task_result)
+        runs = []
+        for run_idx in range(args.n_runs):
+            print(f"\n=== {task['id']} — run {run_idx + 1}/{args.n_runs} ===")
+            runs.append(
+                await _run_one_task(root, args.repo_name, task, client, service, contract_store)
+            )
+        all_task_results.append({"task_id": task["id"], "query": task["query"], "runs": runs})
 
     RESULTS_DIR.mkdir(parents=True, exist_ok=True)
     raw_path = RESULTS_DIR / f"{args.repo_name}_grounding_validation.json"
