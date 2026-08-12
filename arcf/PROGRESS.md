@@ -7,6 +7,36 @@ chat session. Detailed *why* for each entry lives in Claude's memory files (per-
 `arcf_payload_optimization_path_masking`); this file is the curated *what/when* summary, updated
 after each merge to `Base`, not after every small step.
 
+### 2026-08-12 — Shipped: CHECKLIST.md item #8 (Validation Breadth — Repository Topology & Scale)
+`scripts/validation_breadth_matrix_check.py`: real 4-tier matrix (Go=consul, Python=flask,
+Java=spring-petclinic — freshly shallow-cloned, no Java repo existed in `.benchmark_repos` before
+this item — Mixed=vllm, which turned out to **already be** a real polyglot repo, 4,116 `.py` + 305
+`.rs` files confirmed by direct extension count, not a new clone). Scope-corrected against
+[[arcf_repo_sweep_50]] first: that's a separate LLM-judged 50-repo QA sweep with no ground truth;
+this item's own gates (Matrix Execution, Parser Stability, Cross-Repo Telemetry, Operational Gate
+Parity) are all deterministic infrastructure checks, no LLM calls needed, same discipline as items
+#4/#9/#10/#14.
+
+**Real result, zero `src/` changes, pure reuse of items #11/#13/#14's existing interfaces**: 4/4
+repos indexed and ran resolve/rank/package/telemetry/gate cleanly with zero unhandled crashes,
+including a genuinely cross-language `vllm` index (59,353 real symbols spanning Python and Rust in
+one `CodeIntelligenceIndex`, via `PythonLanguageAnalyzer`+`RustLanguageAnalyzer` registered
+together). `production_gate.evaluate_release()` returned a structurally valid decision on every
+tier (all `RELEASE_REJECTED`, for the identical already-documented reason from item #11's own
+Consul finding — the literal `max_fallback_ratio=0.0` default — confirming the gate applies zero
+language-specific schema assumptions, exactly the Operational Gate Parity gate's own wording).
+Item #14's classifier was exercised cross-language for the first time and generalized correctly
+(real, named categories on Go/Python/Mixed failures, a valid empty result on Java).
+
+**Real Topology Drift finding, the actual point of this item**: fallback ratio varies sharply by
+repo — **Go 4% vs. Python 85.7%, Java 50%, Mixed 66.7%**. Reported as a real, honest observation
+with a plausible but *not proven* cause (small repos/candidate sets mean less real call-graph
+structure for `SCOPED_GRAPH_EXPANSION` to find, independent of language per se) — isolating
+repo-size from language-specific dynamic-dispatch effects needs its own dedicated experiment,
+explicitly flagged rather than force-fit into this item's scope. 988/988 tests (unchanged). Merged
+`<pending>`.
+→ memory: `arcf_validation_breadth_matrix_shipped`
+
 ### 2026-08-12 — Shipped: CHECKLIST.md item #14 (Failure Taxonomy & Automated Regression Attribution)
 `scripts/failure_taxonomy.py`: `FailureCategory` (the user's exact 5 values) +
 `classify_grounding_failure()`, pure/deterministic, harness-only. Reconciled against real code
@@ -571,6 +601,11 @@ Fixed a false-positive tie where `"implement"` substring-matched inside `"implem
 
 ## Open / unresolved (don't re-litigate without new evidence)
 
+- **Cross-repo fallback-ratio topology drift** (checklist item #8) — real, measured: Go 4% vs.
+  Python 85.7%, Java 50%, Mixed 66.7% on a real 4-tier matrix run. Plausible but unproven cause is
+  repo/candidate-set size, not language per se — needs a dedicated experiment (e.g. holding
+  candidate-set size roughly constant across languages) to actually isolate the two factors before
+  concluding anything about language-specific dynamic-dispatch effects.
 - **Flagship "New"-style extreme-ambiguity retrieval** — still not solved. Root cause is Tier-1
   entry-point fan-out (a name resolving to 100+ same-named candidates repo-wide), a different
   mechanism from everything fixed so far.

@@ -39,10 +39,10 @@ limit) can resume without re-deriving anything.
   `exp/type-graph-indexing`); `feature/symbol-identity-audit-trail`,
   `feature/observability-telemetry`, `feature/operational-release-gate`,
   `feature/incremental-index-equivalence`, `feature/negative-query-fpr-harness`,
-  `feature/grounding-structural-behavioral-split`, and `feature/failure-taxonomy` all merged and
-  deleted.
-- **Active item:** none — **Tier 1 AND Tier 2 fully closed out; Tier 3 items #9, #4, and #14
-  shipped.** Item #4's real finding worth remembering: the new `G_struct`/`G_behav` split didn't
+  `feature/grounding-structural-behavioral-split`, `feature/failure-taxonomy`, and
+  `feature/validation-breadth-matrix` all merged and deleted.
+- **Active item:** none — **Tier 1 AND Tier 2 fully closed out; Tier 3 items #9, #4, #14, and #8
+  all shipped — Tier 3 fully closed out.** Item #4's real finding worth remembering: the new `G_struct`/`G_behav` split didn't
   just add a metric — run through the real Arm A pipeline it precisely diagnosed PROGRESS.md's own
   previously `unconfirmed` "Task 1 regression": the genuine entry-point file for tasks 1/3/5 is both
   unusually large (9k–12k tokens, competing for an 8000-token budget) and ambiguity-decayed
@@ -58,14 +58,27 @@ limit) can resume without re-deriving anything.
   *different* reason (ambiguity decay on `Cache` itself) than the already-documented `G_behav`
   failure (the `Notify` collision) — corrected on item #4's own entry, not silently left wrong.
   Real Consul run: 60% of real failures = `AMBIGUITY_DECAY_DROPPED`, 20% `OVERSIZED_FILE_EXCLUDED`,
-  20% `ZERO_CANDIDATE_EXTRACTION`.
+  20% `ZERO_CANDIDATE_EXTRACTION`. Item #8 (real 4-tier Go/Python/Java/Mixed matrix — Consul/Flask/
+  spring-petclinic (freshly cloned)/vllm (already-polyglot py+rs)) then proved #11/#13/#14 all
+  generalize cross-language with zero `src/` changes — 4/4 repos indexed clean (up to 59,353 real
+  symbols spanning two languages in one graph, for `vllm`), and surfaced a real Topology Drift
+  finding: fallback ratio varies sharply by repo (Go 4% vs. Python 85.7%/Java 50%/Mixed 66.7%),
+  plausibly repo-size-driven (small candidate sets mean less real call-graph to expand into) rather
+  than proven language-specific — flagged, not isolated, matching the standing discipline.
 - **In-flight state:** none. `main`/`Base` clean and in sync, full test suite green (988/988).
-- **Next step:** Tier 3 continues — **#8 Validation breadth**, per the decided priority order above
-  (coupled with resuming the paused 50-repo sweep, per that item's own note). Also flagged but not
-  scheduled: (1) lexical-probe-recovery's real
-  token/candidate-count cost on adversarial queries (13–39 files even at correctly-low confidence,
-  from item #9); (2) the ambiguity-decay-vs-oversized-entry-point ranking interaction found by item
-  #4, above — a genuinely new angle on the closed recall-gap mechanism, not yet attempted.
+- **Next step:** **All 14 checklist items now have a status** (shipped, falsified/parked, or
+  correctly scoped-down) — no items remain in Tier 3 or above. Remaining Tier 4 items (**#2**
+  CallGraph edge provenance, **#6** typed query dependency graph) and Parked items (**#1**, **#12**)
+  stay exactly as their own entries describe (lower confidence of payoff / blocked on SLM-1
+  determinism / same-shape-as-falsified pending new evidence) — nothing forces picking one up next.
+  Flagged but not scheduled, for whenever a future session wants a concrete next step: (1)
+  lexical-probe-recovery's real token/candidate-count cost on adversarial queries (13–39 files even
+  at correctly-low confidence, from item #9); (2) the ambiguity-decay-vs-oversized-entry-point
+  ranking interaction found by item #4 (a genuinely new angle on the closed recall-gap mechanism,
+  not yet attempted); (3) isolating repo-size from language-specific causes behind item #8's real
+  fallback-ratio topology drift finding, above; (4) resuming the paused 50-repo QA sweep
+  ([[arcf_repo_sweep_50]], 3/50 done) — a genuinely separate activity from item #8, never blocking
+  it, still open on its own.
 
 ## Priority order (decided 2026-08-12)
 
@@ -102,7 +115,9 @@ items parked until new evidence shows up.
 9. **#14** Failure taxonomy — more valuable once #13 exists to feed it real data, not one-off traces.
    **Done 2026-08-12, shipped.**
 10. **#8** Validation breadth (topology/scale) — biggest effort; couple with resuming the paused
-    50-repo sweep rather than standing alone.
+    50-repo sweep rather than standing alone. **Done 2026-08-12, shipped** — scoped as its own real
+    4-tier matrix run instead (see the item's own scope-correction note); the 50-repo sweep remains
+    separately open, not blocking.
 
 **Tier 4 — lower confidence of payoff, sequence last**
 11. **#2** CallGraph edge provenance — sound as a wrapper redesign, but sequence after #3 lands
@@ -602,12 +617,91 @@ the audit deliverable only, per the item's own "0 production code changes" succe
 
 ## 8. Validation Breadth — Repository Topology & Scale Diversity
 
-- **Status:** Not Started
-- **Source:** original doc §8
+- **Status:** Shipped — merged to `main`/`Base`, branch deleted after merge
+- **Source:** original doc §8, detailed spec supplied by user 2026-08-12
 - **Note:** no overlap with falsified work — real, currently-single-repo-biased benchmark gap.
-  Connects to the in-progress 50-repo sweep ([[arcf_repo_sweep_50]], 3/50 done, paused on token
-  expiry) — could piggyback on that effort rather than building a separate matrix.
-- **Success criteria:** _not defined yet._
+
+- **Scope correction against [[arcf_repo_sweep_50]]:** that sweep (3/50 done, paused on API token
+  expiry) is a *different* activity — an LLM-judged answer-quality QA pass across 50 repos with no
+  ground truth, using `repo_query_answer.py`. This item's own success gates (Matrix Execution,
+  Parser Stability, Cross-Repo Telemetry, Operational Gate Parity) need none of that — they're all
+  deterministic infrastructure checks (indexing, telemetry, gates, failure taxonomy), same
+  no-LLM-calls discipline as items #4/#9/#10/#14. Scoped as its own real run rather than blocked on
+  resuming the paused sweep.
+
+- **Matrix, grounded in what's actually available before picking anything (`find
+  .benchmark_repos/* -type f | ... | uniq -c`, not assumed):**
+  - **Go:** `consul` (already the project's primary benchmark repo).
+  - **Python:** `flask` (83 real `.py` files, already cloned — decorator-based routing is a real
+    duck-typing/implicit-dispatch case, not synthetic).
+  - **Java:** `spring-petclinic` — no Java repo existed in `.benchmark_repos` before this item;
+    shallow-cloned fresh (49 real `.java` files, a real `Owner extends Person extends NamedEntity
+    extends BaseEntity` hierarchy, confirmed by direct grep, matching the "deep class hierarchies"
+    case the spec asks for).
+  - **Mixed:** `vllm` — turned out to be **already a real polyglot repo** in `.benchmark_repos`
+    (4,116 `.py` + 305 `.rs` files, confirmed directly, not assumed) — no new clone needed. Indexed
+    with `PythonLanguageAnalyzer` and `RustLanguageAnalyzer` registered together in one
+    `LanguageRegistry`, producing one genuinely cross-language `CodeIntelligenceIndex`.
+
+- **Design:** `scripts/validation_breadth_matrix_check.py` — for each tier: build a real index
+  (catching, not crashing on, any exception — the Matrix Execution/Parser Stability gates), run 1-2
+  real `ContextResolver.resolve()` calls with hand-picked, grepped-and-confirmed real target names,
+  rank + package via the real `RelevanceRanker`/`ContextPackager`, record every pass through a real
+  `TelemetryCollector`, classify every resolved-but-unpackaged candidate through item #14's
+  `classify_grounding_failure` (exercising it cross-language, not just on Go), and run item #11's
+  `production_gate.evaluate_release()` on the resulting `RunSummary`. Zero `src/` changes — pure
+  reuse of #11/#13/#14's existing, unmodified interfaces.
+
+- **Real result, all 4 tiers, real Consul/Flask/spring-petclinic/vllm (`scripts/
+  validation_breadth_matrix_check.py`):**
+
+  | tier | repo | files scanned/analyzed | symbols | fallback ratio | gate decision |
+  |---|---|---|---|---|---|
+  | Go | consul | 11,102 / 2,370 | 28,174 | 0.04 | `RELEASE_REJECTED` |
+  | Python | flask | 236 / 83 | 1,619 | 0.857 | `RELEASE_REJECTED` |
+  | Java | spring-petclinic | 131 / 49 | 230 | 0.5 | `RELEASE_REJECTED` |
+  | Mixed | vllm (py+rs) | 6,429 / 4,421 | 59,353 | 0.667 | `RELEASE_REJECTED` |
+
+  **4/4 completed with zero unhandled crashes** — every index build, resolve/rank/package pass,
+  `TelemetryCollector.record()`, and `evaluate_release()` call succeeded structurally on every
+  tier, including the genuinely polyglot `vllm` index (59,353 real symbols spanning two languages
+  in one graph). Every `RELEASE_REJECTED` decision is a **valid, correctly-computed** outcome, not
+  a crash — all 4 rejections trace to the exact same gate, for the exact same reason: the literal
+  `max_fallback_ratio=0.0` default (already documented as too strict for real data by item #11's
+  own Consul finding) rejects every repo, Go included — confirming the gate applies **zero
+  language-specific schema assumptions**, exactly the "Operational Gate Parity" gate's own wording.
+
+- **Real Topology Drift finding (the point of this whole item):** fallback ratio varies sharply by
+  language — Go 4% vs. Python 85.7%, Java 50%, Mixed 66.7%. Plausible, not yet isolated, cause:
+  these are single/double-target, `depth=1` resolutions on comparatively small repos (83/49 files
+  analyzed vs. Consul's 2,370), so a much smaller fraction of each repo's real call graph is
+  available for `SCOPED_GRAPH_EXPANSION` to find — more of each small candidate set falls back to
+  `RAW_STRING_FALLBACK`/`EVIDENCE_FALLBACK_MATCH` by construction, independent of language per se.
+  Reported as a real, honest observation and a candidate root cause, **not claimed as proven** —
+  isolating repo-size from language-specific dynamic-dispatch effects needs a dedicated, larger-N
+  falsification experiment, out of this item's own scope (matches items #3/#4's "flag a real
+  pattern, don't force a fix into scope" discipline).
+
+- **Item #14's classifier cross-language robustness, a real bonus finding:** `classify_grounding_
+  failure` was exercised on real Go, Python, and Mixed failures (Java had zero real failures — a
+  valid, well-formed empty result, not a malformed one) and returned a real, named category every
+  time — `oversized_file_excluded`/`context_budget_overflow`, no `src/`-side language branching
+  needed, confirming the classifier generalizes as designed.
+
+- **Success criteria:**
+  1. Matrix Execution — 100% completion across all 4 tiers — **met**, 4/4.
+  2. Parser Stability — zero unhandled AST/parsing crashes across Go/Python/Java(+Rust) — **met**.
+  3. Cross-Repo Telemetry — valid `RunSummary` and failure-taxonomy output per repo — **met**, all
+     4 `RunSummary`s well-formed, failure taxonomy output valid (including Java's genuine empty
+     result).
+  4. Operational Gate Parity — `production_gate.py` runs and outputs valid decisions across all
+     targets, no language-specific schema assumption failures — **met**, 4/4 structurally valid
+     decisions (all `RELEASE_REJECTED` for the same, already-understood, config-default reason).
+- **Failure criteria:** any repo crashing during indexing/resolution/packaging, a malformed or
+  missing telemetry/taxonomy payload, or a gate crash from a language-specific assumption — did
+  not occur.
+
+- **Result:** Merged to `Base`/`main`, zero known open issues, zero `src/` changes. 988/988 tests.
 
 ## 9. Benchmark Coverage — Negative Queries / False-Positive Rate
 
