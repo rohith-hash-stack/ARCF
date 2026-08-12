@@ -7,6 +7,50 @@ chat session. Detailed *why* for each entry lives in Claude's memory files (per-
 `arcf_payload_optimization_path_masking`); this file is the curated *what/when* summary, updated
 after each merge to `Base`, not after every small step.
 
+### 2026-08-12 — Shipped: CHECKLIST.md item #4 (Grounding Quality — Structural vs. Behavioral Split)
+`_structural_behavioral_grounding_metrics()` in `scripts/validate_llm_grounding.py`: `G_struct`
+(recall of packaged files against a task's entry-point/interface/type files) and `G_behav`/R_path
+(recall against real execution-path collaborator files, forced to 0 unless structural files are
+100% present first, `None` for tasks with no behavioral component) — pure, deterministic, no LLM
+calls, zero `src/` changes (a harness/metric addition only, same scope discipline as item #9).
+`BENCHMARK_TASKS` gained additive `ground_truth_structural`/`ground_truth_behavioral` keys, grepped
+directly against real Consul (not assumed): e.g. `agent/cache/cache.go` (structural, defines
+`Prepopulate`) vs. `agent/auto-config/tls.go` (behavioral, the one real sibling-package caller).
+
+**λ-tuning discipline honored, not reinvented**: directly ran `classify_retrieval_task()` against
+all 6 real benchmark queries — every one classifies to `TRAVERSAL_DEPTH=1` in real production. No
+new tunable expansion-depth knob was added, since both real failures found below are proven
+depth-independent (more expansion would not have changed either outcome).
+
+**Decisive real finding #1 (task2)**: at real depth=1 with target_names set to task2's own
+ground-truth terms, `agent/cache/watch.go` never appears in `candidate_files` at all — traced
+directly to `Notify` being a 78-way ambiguous name repo-wide, with disambiguation resolving it to
+`agent/mock/notify.go` instead. Same shape as the already-closed, 8-times-falsified extreme-
+ambiguity recall gap ([[arcf_recall_gap_closed]]). Kept as ground truth deliberately so `G_behav`
+reports this honestly as a real 0.0.
+
+**Decisive real finding #2 (tasks 1/3/5), the header result of this item**: running the actual
+resolver -> RelevanceRanker -> ContextPackager pipeline (not just the raw resolver) showed
+`G_struct=0.0` for all three single-file tasks — the genuine entry-point file, present in
+`candidate_files`, doesn't survive packaging. Traced directly: in every case the real entry point
+is unusually large (9k-12k tokens, competing for an 8000-token budget) **and** ambiguity-decayed
+(2/7/224 same-named matches), dropping its rank below small decoy files (task5's real entry point
+ranked 70th of 224 candidates). **This precisely diagnoses PROGRESS.md's own previously-
+`unconfirmed` "Task 1 regression" note below** — the same root mechanism as the closed recall-gap
+thread, now shown to also bite at the ranking/packaging stage, not just resolution (task5 is
+literally the flagship "New" case). Deliberately **not fixed here**, same discipline as item #3 and
+Arms 1/2/4 finding pre-existing mechanisms mid-work and not touching them without a dedicated
+isolated falsification experiment — flagged as a genuinely new future candidate (ambiguity decay
+vs. oversized single-file entry points competing for token budget), distinct from the 8 prior
+recall-gap attempts.
+
+**Real positive result (tasks 4/6)**: both `G_struct`/`G_behav` = 1.0 through the full real
+pipeline; task6's behavioral hit confirmed genuine `SCOPED_GRAPH_EXPANSION` (a real call-graph hop),
+not adjacency luck. Determinism verified: task6 run twice through the full pipeline produced
+byte-identical `packaged_files` and scores. All 4 user success gates met (see CHECKLIST.md item #4
+for the full table). 988/988 tests (unchanged — zero `src/` changes). Merged `<pending>`.
+→ memory: `arcf_grounding_structural_behavioral_shipped`
+
 ## How this project is organized
 
 - **`Base`** — consolidated, stable checkpoint. Every finished piece of work merges here.
@@ -498,7 +542,11 @@ Fixed a false-positive tie where `"implement"` substring-matched inside `"implem
   entry-point fan-out (a name resolving to 100+ same-named candidates repo-wide), a different
   mechanism from everything fixed so far.
 - **Grounding-score target (≥3.4/5.0 composite)** — never hit in three measured benchmark runs.
-  Real cause of the specific Task 1 regression is unconfirmed even after a targeted tier fix.
+  **Task 1 regression's real cause now confirmed** (checklist item #4, above): the genuine entry-
+  point file is both oversized (competes for the whole token budget) and ambiguity-decayed (ranks
+  below decoy files) — the same mechanism as the closed recall-gap thread, now shown to also hit
+  ranking/packaging. Deliberately not fixed (needs its own isolated falsification experiment, same
+  as the 8 prior recall-gap attempts) — diagnosed, not resolved.
 - **Benchmark noise floor** — SLM-1 entity extraction is non-deterministic in *content*
   (not just order) even at `temperature=0.0`. Single-run score deltas on the 5-task grounding
   benchmark should not be trusted to attribute cause without multiple runs.

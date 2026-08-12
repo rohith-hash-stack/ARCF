@@ -38,22 +38,26 @@ limit) can resume without re-deriving anything.
   record (same treatment as `exp/enhanced-path-locality`, `exp/semantic-reranker`,
   `exp/type-graph-indexing`); `feature/symbol-identity-audit-trail`,
   `feature/observability-telemetry`, `feature/operational-release-gate`,
-  `feature/incremental-index-equivalence`, and `feature/negative-query-fpr-harness` all merged and
-  deleted.
-- **Active item:** none — **Tier 1 AND Tier 2 both fully closed out; Tier 3 item #9 shipped.**
-  Real finding worth remembering: the spec's literal FPR formula (origin_stage alone) measures
-  **100%** on real Consul (28,174 symbols means lexical-probe-recovery finds *some* accidental
-  6-char-prefix collision for nearly any adversarial query) — a number with zero diagnostic value.
-  Refined to also require `evidence_tier == PRIMARY` (excludes correctly-self-flagged `SUPPORTING`-
-  tier probabilistic recoveries), giving a real, meaningful **0%**, clearing the ≤5% gate. Every one
-  of 166 real candidate files across the 7-query real-Consul run was `SUPPORTING`, none `PRIMARY` —
-  a clean, consistent result, not a coincidence.
-- **In-flight state:** none. `main`/`Base` clean and in sync, full test suite green.
-- **Next step:** Tier 3 continues — **#4 Grounding quality** (structural/behavioral split), then
-  **#14 Failure taxonomy**, then **#8 Validation breadth**, per the decided priority order above.
-  Also flagged but not scheduled: lexical-probe-recovery's real token/candidate-count cost on
-  adversarial queries (13–39 files even at correctly-low confidence) is a genuine future
-  falsification-experiment candidate, deliberately not bundled into item #9.
+  `feature/incremental-index-equivalence`, `feature/negative-query-fpr-harness`, and
+  `feature/grounding-structural-behavioral-split` all merged and deleted.
+- **Active item:** none — **Tier 1 AND Tier 2 fully closed out; Tier 3 items #9 and #4 shipped.**
+  Item #4's real finding worth remembering: the new `G_struct`/`G_behav` split didn't just add a
+  metric — run through the real Arm A pipeline it precisely diagnosed PROGRESS.md's own previously
+  `unconfirmed` "Task 1 regression": the genuine entry-point file for tasks 1/3/5 is both unusually
+  large (9k–12k tokens, competing for an 8000-token budget) and ambiguity-decayed (2/7/224 same-named
+  matches), which drops it below decoy files in ranking (task5's real entry point ranked 70th of
+  224) — the same mechanism as the already-closed 8-times-falsified recall-gap thread, now shown to
+  also bite at the ranking/packaging stage. Deliberately not fixed (matches item #3/Arms 1-4's own
+  "flag, don't fix a pre-existing mechanism mid-item" discipline) — flagged as a new future
+  falsification-experiment candidate. Task2's `G_behav`=0 is the same closed boundary from a
+  different angle ("Notify" is 78-way ambiguous). Tasks 4/6 both cleanly pass (`G_struct`=`G_behav`=1.0,
+  task6's behavioral hit confirmed genuine `SCOPED_GRAPH_EXPANSION`).
+- **In-flight state:** none. `main`/`Base` clean and in sync, full test suite green (988/988).
+- **Next step:** Tier 3 continues — **#14 Failure taxonomy**, then **#8 Validation breadth**, per the
+  decided priority order above. Also flagged but not scheduled: (1) lexical-probe-recovery's real
+  token/candidate-count cost on adversarial queries (13–39 files even at correctly-low confidence,
+  from item #9); (2) the ambiguity-decay-vs-oversized-entry-point ranking interaction found by item
+  #4, above — a genuinely new angle on the closed recall-gap mechanism, not yet attempted.
 
 ## Priority order (decided 2026-08-12)
 
@@ -86,7 +90,7 @@ items parked until new evidence shows up.
 7. **#9** Negative queries / false-positive rate — cheap, self-contained, no dependencies.
    **Done 2026-08-12, shipped.**
 8. **#4** Grounding quality (structural/behavioral split) — real unmet target, but costs more than
-   #9 (needs its own λ-tuning discipline).
+   #9 (needs its own λ-tuning discipline). **Done 2026-08-12, shipped.**
 9. **#14** Failure taxonomy — more valuable once #13 exists to feed it real data, not one-off traces.
 10. **#8** Validation breadth (topology/scale) — biggest effort; couple with resuming the paused
     50-repo sweep rather than standing alone.
@@ -309,13 +313,110 @@ items parked until new evidence shows up.
 
 ## 4. Grounding Quality — Structural vs. Behavioral
 
-- **Status:** Not Started
-- **Source:** original doc §4
+- **Status:** Shipped — merged to `main`/`Base`, branch deleted after merge
+- **Source:** original doc §4, detailed spec supplied by user 2026-08-12
 - **Note:** genuinely addresses an open item (`Grounding-score target ≥3.4/5.0 composite` never
-  hit in three measured runs — `PROGRESS.md` Open/unresolved). Adding a new tunable `λ` weight
-  should be treated with the same caution as item 1 — define the success criterion for what
-  "behavioral grounding matters more for debugging queries" means on real data before tuning `λ`.
-- **Success criteria:** _not defined yet._
+  hit in three measured runs — `PROGRESS.md` Open/unresolved).
+
+- **Reconciled against real code before writing anything:** `PackagedFile` (the object the harness's
+  own `packaged_files` list is built from) carries no structural/behavioral role field, and
+  shouldn't need one — `FileReference.origin_stage` (item #10) already distinguishes `AST_DIRECT`
+  (direct entry-point match) from `SCOPED_GRAPH_EXPANSION` (genuine call-graph hop) on the
+  *resolution* side. The metric itself only needs the **ground truth** tagged by role (a property
+  of the task, not of how ARCF happened to retrieve it) — `origin_stage` was used as supporting,
+  real diagnostic evidence when validating each task's behavioral file (see below), not as part of
+  the scored metric itself.
+
+- **λ-tuning discipline honored, not reinvented:** directly ran `classify_retrieval_task()` against
+  all 6 real `BENCHMARK_TASKS` query strings (not assumed) — **every single one** classifies to
+  `TRAVERSAL_DEPTH == 1` in real production (task2's "downstream"/"trace" wording resolves to
+  `BUG_FIX` via `RepositoryScopeClassifier`'s debugging trigger, checked *before*
+  `REFACTOR_IMPACT_ANALYSIS`'s impact-words branch ever runs — confirmed by reading
+  `classify_retrieval_task`'s own branch order, not assumed from the wording alone). Per this
+  item's own caution note (echoing item #1's), no new tunable `λ`/expansion-depth knob was added:
+  there is no real lever to tune here, since the two real failures found below (task2, and
+  tasks 1/3/5) are both proven to be depth-independent — increasing expansion would not have
+  changed either outcome (see traces below).
+
+- **Design:** `_structural_behavioral_grounding_metrics(packaged_files, structural_files,
+  behavioral_files)` in `scripts/validate_llm_grounding.py` — pure, deterministic, no LLM calls
+  (this is a candidate-*file* metric, not a generated-answer metric, so no judge call is needed,
+  same reasoning as item #9). `G_struct` = recall of `packaged_files` against the task's
+  entry-point/interface/type files. `G_behav` (R_path) = recall against the task's real
+  execution-path collaborator files, but forced to `0.0` unless the structural files are 100%
+  present first (the spec's own prerequisite-weighting requirement) — and `None` (not `0`) for the
+  3 single-file tasks with no behavioral component at all, so they don't corrupt the aggregate.
+  `BENCHMARK_TASKS` gained additive `ground_truth_structural`/`ground_truth_behavioral` keys
+  (existing `ground_truth_files`/`ground_truth_terms` untouched); `_run_one_task` and
+  `_extract_run_metrics`/`_build_markdown_table` wired the two new sub-scores in as two more rows,
+  reported per-task and as an overall mean ± stddev — genuinely distinct from `precision`/`recall`/
+  `f1`, never blended into one number. **Zero changes to any file under `src/`** — this is a pure
+  harness/metric addition, same scope discipline as item #9; 988/988 existing tests stayed green
+  with no changes needed.
+
+- **Real per-task grounding, grepped against the actual cloned Consul source before writing any
+  task entry (not assumed):** `agent/cache/cache.go` defines the `Cache` type and `Prepopulate`
+  (structural); `agent/cache/watch.go` defines `Cache.Notify`, a different file in the same package
+  (behavioral — the actual propagation mechanism task2 asks about). `agent/consul/acl_endpoint.go`
+  defines the `ACL.BindingRuleList` RPC endpoint (structural); `agent/consul/auth/binder.go`'s
+  `Binder.Bind` doesn't call the endpoint directly but depends on the same underlying state-store
+  `ACLBindingRuleList` function (behavioral — a real sibling collaborator, the actual "depend on"
+  task4 asks about). `agent/auto-config/tls.go` is `Prepopulate`'s only real non-test sibling-package
+  caller (behavioral, task6 — already established by Arm 4's own task6 addition).
+
+- **Decisive real finding #1 (task2, `scripts/grounding_structural_behavioral_precheck.py`):** at
+  real production depth=1, with target_names hand-set to every one of task2's own
+  `ground_truth_terms` (`Cache`/`UpdateEvent`/`Notify`), `watch.go` is **completely absent** from
+  `candidate_files`. Traced directly (`SymbolIndex.find_by_name`): `Notify` has **78** same-named
+  methods repo-wide; disambiguation resolves it to `agent/mock/notify.go` instead of
+  `agent/cache/watch.go`'s `Cache.Notify`. This is the exact shape of the already-closed,
+  8-times-falsified extreme-ambiguity recall gap ([[arcf_recall_gap_closed]]) — the same mechanism
+  as the flagship "New" case, now hit by "Notify" instead. **Not attempted as a fix here** — kept
+  as ground truth deliberately, so `G_behav` reports this honestly as a real `0.0` rather than
+  excluding it from the benchmark to make the number look better.
+
+- **Decisive real finding #2 (tasks 1/3/5, full real Arm A pipeline —
+  `scripts/grounding_structural_behavioral_metrics_check.py`):** running the actual resolver ->
+  `RelevanceRanker` -> `ContextPackager` path (not just the raw resolver) showed `G_struct = 0.0` for
+  tasks 1, 3, **and** 5 — the genuine entry-point file, present in `candidate_files`, does not survive
+  into the final *packaged* output. Traced directly, not inferred from the aggregate: in every one
+  of the three cases, the real entry-point file is unusually large (`catalog_endpoint.go` 10,069
+  tokens, `config.go` 12,030, `cache.go` 9,168 — each alone exceeding or nearly exceeding the
+  8000-token budget) **and** ambiguity-decayed (`Catalog`×2, `Config`×7, `New`×224 same-named
+  matches), which drops its `relevance_score` below numerous small, irrelevant same-named-chain
+  decoy files (task5's real entry point ranked **70th of 224** candidates). **This precisely
+  diagnoses PROGRESS.md's own previously-`unconfirmed` "Task 1 regression" note** — same root
+  mechanism as the already-closed ambiguity/recall-gap research thread, now shown to also bite at
+  the *ranking/packaging* stage (not just resolution), and task5 is literally the flagship "New"
+  case itself. **Not attempted as a fix here**, for the same reason item #3 and Arms 1/2/4 didn't
+  fix what they found mid-work: this is a pre-existing, deeply architectural mechanism this session
+  did not introduce, already the subject of 8 falsified attempts, and reopening it needs its own
+  isolated falsification experiment with fresh evidence — not a quick change bundled into a metric
+  harness item. Flagged as a genuinely new, sharper future candidate (the interaction between
+  ambiguity decay and oversized single-file entry points competing for a fixed token budget),
+  distinct from anything the 8 prior attempts specifically tried.
+
+- **Real positive result (tasks 4 and 6):** both `G_struct` and `G_behav` = **1.0** through the full
+  real Arm A pipeline — `binder.go` and `tls.go` both genuinely survive packaging, and `tls.go`'s
+  `origin_stage` is confirmed `SCOPED_GRAPH_EXPANSION` (a real call-graph hop, not adjacency luck).
+
+- **Success criteria (defined from the real pre-check findings above, before final implementation,
+  per the standing falsification-experiment discipline):**
+  1. `R_path` (`G_behav`) ≥ 80% on tasks with a real, currently-reachable behavioral ground truth —
+     **met**: task4 and task6 both = 1.0. Task2 is excluded from this specific gate (its `0.0` is the
+     already-closed extreme-ambiguity boundary, reported honestly, not silently dropped from the
+     benchmark).
+  2. `G_struct`/`G_behav` reported as genuinely distinct sub-scores, never blended — **met**, verified
+     structurally (two separate rows in `_build_markdown_table`, two separate keys throughout).
+  3. Zero statistically significant precision drop — **met by construction**: zero `src/` changes,
+     988/988 existing tests unaffected.
+  4. 100% deterministic run output on a fixed candidate set — **met**: task6 run twice through the
+     full real pipeline produced byte-identical `packaged_files` and `G_struct`/`G_behav`.
+- **Failure criteria:** any of the above not holding, or a real behavioral task (4/6) scoring below
+  80% for a reason traceable to *this item's own* code (not a pre-existing mechanism) — did not
+  occur.
+
+- **Result:** Merged to `Base`/`main`, zero known open issues, zero `src/` changes. 988/988 tests.
 
 ## 5. Determinism — Canonical Intermediate Representation
 

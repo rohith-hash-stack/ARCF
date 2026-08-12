@@ -123,30 +123,66 @@ BENCHMARK_TASKS = [
         "query": "How does Catalog.Register validate and handle node service metadata during registration?",
         "ground_truth_files": ["agent/consul/catalog_endpoint.go"],
         "ground_truth_terms": ["Catalog", "Register", "RegisterRequest"],
+        # Checklist item #4 (Grounding Quality: Structural vs. Behavioral
+        # Split, 2026-08-12): structural = mandatory entry-point/interface/
+        # type definition file(s); behavioral = collaborator file(s) reached
+        # only via a genuine execution-path relationship (call graph, not
+        # adjacency). Single-file ground truth tasks (1/3/5) are deliberately
+        # structural-only, per the item's own note that isolated type/logic
+        # lookups need no expansion -- see CHECKLIST.md item #4's real,
+        # grepped-against-Consul justification for every split below.
+        "ground_truth_structural": ["agent/consul/catalog_endpoint.go"],
+        "ground_truth_behavioral": [],
     },
     {
         "id": "task2_dependency_tracing",
         "query": "Trace how Agent cache updates propagate to downstream service check listeners.",
         "ground_truth_files": ["agent/cache/cache.go", "agent/cache/watch.go"],
         "ground_truth_terms": ["UpdateEvent", "Notify", "Cache"],
+        # cache.go defines the Cache type/entry point (structural). watch.go
+        # defines Cache.Notify -- the propagation mechanism the query is
+        # actually asking about (behavioral). Real pre-check
+        # (scripts/grounding_structural_behavioral_precheck.py) found this
+        # collaborator currently UNREACHABLE at real production depth --
+        # not a depth/lambda problem, "Notify" is a 78-way same-named-method
+        # ambiguity repo-wide and disambiguation resolves it to
+        # agent/mock/notify.go instead, the same already-closed Tier-1
+        # entry-point fan-out boundary as the flagship "New" case
+        # (arcf_recall_gap_closed). Kept as ground truth anyway, deliberately
+        # -- this metric exists to surface that gap honestly, not to hide it.
+        "ground_truth_structural": ["agent/cache/cache.go"],
+        "ground_truth_behavioral": ["agent/cache/watch.go"],
     },
     {
         "id": "task3_interface_type_contract",
         "query": "What fields are required when instantiating an Agent configuration struct?",
         "ground_truth_files": ["agent/config/config.go"],
         "ground_truth_terms": ["Config"],
+        "ground_truth_structural": ["agent/config/config.go"],
+        "ground_truth_behavioral": [],
     },
     {
         "id": "task4_refactoring_multifile",
         "query": "What functions directly call or depend on the ACL binding rule list endpoint?",
         "ground_truth_files": ["agent/consul/acl_endpoint.go", "agent/consul/auth/binder.go"],
         "ground_truth_terms": ["BindingRuleList", "ACLBindingRuleList", "binder"],
+        # acl_endpoint.go defines the ACL.BindingRuleList RPC endpoint
+        # (structural). binder.go's Binder.Bind doesn't call the endpoint
+        # directly -- it's a real sibling collaborator that depends on the
+        # same underlying ACLBindingRuleList state-store function the
+        # endpoint also calls (behavioral: the actual "depend on" the query
+        # asks about). Real pre-check confirmed both files ARE reached at
+        # real production depth=1.
+        "ground_truth_structural": ["agent/consul/acl_endpoint.go"],
+        "ground_truth_behavioral": ["agent/consul/auth/binder.go"],
     },
     {
         "id": "task5_ambiguous_common_name",
         "query": "What is the primary responsibility of the New function inside the agent/cache package?",
         "ground_truth_files": ["agent/cache/cache.go"],
         "ground_truth_terms": ["Cache", "Options"],
+        "ground_truth_structural": ["agent/cache/cache.go"],
+        "ground_truth_behavioral": [],
     },
     {
         # Arm 4 (Enhanced Path-Hint & Locality Propagation, 2026-08-12):
@@ -171,6 +207,13 @@ BENCHMARK_TASKS = [
         ),
         "ground_truth_files": ["agent/cache/cache.go", "agent/auto-config/tls.go"],
         "ground_truth_terms": ["Prepopulate", "Cache"],
+        # cache.go defines Prepopulate (structural). tls.go is the real
+        # sibling-package caller (behavioral) -- real pre-check confirmed
+        # this is reached at real production depth=1 via genuine
+        # SCOPED_GRAPH_EXPANSION (a real call-graph hop, not adjacency
+        # luck), the cleanest positive case of the three behavioral tasks.
+        "ground_truth_structural": ["agent/cache/cache.go"],
+        "ground_truth_behavioral": ["agent/auto-config/tls.go"],
     },
 ]
 
@@ -304,6 +347,46 @@ def _file_overlap_metrics(packaged_files: list[str], ground_truth_files: list[st
         "recall": recall,
         "f1": f1,
     }
+
+
+def _structural_behavioral_grounding_metrics(
+    packaged_files: list[str], structural_files: list[str], behavioral_files: list[str],
+) -> dict:
+    """Checklist item #4 (Grounding Quality: Structural vs. Behavioral
+    Split) -- deterministic, no LLM calls, pure function of already-
+    resolved data (same purity as _file_overlap_metrics above, which this
+    supplements rather than replaces).
+
+    G_struct: recall of packaged_files against the task's mandatory
+    entry-point/interface/type files.
+
+    G_behav (R_path, Weighted Path Coverage Recall): recall of
+    packaged_files against the task's real execution-path collaborator
+    files -- but ONLY credited once ALL structural/primary files are
+    present (the spec's own "100% of Primary Nodes must be present
+    before secondary/supporting collaborator nodes add to the behavioral
+    score" prerequisite weighting). `None` when a task has no behavioral
+    ground truth at all (an isolated type/logic lookup, e.g. tasks 1/3/5)
+    -- explicitly not-applicable, not a silent 0, so it doesn't corrupt
+    the aggregate the way a fabricated score would.
+    """
+    packaged_set = set(packaged_files)
+    structural_set = set(structural_files)
+    g_struct = (
+        round(len(packaged_set & structural_set) / len(structural_set), 3)
+        if structural_set else None
+    )
+    primary_satisfied = structural_set.issubset(packaged_set)
+
+    if not behavioral_files:
+        g_behav = None
+    elif not primary_satisfied:
+        g_behav = 0.0
+    else:
+        behavioral_set = set(behavioral_files)
+        g_behav = round(len(packaged_set & behavioral_set) / len(behavioral_set), 3)
+
+    return {"g_struct": g_struct, "primary_satisfied": primary_satisfied, "g_behav": g_behav}
 
 
 def _key_term_check(answer: str, ground_truth_files: list[str], ground_truth_terms: list[str]) -> dict:
@@ -486,6 +569,7 @@ async def _run_one_task(
         if "error" in result:
             result["key_term_check"] = None
             result["file_overlap"] = None
+            result["structural_behavioral"] = None
             result["judge"] = None
             continue
         result["key_term_check"] = _key_term_check(
@@ -493,6 +577,10 @@ async def _run_one_task(
         )
         result["file_overlap"] = _file_overlap_metrics(
             result.get("packaged_files", []), task["ground_truth_files"]
+        )
+        result["structural_behavioral"] = _structural_behavioral_grounding_metrics(
+            result.get("packaged_files", []),
+            task["ground_truth_structural"], task["ground_truth_behavioral"],
         )
         try:
             result["judge"] = await _judge(
@@ -530,6 +618,7 @@ def _extract_run_metrics(result: dict) -> dict[str, float | None]:
     single arm's single-run result dict, for cross-run aggregation."""
     overlap = result.get("file_overlap") or {}
     key_term = result.get("key_term_check") or {}
+    struct_behav = result.get("structural_behavioral") or {}
     packaged_tokens = result.get("packaged_tokens")
     budget_utilization = (
         round(packaged_tokens / MAX_TOKENS_CONTEXT, 3) if packaged_tokens is not None else None
@@ -540,6 +629,8 @@ def _extract_run_metrics(result: dict) -> dict[str, float | None]:
         "f1": overlap.get("f1"),
         "budget_utilization": budget_utilization,
         "key_term_score": key_term.get("hit_rate"),
+        "g_struct": struct_behav.get("g_struct"),
+        "g_behav": struct_behav.get("g_behav"),
     }
 
 
@@ -549,6 +640,8 @@ _METRIC_LABELS = {
     "f1": "File F1",
     "budget_utilization": "Context Budget Utilization",
     "key_term_score": "Key-Term Hit Rate",
+    "g_struct": "Structural Grounding (G_struct)",
+    "g_behav": "Behavioral Grounding / R_path (G_behav, N/A tasks excluded)",
 }
 
 
@@ -563,7 +656,10 @@ def _build_markdown_table(all_task_results: list[dict]) -> str:
         "| :--- | :--- | :--- | :--- | :--- |",
     ]
     arm_keys = ["arcf", "baseline_raw", "zero_context"]
-    metric_names = ["precision", "recall", "f1", "budget_utilization", "key_term_score"]
+    metric_names = [
+        "precision", "recall", "f1", "budget_utilization", "key_term_score",
+        "g_struct", "g_behav",
+    ]
     overall_metric_values: dict[str, dict[str, list[float]]] = {
         arm: {m: [] for m in metric_names} for arm in arm_keys
     }
