@@ -1,6 +1,6 @@
 # ARCF Progress Log
 
-**Last updated:** 2026-08-12 12:40 IST · **Base/main HEAD:** `4f68f69` · **Tests:** 942/942 passing
+**Last updated:** 2026-08-12 IST · **Base/main HEAD:** `407a999` · **Tests:** 942/942 passing
 
 Read this file top-to-bottom to pick up where things stand — it's the fast-start doc for a new
 chat session. Detailed *why* for each entry lives in Claude's memory files (per-topic, e.g.
@@ -15,6 +15,23 @@ after each merge to `Base`, not after every small step.
   `Base`, merged back only once resolved. Never left half-done on `Base`/`main`.
 - Every merge to `Base` is preceded by a full `pytest` run (currently 930 tests) — zero regressions
   is the bar, not a goal.
+- **`CHECKLIST.md`** (repo root) — the forward-looking backlog/tracker, separate from this file.
+  Read its session-tracker block first when starting a session; this file (`PROGRESS.md`) stays the
+  dated shipped/falsified log.
+
+### 2026-08-12 — Added: `CHECKLIST.md` tracking doc
+User wrote a 15-section gap-analysis doc proposing ARCF improvements; reviewed against the real
+falsification history below before anything was built. Several proposed items were the same shape
+as already-falsified work (§1's multi-signal confidence score ≈ [[arcf_entropy_confidence_falsified]];
+§13's cross-pipeline confidence propagation, same family) or conflicted with the CallGraph-is-
+off-limits constraint documented in `locality.py` (§2's edge-provenance idea). One item (§3, Utility
+Package Score locality suppression) lines up with the one concrete open lever from the
+disambiguation-pruning entry below (`has_locality`'s import-reachability tier) and is the current
+highest-signal candidate. Consolidated into `CHECKLIST.md` as 14 tracked items (§7 DRP integration
++ §12 repository evolution merged, same underlying capability), each with a status, a correction
+against project history, and an unfilled success-criteria line to complete before starting work.
+No item started yet — this commit is process setup only.
+→ memory: `arcf_checklist_md_reference`
 
 ### 2026-08-12 — Shipped: Disambiguation-Driven Candidate Pruning (grew directly out of Arm 1's own root-cause finding)
 `ContextResolver.resolve()` computed `disambiguation.preferred`/`ambiguous` via
