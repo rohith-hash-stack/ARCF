@@ -51,7 +51,12 @@ from pathlib import Path
 from context.lexical_symbol_probe import probe_file_paths
 from contracts.evidence_contract import build_evidence_contract, match_evidence
 from domain.context_package import PackagedFile
-from domain.context_resolution import ContextResolutionResult, EvidenceTier, FileReference
+from domain.context_resolution import (
+    ContextResolutionResult,
+    EvidenceTier,
+    FileReference,
+    OriginStage,
+)
 from infrastructure.cost import CostEstimator
 from shared.errors import WorkspacePathError
 from workspace.permissions import PermissionManager
@@ -337,6 +342,12 @@ def _to_file_reference(
         language=_language_of(relative_path),
         token_count=token_estimator.count_tokens(content, _TOKEN_ESTIMATE_MODEL),
         evidence_tier=tier,
+        # checklist item #10: genuinely symbol-less (filename/path/glob
+        # match, not a SymbolIndex lookup at all) -- distinct from
+        # RAW_STRING_FALLBACK, which specifically means a symbol-name
+        # search. No parent_symbol_id: there is no symbol here to be a
+        # parent of.
+        origin_stage=OriginStage.EVIDENCE_FALLBACK_MATCH,
     )
 
 

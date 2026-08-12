@@ -7,7 +7,7 @@ from code_intelligence.index import CodeIntelligenceIndex
 from code_intelligence.languages.python_analyzer import PythonLanguageAnalyzer
 from code_intelligence.registry import LanguageRegistry
 from domain.code_intelligence import SymbolKind
-from domain.context_resolution import EvidenceTier
+from domain.context_resolution import EvidenceTier, OriginStage
 from infrastructure.cost import CostEstimator
 from workspace.scanner import RepositoryScanner
 
@@ -142,6 +142,103 @@ def test_call_graph_expansion_is_always_supporting_even_for_a_primary_entry_poin
 
     expanded_ref = next(f for f in result.candidate_files if f.file_path == "service.py")
     assert expanded_ref.evidence_tier is EvidenceTier.SUPPORTING
+
+
+def test_entry_point_tagged_ast_direct(tmp_path: Path) -> None:
+    """Checklist item #10: the direct "defines {name}" entry-point match
+    is the disambiguated Symbol itself -- no lookup involved, so its own
+    id is both the origin AND the parent."""
+    _write_call_chain_fixture(tmp_path)
+    index = _build_index(tmp_path)
+    result = ContextResolver(index).resolve(
+        "ws1", "contract1", str(tmp_path), ["authenticate"], traversal_depth=1
+    )
+
+    entry_ref = next(f for f in result.candidate_files if f.file_path == "repository.py")
+    authenticate_symbol = next(s for s in index.symbol_index.all() if s.name == "authenticate")
+    assert entry_ref.origin_stage is OriginStage.AST_DIRECT
+    assert entry_ref.parent_symbol_id == authenticate_symbol.id
+
+
+def test_call_graph_hops_tagged_scoped_graph_expansion_with_real_immediate_parent(
+    tmp_path: Path,
+) -> None:
+    """Checklist item #10: parent_symbol_id must be the BFS's own real
+    immediate parent at each hop, not always the original entry symbol --
+    hop 2's parent is hop 1's symbol, not the entry point two hops back."""
+    _write_call_chain_fixture(tmp_path)
+    index = _build_index(tmp_path)
+    result = ContextResolver(index).resolve(
+        "ws1", "contract1", str(tmp_path), ["authenticate"], traversal_depth=None
+    )
+    authenticate_symbol = next(s for s in index.symbol_index.all() if s.name == "authenticate")
+    login_symbol = next(s for s in index.symbol_index.all() if s.name == "login")
+
+    hop1_ref = next(f for f in result.candidate_files if f.file_path == "service.py")
+    hop2_ref = next(f for f in result.candidate_files if f.file_path == "controller.py")
+    assert hop1_ref.origin_stage is OriginStage.SCOPED_GRAPH_EXPANSION
+    assert hop1_ref.parent_symbol_id == authenticate_symbol.id
+    assert hop2_ref.origin_stage is OriginStage.SCOPED_GRAPH_EXPANSION
+    assert hop2_ref.parent_symbol_id == login_symbol.id
+    assert hop2_ref.parent_symbol_id != authenticate_symbol.id
+
+
+def test_module_level_raw_call_tagged_raw_string_fallback(tmp_path: Path) -> None:
+    """Checklist item #10: locality_filtered_callers_of_name is a raw-name
+    lookup (SymbolIndex.find_by_name), independent of which specific
+    symbol was disambiguated -- must be honestly tagged, not
+    indistinguishable from an identity-propagated match."""
+    (tmp_path / "target.py").write_text("def middleware():\n    pass\n")
+    (tmp_path / "registration.py").write_text(
+        "from .target import middleware\n\nmiddleware()\n"
+    )
+    index = _build_index(tmp_path)
+    result = ContextResolver(index).resolve(
+        "ws1", "contract1", str(tmp_path), ["middleware"], traversal_depth=1
+    )
+    middleware_symbol = next(s for s in index.symbol_index.all() if s.name == "middleware")
+
+    reg_ref = next(f for f in result.candidate_files if f.file_path == "registration.py")
+    assert reg_ref.origin_stage is OriginStage.RAW_STRING_FALLBACK
+    assert reg_ref.parent_symbol_id == middleware_symbol.id
+
+
+def test_subclass_expansion_tagged_raw_string_fallback(tmp_path: Path) -> None:
+    """Checklist item #10: candidate_selector.subclasses_of(name, ...)
+    calls SymbolIndex.find_by_name(name) internally -- confirmed by
+    reading it directly -- the same raw-name-repo-wide-bypass shape as
+    locality_filtered_callers_of_name."""
+    (tmp_path / "base.py").write_text("class BasePage:\n    pass\n")
+    (tmp_path / "login.py").write_text(
+        "from .base import BasePage\n\nclass LoginPage(BasePage):\n    pass\n"
+    )
+    index = _build_index(tmp_path)
+    result = ContextResolver(index).resolve("ws1", "contract1", str(tmp_path), ["BasePage"])
+    base_page_symbol = next(s for s in index.symbol_index.all() if s.name == "BasePage")
+
+    subclass_ref = next(f for f in result.candidate_files if f.file_path == "login.py")
+    assert subclass_ref.origin_stage is OriginStage.RAW_STRING_FALLBACK
+    assert subclass_ref.parent_symbol_id == base_page_symbol.id
+
+
+def test_every_candidate_file_has_a_tagged_origin_stage(tmp_path: Path) -> None:
+    """Checklist item #10's own "100% Symbol Traceability" success gate,
+    at unit scale: every FileReference ContextResolver itself produces
+    (entry point, module-level raw calls, hop expansion) must carry a
+    non-None origin_stage -- no file's provenance is a black box."""
+    _write_call_chain_fixture(tmp_path)
+    (tmp_path / "caller_target.py").write_text("def helper():\n    pass\n")
+    (tmp_path / "module_caller.py").write_text(
+        "from .caller_target import helper\n\nhelper()\n"
+    )
+    index = _build_index(tmp_path)
+    result = ContextResolver(index).resolve(
+        "ws1", "contract1", str(tmp_path), ["authenticate", "helper"], traversal_depth=None
+    )
+
+    assert len(result.candidate_files) >= 4
+    for ref in result.candidate_files:
+        assert ref.origin_stage is not None, f"{ref.file_path} has no origin_stage"
 
 
 def test_lexical_probe_recovery_tags_entry_point_as_supporting(tmp_path: Path) -> None:

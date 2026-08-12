@@ -2,7 +2,12 @@ from pathlib import Path
 
 from context.evidence_fallback import build_repository_summary, expand_with_evidence
 from domain.context_package import PackagedFile
-from domain.context_resolution import ContextResolutionResult, FileReference, TokenEstimate
+from domain.context_resolution import (
+    ContextResolutionResult,
+    FileReference,
+    OriginStage,
+    TokenEstimate,
+)
 from workspace.scanner import RepositoryScanner
 
 
@@ -69,6 +74,13 @@ def test_falls_back_to_evidence_contract_when_empty(tmp_path: Path) -> None:
     assert all(ref.reason.startswith("evidence: ") for ref in expanded.candidate_files)
     assert all(ref.token_count > 0 for ref in expanded.candidate_files)
     assert "Retrieval retry" in expanded.resolution_reason
+    # Checklist item #10: genuinely symbol-less (a filename/glob match
+    # against the evidence contract, no SymbolIndex lookup at all) --
+    # must still be honestly tagged, not left as an untraceable None.
+    assert all(
+        ref.origin_stage is OriginStage.EVIDENCE_FALLBACK_MATCH for ref in expanded.candidate_files
+    )
+    assert all(ref.parent_symbol_id is None for ref in expanded.candidate_files)
 
 
 def test_falls_back_to_root_level_files_when_evidence_contract_matches_nothing(
