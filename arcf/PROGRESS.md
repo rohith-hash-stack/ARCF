@@ -1,6 +1,6 @@
 # ARCF Progress Log
 
-**Last updated:** 2026-08-12 09:26 IST · **Base/main HEAD:** `966163f` · **Tests:** 938/938 passing
+**Last updated:** 2026-08-12 10:25 IST · **Base/main HEAD:** `ebdebb6` · **Tests:** 938/938 passing
 
 Read this file top-to-bottom to pick up where things stand — it's the fast-start doc for a new
 chat session. Detailed *why* for each entry lives in Claude's memory files (per-topic, e.g.
@@ -17,6 +17,45 @@ after each merge to `Base`, not after every small step.
   is the bar, not a goal.
 
 ## Timeline (most recent first)
+
+### 2026-08-12 — Competitive Multi-Frontier Experimentation: Arm 4 (Path-Hint Locality) falsified via ablation trace; Task 6 shipped
+First arm of a planned 4-arm competitive experiment (Type Graph, Semantic Re-Ranker, String
+Dispatch Index, Path-Hint Locality) against `main`. Implemented Arm 4 on `exp/enhanced-path-
+locality`: `FileReference.path_locality_confidence`, a directory-proximity BOOST (same-directory
+1.20 / sibling 1.12 / parent 1.06, `None` otherwise) for candidates reached via call-graph/
+inheritance expansion, stacking with (not replacing) the existing `path_mask_confidence` penalty.
+954/954 tests (16 new). Direct trace confirmed correct tier computation on real Consul data
+(task2: 3/38 candidates boosted; task5: 13/19 when SLM-1's flaky `'New'` extraction survived).
+
+**Benchmark blind spot found and closed:** every existing task's ground truth was the direct
+entry point (PRIMARY tier, already score-saturated — structurally un-boostable by this arm's own
+design). Added `task6_path_hint_secondary_sibling` to `validate_llm_grounding.py`'s
+`BENCHMARK_TASKS`, built on a real, grepped (not assumed) cross-package relationship:
+`agent/cache/cache.go` defines `Prepopulate`; `agent/auto-config/tls.go` is the only real,
+unambiguous non-test sibling-package caller. Entity extraction fully deterministic across repeat
+calls (unlike task5's `'New'`).
+
+**Decisive falsification:** Task 6's aggregate numbers looked like a clear win (ARCF Recall 1.0
+vs. baseline 0.5) — but per this session's mandatory code-path-tracing discipline, that aggregate
+alone was not trusted. Ran the identical real resolution through `ContextBudgetManager` twice,
+once with `path_locality_confidence` as computed and once with every value ablated to `None`:
+**byte-identical packaged output both times** (used=6155, excluded=1, same 7 files). Task 6's
+Recall lift is fully explained by ARCF's *existing* compression pipeline (Call-Site/AST-scope
+slicing, already shipped, unrelated to this arm) letting a 9168-token file compress to 700 tokens
+and fit trivially — the baseline arm misses it only because its greedy full-file packer can't
+afford the whole file, a confound present on every task in this harness, independent of Arm 4.
+Traced every task where the mechanism could fire (2, 5, 6) and found zero instances where the
+boost changed a real packaged outcome: ARCF's compression already fits nearly everything that
+clears the falloff gate regardless of rank order, so the one axis this arm operates on doesn't
+bind in practice.
+
+**Outcome:** Arm 4's ranking code (`domain/context_resolution.py`, `context_resolver.py`,
+`relevance_ranker.py`) NOT merged — preserved as the historical falsification record on
+`exp/enhanced-path-locality` (commit `56b1a8f`), unmerged. Task 6 itself, a real permanent harness
+improvement independent of the arm's outcome, WAS merged (`ebdebb6`) — same "keep the
+instrumentation, revert the feature" split as the earlier Hop-2 cleanup. Arms 1-3 (Type Graph,
+Semantic Re-Ranker, String Dispatch Index) not yet attempted.
+→ memory: `arcf_arm4_path_locality_falsified`
 
 ### 2026-08-12 — Call-Site Slicing (token efficiency) shipped; Hop-2 budget-fill removed as dead code
 Child branch `feature/call-site-slicing-budget-rebalance` off `Base` `62aced2`. Two-part task:
