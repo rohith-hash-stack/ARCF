@@ -37,16 +37,47 @@ limit) can resume without re-deriving anything.
 - **Active branch:** none — no item started yet
 - **Active item:** none
 - **In-flight state:** none
-- **Next step:** decide which item to start first (open — see Suggested priority below, not yet
-  agreed)
+- **Next step:** start **item 3** (Locality UPS suppression) — first in the decided priority order
+  below.
 
-## Suggested priority (not decided — for discussion)
+## Priority order (decided 2026-08-12)
 
-High-signal / low-overlap-with-falsified-work: **3, 11, 13, 14**.
-Needs a scope correction before starting: **2**.
-Verify the gap actually exists before building: **5, 7**.
-Parked pending new evidence: **1, 12**.
-Everything else: unordered, pick based on what's most useful next.
+Reasoning: aim first at the one item pointed at a real, already-diagnosed open lever; do the cheap
+verification spikes early since other items depend on their answers; treat "make it live" as
+requiring telemetry before a deployment/rollback flow means anything; leave same-shape-as-falsified
+items parked until new evidence shows up.
+
+**Tier 1 — next up**
+1. **#3** Locality UPS suppression — aimed at the one concrete open lever (`has_locality`
+   import-reachability permissiveness), direct continuation of the disambiguation-pruning thread.
+2. **#5** Canonical IR gap check — cheap spike, scopes #2/#6/#10 correctly instead of guessing.
+3. **#10** Symbol-Identity mode / audit trail — small, pays for itself immediately in the next
+   falsification experiment's ablation trace (would have sped up Arm 1 / Arm 4's own tracing).
+
+**Tier 2 — required before "live" means anything**
+4. **#13** Observability & Telemetry — nothing to gate a promotion on without this first.
+5. **#11** Operational Confidence (versioning/canary/shadow/rollback) — sequenced right after #13
+   on purpose; a deployment flow with no metrics feeding it isn't a safety net.
+6. **#7** Incremental Indexing remaining gap — verify the narrower partial-recompute gap, close it;
+   production repos churn continuously, a benchmark-only pass doesn't prove this.
+
+**Tier 3 — benchmark/coverage hardening**
+7. **#9** Negative queries / false-positive rate — cheap, self-contained, no dependencies.
+8. **#4** Grounding quality (structural/behavioral split) — real unmet target, but costs more than
+   #9 (needs its own λ-tuning discipline).
+9. **#14** Failure taxonomy — more valuable once #13 exists to feed it real data, not one-off traces.
+10. **#8** Validation breadth (topology/scale) — biggest effort; couple with resuming the paused
+    50-repo sweep rather than standing alone.
+
+**Tier 4 — lower confidence of payoff, sequence last**
+11. **#2** CallGraph edge provenance — sound as a wrapper redesign, but sequence after #3 lands
+    (same subsystem — don't touch locality/traversal from two directions at once).
+12. **#6** Typed query dependency graph — gated on SLM-1 entity-extraction determinism improving
+    first; nothing on this checklist currently targets that gap.
+
+**Parked — don't schedule**
+13. **#1**, 14. **#12** — same shape as the already-falsified entropy-confidence work; leave parked
+    pending new evidence.
 
 ---
 
