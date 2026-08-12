@@ -515,7 +515,51 @@ the audit deliverable only, per the item's own "0 production code changes" succe
 - **Note:** real, currently-zero production-deployment infrastructure — every finding on this
   project today lives in a memory file and a hand-run script, not a versioned index or a canary.
   No overlap with falsified work. High priority if the goal is actually going live.
-- **Success criteria:** _not defined yet._
+
+- **Scope correction, found by reading `get_run_summary()`'s real return shape before designing
+  against it (not assumed):** the spec's "Quality Safeguard: primary path recall remains at 100%
+  with zero statistically significant precision drops" gate needs precision/recall against real
+  ground truth — data `TelemetryCollector` structurally cannot have on its own (it instruments the
+  pipeline, it doesn't know what the "correct" files for a query are; that's the
+  `validate_llm_grounding.py`/`_file_overlap_metrics` harness's job, a different layer). So "100% of
+  metric inputs originate from the RunSummary interface" can't mean RunSummary *computes*
+  precision/recall — it means RunSummary is the *single channel* they travel through. **Design**:
+  extend `TelemetryEvent` (item #13, already shipped) with optional, caller-supplied
+  `precision`/`recall` fields — additive, default `None`, zero behavior change for every existing
+  caller (same discipline as every other field on that model) — populated only by a caller that
+  actually has ground truth (a benchmark harness), never fabricated. `get_run_summary()` aggregates
+  mean precision/recall plus a `quality_data_available: bool` flag. The Quality Gate reads
+  `quality_data_available`: **skipped** (not silently passed as "quality confirmed") when no event
+  in the run carries that data, **evaluated** when it does. This keeps every gate's input honestly
+  100% RunSummary-sourced without RunSummary pretending to compute something it can't.
+
+- **Shadow/canary driver, scoped honestly:** no second, genuinely different ARCF configuration
+  currently exists to compare against in production (item #3's UPS suppression was falsified and
+  never shipped — the one candidate change this session produced). Built as a **generic** two-
+  collector comparison (`compare_collectors(baseline, candidate, config)`, itself just
+  `evaluate_release` fed both summaries) rather than hardcoding a specific "baseline vs. candidate
+  ARCF version" scenario that doesn't concretely exist yet — works with any two real
+  `TelemetryCollector` runs (two real different configs when one exists, a repeat-run smoke test,
+  or synthetic/injected data for the regression-sensitivity success gate below).
+
+- **Success criteria:**
+  1. **100% Automated Evaluation** — `evaluate_release()` is a pure function over `RunSummary`-
+     shaped input, emits a `ReleaseDecision` (frozen/immutable) with zero manual review step.
+  2. **100% Regression Sensitivity** — one test per gate, independently injecting a synthetic
+     regression (fallback spike, latency spike vs. baseline, utilization over ceiling, recall drop)
+     and confirming that exact gate — and only that gate — rejects, with a real, specific failure
+     detail (not a generic "something failed").
+  3. **Zero Overhead on Baseline** — structural: `production_gate.py` never imports/touches
+     `ContextResolver`/`ContextPackager`/anything in the retrieval pipeline itself — it's a pure
+     downstream consumer of an already-computed `RunSummary` dict, so a retrieval pass that never
+     calls it is untouched by construction, not by a measured-small number.
+  4. **Seamless Integration with #13** — `evaluate_release()`'s only required input shape is
+     literally `TelemetryCollector.get_run_summary()`'s own return value; verified with a real
+     round-trip test (a real `TelemetryCollector` from a real resolve()+package() call, fed
+     straight into `evaluate_release()`, no adapter/translation layer in between).
+- **Failure criteria:** any gate that can't independently catch its own injected regression, or any
+  input the gate reads that doesn't trace back to `get_run_summary()`'s real return shape, means
+  this stays unmerged/fixed before merge.
 
 ## 12. Confidence Propagation Across the Pipeline
 
