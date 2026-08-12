@@ -1,6 +1,6 @@
 # ARCF Progress Log
 
-**Last updated:** 2026-08-12 IST · **Base/main HEAD:** `<pending>` · **Tests:** 992/992 passing
+**Last updated:** 2026-08-12 IST · **Base/main HEAD:** `cc94bb0` · **Tests:** 992/992 passing
 
 Read this file top-to-bottom to pick up where things stand — it's the fast-start doc for a new
 chat session. Detailed *why* for each entry lives in Claude's memory files (per-topic, e.g.
