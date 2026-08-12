@@ -447,7 +447,14 @@ async def _arm_a_arcf(
 
     packager = ContextPackager(RelevanceRanker(), CostEstimator())
     package, _ = await packager.package(
-        resolution, query, MAX_TOKENS_CONTEXT, ranking_profile, task_type=retrieval_task_type
+        resolution, query, MAX_TOKENS_CONTEXT, ranking_profile, task_type=retrieval_task_type,
+        # Checklist item #15 (2026-08-12): real, same-process-ablation-verified
+        # fix, zero regressions across all 6 BENCHMARK_TASKS -- enabled here to
+        # match every other validated opt-in feature Arm A already turns on
+        # explicitly (enable_anchor_classification/enable_confidence_propagation
+        # below), per this function's own "ARCF's real, current production
+        # pipeline... unconditionally" docstring philosophy.
+        enable_primary_priority_floor=True,
     )
 
     prompt = ContextGoalComposer().compose(contract, package, resolution)

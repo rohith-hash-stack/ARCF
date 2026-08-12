@@ -33,7 +33,8 @@ first if you're picking up mid-item, `PROGRESS.md` for what's already landed.
 Update this block at the end of every session so a new session (or a continuation after a context
 limit) can resume without re-deriving anything.
 
-- **Last updated:** 2026-08-12 (this session)
+- **Last updated:** 2026-08-12 (this session — paused mid-gap-resolution, see "Production Readiness
+  Gap Resolution" section below)
 - **Active branch:** none. `experiment/locality-utility-suppression` left unmerged as a historical
   record (same treatment as `exp/enhanced-path-locality`, `exp/semantic-reranker`,
   `exp/type-graph-indexing`); `feature/symbol-identity-audit-trail`,
@@ -79,22 +80,23 @@ limit) can resume without re-deriving anything.
   (task4's file set changed but only by displacing non-ground-truth filler). `enable_primary_
   priority_floor` (default `False`) on `ContextBudgetManager.select()`/`ContextPackager.package()`,
   4 new unit tests, 992/992 total.
-- **In-flight state:** none. `main`/`Base` clean and in sync, full test suite green (992/992).
-- **Next step:** **All 15 checklist items now have a status** (shipped, falsified/parked, or
-  correctly scoped-down) — no items remain in Tier 3 or above. Remaining Tier 4 items (**#2**
-  CallGraph edge provenance, **#6** typed query dependency graph) and Parked items (**#1**, **#12**)
-  stay exactly as their own entries describe (lower confidence of payoff / blocked on SLM-1
-  determinism / same-shape-as-falsified pending new evidence) — nothing forces picking one up next.
-  Flagged but not scheduled, for whenever a future session wants a concrete next step: (1)
-  lexical-probe-recovery's real token/candidate-count cost on adversarial queries (13–39 files even
-  at correctly-low confidence, from item #9); (2) bare-name fan-out
-  (`locality_filtered_callers_of_name`) — same shape as the 8-times-falsified recall-gap thread,
-  needs genuinely new evidence before reopening; (3) isolating repo-size from language-specific
-  causes behind item #8's real fallback-ratio topology drift finding, above; (4) resuming the
-  paused 50-repo QA sweep ([[arcf_repo_sweep_50]], 3/50 done) — a genuinely separate activity from
-  item #8, never blocking it, still open on its own; (5) tasks 2/3/5's own ambiguity-decay-at-the-
-  falloff-gate mechanism (distinct from item #15's budget-crowding mechanism, deliberately untouched
-  here) remains the same closed, 8-times-falsified recall-gap boundary — no new evidence yet.
+- **In-flight state:** **PAUSED mid-work, 2026-08-12** — user is starting a separate, higher-priority
+  experiment. All 15 numbered checklist items are closed (shipped/falsified/parked/scoped-down, none
+  remain in Tier 3 or above). The active thread when paused is the **"Production Readiness Gap
+  Resolution"** section (below the item #15 entry, above Housekeeping) — read that section in full
+  before doing anything else in this area. Short version: 2 of 6 gaps done (composite score
+  re-verified and now clears 3.4/5.0 for the first time; SLM-1 determinism re-verified, closed), 2
+  are diagnosed with a fix ready to build but waiting on a go-ahead (`Listener` prompt bug; reranker
+  direction for the recall-gap boundary), 2 haven't been started (non-Go ground truth; release-gate
+  threshold calibration). `main`/`Base` clean and in sync, full test suite green (992/992) as of this
+  checkpoint commit.
+- **Next step:** Resume the "Production Readiness Gap Resolution" section. Do NOT start a fresh
+  investigation of any of its 6 gaps from scratch — every one already has real, traced evidence and
+  either a concrete next action or an explicit blocker recorded there. Separately, still flagged but
+  not scheduled from the earlier checklist work: (1) lexical-probe-recovery's real token/candidate-
+  count cost on adversarial queries (13–39 files even at correctly-low confidence, from item #9);
+  (2) resuming the paused 50-repo QA sweep ([[arcf_repo_sweep_50]], 3/50 done) — a genuinely separate
+  activity, never blocking anything above, still open on its own.
 
 ## Priority order (decided 2026-08-12)
 
@@ -1289,6 +1291,157 @@ the audit deliverable only, per the item's own "0 production code changes" succe
   flag never rescues a real falloff-gate casualty. 992/992 total tests (4 new).
 
 - **Result:** Merged to `Base`/`main`, zero known open issues. 992/992 tests.
+
+---
+
+## Production Readiness Gap Resolution (started 2026-08-12, paused mid-work)
+
+Follow-on effort after all 15 checklist items closed, prompted by a readiness review ("is ARCF
+ready to integrate before an LLM"). 6 gaps identified, prioritized by dependency (verify current
+state cheaply first, fix shared upstream noise second, tackle the hardest research problem third,
+then breadth/calibration/cleanup). **Paused here — user is starting a separate, higher-priority
+experiment.** Resume by reading this section top to bottom before doing anything else in this area.
+
+### Status snapshot
+
+| # | Gap | Status |
+|---|-----|--------|
+| 1 | Re-verify composite grounding score post item #15 | **Done** — real result below |
+| 2 | SLM-1 non-determinism | **Done** — re-verified, doesn't reproduce, closed |
+| 2b | `Listener` prompt bug (found investigating #1) | **Diagnosed, fix scoped, NOT implemented** — waiting on go-ahead |
+| 3 | Extreme-ambiguity / recall-gap boundary (reranker) | **Not implemented** — waiting on direction (LLM-as-reranker vs. dedicated vendor) |
+| 3b | Task6 multi-path-hint collision (found investigating #1) | **Flagged, NOT fixed** — same family as #3 |
+| 4 | Non-Go grounding-quality ground truth (Python/Java/Mixed) | **Not started** |
+| 5 | Release-gate default threshold calibration | **Not started** — depends on #4 |
+| 6 | Placebo-effect complexity cleanup | **Not started** — lowest priority, not blocking |
+
+### 1. Composite grounding score — real result, decisive
+
+`scripts/validate_llm_grounding.py --repo-path .benchmark_repos/consul --repo-name consul
+--n-runs 3`, real `gpt-4o-mini` calls, real Consul, post item #15 fix:
+
+**Composite: `3.426 ± 0.888`** (Arm A / ARCF) — clears the ≥3.4/5.0 target **for the first time
+ever recorded** in this project (previous best was 2.867, pre-item-#15). `G_struct`: task1 and
+task4 both cleanly `1.0`.
+
+**Real bug found and fixed en route, before trusting this number**: item #15's
+`enable_primary_priority_floor` was built and same-process-ablation-verified, but **never actually
+wired into this harness's Arm A call** — `_arm_a_arcf()` built `ContextPackager.package(...)`
+without passing the flag, so the FIRST re-verification run silently tested the OLD (pre-fix)
+behavior and showed task1 still failing. Fixed: `enable_primary_priority_floor=True` added to the
+`packager.package(...)` call in `_arm_a_arcf`, matching how `enable_anchor_classification`/
+`enable_confidence_propagation` are already explicitly turned on there. Confirmed directly (not
+just re-run blind): resolved the real dotted entity `Catalog.Register` (real SLM-1 output, not the
+hand-picked `['Catalog','Register']` used to build the fix) through the packager with the flag
+on/off — `G_struct` 0.0 → 1.0, isolating the fix's effect precisely before re-running the full
+paid benchmark.
+
+**Important caveat, not a clean win — reported honestly**: Arm C (zero-context, no retrieval at
+all) still scores **`4.111 ± 0.676` overall**, higher than ARCF's `3.426`. ARCF wins decisively on
+some tasks (task1, task4) and loses badly on others (task2). The composite target being cleared
+does not mean "retrieval reliably beats no retrieval" — that remains task-dependent and unresolved.
+Raw results: `docs/llm_grounding_validation/consul_grounding_validation.json`; summary:
+`consul_grounding_validation_summary.md`; failure taxonomy:
+`consul_failure_taxonomy_report.txt` (real run: 68.4% `zero_candidate_extraction`, 15.8%
+`oversized_file_excluded`, 15.8% `context_budget_overflow`).
+
+### 2. SLM-1 non-determinism — re-verified, closed
+
+`scripts/slm1_determinism_reverification.py`: 4 distinct real queries (including the exact query
+from the original documented flip) × 28 total real `temperature=0.0` calls against the *current*
+production prompt — **zero content variance in any of them**. A control at default (unset)
+temperature on the same query showed real variance (4/10 runs differed, 2 genuine drops) —
+confirming the test methodology can detect instability when it's actually there. **Conclusion: the
+documented gap (`PROGRESS.md`'s "Benchmark noise floor" open item) does not currently reproduce.**
+Most likely explanation: the prompt was hardened (explicit entity-shape rules, worked examples)
+after that finding was recorded, and `temperature=0.0` combined with the current prompt is reliably
+deterministic for this model. Not fixed with new code because there was nothing left to fix once
+checked directly — building a mitigation for a non-reproducing bug would be untested complexity
+against a falsified premise.
+
+### 2b. The `Listener` prompt bug — diagnosed, NOT fixed, needs a go-ahead
+
+Real root cause of a large share of task2's `zero_candidate_extraction` failures:
+`contracts/intent_extraction.py`'s own prompt contains the worked example `"downstream service
+check listeners" -> "Listener" or "Check"`. Task2's real query is *literally* "...downstream
+service check listeners" — real SLM-1 extraction returns exactly `Listener`, precisely as
+instructed. `Listener` is not a real symbol anywhere in Consul. The prompt is teaching the model to
+fabricate a plausible-sounding fake identifier instead of either omitting (the prompt's OWN other
+rule: "or omit it rather than inventing a made-up identifier") or deferring to the deterministic
+fallback paths (`evidence_fallback.py`, `lexical_symbol_probe.py`) that exist specifically for this
+situation.
+
+**Proposed fix** (not yet implemented): remove that one bad worked example and the "extract the
+most specific word as a guess" instruction; strengthen the "omit rather than invent" rule. Real,
+isolated falsification test before/after: does this measurably improve real judged grounding on
+task2 (and any other query that currently triggers the guessing behavior) without hurting tasks
+that work fine today.
+
+**Why not just done**: a prior session's own memory ([[arcf_slm1_determinism]]) explicitly flags
+touching this prompt as "needs its own careful, separately-validated falsification experiment...
+ask first, per [[feedback_falsification_experiments]]." Surfaced to the user 2026-08-12; **no
+go-ahead received yet** when this session paused.
+
+### 3. Extreme-ambiguity / recall-gap boundary — reranker, direction not yet chosen
+
+Per [[arcf_recall_gap_closed]], all 8 prior deterministic/graph/lexical attempts are closed; the
+only remaining lever is a genuinely different mechanism — semantic scoring. Briefed the user on
+**LLM-as-reranker** (reuse the already-proven-deterministic `gpt-4o-mini`/`LiteLLMClient`, zero new
+vendor dependency) vs. a dedicated reranker product (Cohere/Voyage/Jina — new dependency, ~$1-2/1k
+calls, sub-100ms). **User said "something narrower first" then asked for a brief on the hosted-
+reranker option; that brief was given, but no final direction (which specific path, or a go-ahead
+to build either) was received before this session paused.**
+
+Scoping notes for whoever picks this up: only fire when `ContextResolver`'s existing locality-based
+disambiguation still leaves a target ambiguous (`disambiguation.ambiguous is True` after the
+deterministic path already tried) — additive, not a replacement of the working deterministic path.
+Reuse `SymbolRangeCompressor` for candidate snippets, don't build new extraction. Real ground truth
+to test against: task5 ("New"), task1 ("Register"), and now also task6 (see 3b below — a second,
+independently-discovered real case this same mechanism should fix).
+
+### 3b. Task6 multi-path-hint collision — new finding, same family as #3, NOT fixed
+
+Found while re-verifying gap #1: task6 was consistently `G_struct=1.0` in every hand-picked-name
+check this session ran, but **regressed to `0.0` with real SLM-1 entities**
+(`['agent/cache', 'Prepopulate', 'agent/auto-config']` — three entities, not just `['Prepopulate']`
+as hand-picked earlier). Traced directly: `Prepopulate` has a second, unrelated same-named method in
+`agent/auto-config/config.go` (`Cache.Prepopulate#35`, distinct from the real target
+`agent/cache/cache.go::Cache.Prepopulate#970`). With only ONE path hint (`agent/cache/`), the real
+target was favored. With TWO path hints present (`agent/cache/` AND `agent/auto-config/`), **both**
+same-named candidates satisfy one of the two hints, so the path-hint mechanism can no longer favor
+either — `Prepopulate` becomes genuinely ambiguous (`ambiguous_targets=('Prepopulate',)`) and falls
+into the same ambiguity-decay-at-the-falloff-gate mechanism as tasks 2/3/5.
+
+**Not previously documented** — a genuinely new interaction between multi-hint queries (Feature 1,
+2026-08-11) and disambiguation, not caused by anything built this session, not yet attempted as a
+fix. The reranker mechanism from gap #3 would plausibly fix this too (same shape: 2 same-named
+candidates, judge which one the query text is really about) — worth testing together, not as two
+separate experiments.
+
+### 4. Non-Go grounding-quality ground truth — not started
+
+Item #8 validated that Python/Java/Mixed repos index and run cleanly (Matrix Execution, Parser
+Stability), but has ZERO curated ground truth for any of them — only Consul has real
+`BENCHMARK_TASKS`. Needs: grep real target symbols + expected files in `flask`/`spring-petclinic`/
+`vllm` (all already available in `.benchmark_repos/`, per item #8), build task fixtures the same
+way item #4 did for Consul, then run the same `G_struct`/`G_behav`/composite-score measurement.
+Real signal already in hand suggesting this matters: item #8's fallback-ratio disparity (Go 4% vs.
+Python 85.7%/Java 50%/Mixed 66.7%) — unexplained, could be repo-size or could be a real
+language-specific gap; only real ground truth on those repos will tell which.
+
+### 5. Release-gate default threshold calibration — not started, depends on #4
+
+`production_gate.py`'s literal `max_fallback_ratio=0.0` default rejects every real repo tested so
+far (item #8: 4/4 rejections, including Consul). No validated "safe" default exists. Needs real
+fallback-ratio baselines across more repos/languages (gap #4's byproduct) before a genuinely
+informed default can be chosen — picking one now would just be a second guess.
+
+### 6. Placebo-effect complexity cleanup — not started, lowest priority
+
+Arms 1/2/4 (semantic re-ranker, type-graph indexing, path-hint locality boosting) were all falsified
+via same-process ablation — real, tested code with zero real effect on real queries. Not blocking
+integration; a maintainability pass (remove or clearly gate as historical-record-only) whenever
+there's spare cycles. No urgency.
 
 ---
 

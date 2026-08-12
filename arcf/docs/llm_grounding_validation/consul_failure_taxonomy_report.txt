@@ -1,0 +1,5 @@
+
+=== Failure Taxonomy: Diagnostic Aggregation Report (Arm A) ===
+  zero_candidate_extraction     13  (68.4%)
+  oversized_file_excluded        3  (15.8%)
+  context_budget_overflow        3  (15.8%)
