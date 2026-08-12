@@ -1,11 +1,36 @@
 # ARCF Progress Log
 
-**Last updated:** 2026-08-12 IST · **Base/main HEAD:** `79cb8b9` · **Tests:** 992/992 passing
+**Last updated:** 2026-08-12 IST · **Base/main HEAD:** `<pending>` · **Tests:** 992/992 passing
 
 Read this file top-to-bottom to pick up where things stand — it's the fast-start doc for a new
 chat session. Detailed *why* for each entry lives in Claude's memory files (per-topic, e.g.
 `arcf_payload_optimization_path_masking`); this file is the curated *what/when* summary, updated
 after each merge to `Base`, not after every small step.
+
+### 2026-08-12 — Checkpoint: Production Readiness Gap Resolution, paused mid-work
+Not a checklist item — a follow-on readiness investigation after all 15 items closed. Session
+paused here so the user can start a separate, higher-priority experiment. **Full detail, status of
+all 6 gaps, and exact resume instructions are in `CHECKLIST.md`'s "Production Readiness Gap
+Resolution" section** (this entry is the short pointer, not the full record).
+
+**Real fix shipped this checkpoint**: `scripts/validate_llm_grounding.py`'s `_arm_a_arcf()` never
+actually passed `enable_primary_priority_floor` (item #15's own fix) to `ContextPackager.package()`
+— caught before trusting a re-verification run that silently tested the pre-fix behavior. Fixed;
+confirmed in isolation (real dotted entity `Catalog.Register`, `G_struct` 0.0→1.0 with the flag
+on/off) before re-running the full paid benchmark.
+
+**Real result**: composite grounding score **`3.426 ± 0.888`**, clearing the ≥3.4/5.0 target for
+the first time ever measured on this project — but zero-context still scores `4.111` overall on
+the same benchmark, so this is a real improvement, not proof retrieval reliably beats no retrieval.
+SLM-1 non-determinism (`PROGRESS.md`'s own long-standing open item) was re-verified with 28 real
+calls and does not currently reproduce — closed. Two new real findings surfaced along the way, both
+diagnosed but **not yet fixed**: a `Listener` prompt bug (`intent_extraction.py`'s own worked
+example teaches the model to fabricate a fake identifier for exactly one real query's phrasing) and
+a task6 multi-path-hint disambiguation collision (same family as the closed recall-gap boundary).
+988→992 test count unchanged this checkpoint (no new `src/` code, only the harness wiring fix + one
+new verification script). `scripts/slm1_determinism_reverification.py` added as a permanent
+regression-guard script, same pattern as every other item's own check script.
+→ memory: `arcf_gap_resolution_checkpoint`
 
 ### 2026-08-12 — Shipped: CHECKLIST.md item #15 (Oversized Entry-Point Budget Allocation — PRIMARY Priority Floor)
 Follow-on falsification experiment (not in the original 15-section doc) against item #4's own
@@ -647,18 +672,25 @@ Fixed a false-positive tie where `"implement"` substring-matched inside `"implem
 - **Flagship "New"-style extreme-ambiguity retrieval** — still not solved. Root cause is Tier-1
   entry-point fan-out (a name resolving to 100+ same-named candidates repo-wide), a different
   mechanism from everything fixed so far.
-- **Grounding-score target (≥3.4/5.0 composite)** — never hit in three measured benchmark runs.
-  **Task 1's own regression is now fixed** (checklist item #15): the real cause was budget-crowding
-  by SUPPORTING-tier fan-out, not the file's own size — `enable_primary_priority_floor` recovers
-  `G_struct` to 1.0. Tasks 3/5 (`Config`×7, `New`×224 same-named matches) still fail via a
-  *different* mechanism — cut by the relative score falloff gate itself, before packing order ever
-  matters — which is the same closed, 8-times-falsified recall-gap boundary and was deliberately
-  left untouched by item #15. The composite-score target overall remains unverified end-to-end
-  (needs a fresh paid LLM judge run to confirm the real effect on judged grounding quality, not just
-  the deterministic G_struct/G_behav proxy).
-- **Benchmark noise floor** — SLM-1 entity extraction is non-deterministic in *content*
-  (not just order) even at `temperature=0.0`. Single-run score deltas on the 5-task grounding
-  benchmark should not be trusted to attribute cause without multiple runs.
+- **Grounding-score target (≥3.4/5.0 composite)** — **CLEARED for the first time, 2026-08-12**:
+  real paid `gpt-4o-mini` run, real Consul, post item #15 fix (properly wired into
+  `validate_llm_grounding.py`'s Arm A — an earlier same-day run silently tested the OLD behavior
+  because the harness never passed `enable_primary_priority_floor`, caught and fixed before trusting
+  the number). Composite **`3.426 ± 0.888`**, up from the previous best of 2.867. **Not a clean win,
+  reported honestly**: zero-context (no retrieval) still scores **`4.111`** overall on this same
+  benchmark — ARCF's real value remains task-dependent (wins task1/task4, loses task2), not a
+  uniform improvement. See `CHECKLIST.md`'s "Production Readiness Gap Resolution" section for the
+  full breakdown, the failure taxonomy on this run (68.4% `zero_candidate_extraction`), and two new
+  findings from the same investigation: a real, previously-undocumented `Listener` prompt bug
+  (diagnosed, fix scoped, not yet built) and a new task6 multi-path-hint disambiguation collision
+  (same family as the closed recall-gap boundary, flagged not fixed).
+- **Benchmark noise floor** — **re-verified 2026-08-12, does not currently reproduce.** 4 distinct
+  real queries × 28 real `temperature=0.0` calls against the current production prompt (including
+  the exact query the original flip was reported on) showed zero content variance; a default-
+  temperature control on the same query showed real variance, confirming the test can detect
+  instability when present. Likely explanation: the prompt was hardened after the original finding
+  was recorded. Closed as a re-verified non-reproduction, not silently assumed fixed — see
+  `scripts/slm1_determinism_reverification.py`.
 - **`path_hint` doesn't propagate across entities in a query** — only the entity that carries a
   path hint benefits from it directly; Feature 1 (query-wide masking) mitigates this for path
   hints specifically but the general case is still narrow.
