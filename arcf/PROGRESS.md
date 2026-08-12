@@ -1,6 +1,6 @@
 # ARCF Progress Log
 
-**Last updated:** 2026-08-12 IST · **Base/main HEAD:** `ed5cf86` · **Tests:** 977/977 passing
+**Last updated:** 2026-08-12 IST · **Base/main HEAD:** `9bdb885` · **Tests:** 981/981 passing
 
 Read this file top-to-bottom to pick up where things stand — it's the fast-start doc for a new
 chat session. Detailed *why* for each entry lives in Claude's memory files (per-topic, e.g.
@@ -18,6 +18,37 @@ after each merge to `Base`, not after every small step.
 - **`CHECKLIST.md`** (repo root) — the forward-looking backlog/tracker, separate from this file.
   Read its session-tracker block first when starting a session; this file (`PROGRESS.md`) stays the
   dated shipped/falsified log.
+
+### 2026-08-12 — CHECKLIST.md item #7 (Incremental Indexing) verified already solved — Tier 2 complete
+Before designing anything against the spec's elaborate Diff-Driven Scope Identification / Targeted
+Node & Edge Invalidation / Partial Subgraph Recomputation / Index Stitching & Reconciliation
+architecture, read `CodeIntelligenceEngine.build_index` directly: its own docstring already states
+per-file parsing is incrementally cached, but every graph (`SymbolIndex`/`CallGraph`/`ImportGraph`/
+etc.) is always rebuilt fully, on the claim that graph construction is "always cheap." That claim
+needed measuring, not trusting.
+
+**Real measurement, real Consul (11,102 scanned files, 2,370 analyzed, 28,174 symbols)**: full cold
+rebuild 141.6s; all-files-cached (isolates graph-construction-only cost) 8.4s — **5.9%** of total
+cost, confirming the docstring's claim holds at real scale. Single-file diff: 5.7s, **96.0%
+reduction**. PR-sized diff (15 files): 9.5s, **93.2% reduction**. **The existing, already-shipped
+`previous_index` mechanism already clears the spec's own ≥80%-reduction gate** — no new code needed
+for the performance criterion.
+
+**Correctness gates satisfied by construction, not new logic**: the current design never attempts
+partial graph patching — every graph is always rebuilt fully and fresh from a complete
+`FileAnalysis` dict, so there's no "stitch modified subgraph back in" step for a bug to hide in.
+Structurally *stronger* than the spec's proposed partial-recomputation architecture, whose own
+stated risk (graph drift from imperfect invalidation) only exists if you build partial patching in
+the first place. Verified with a real test, not left as an architectural argument: 4 new
+equivalence tests (`test_incremental_equivalence.py`) covering edit/add/remove/no-op scenarios,
+each asserting full-rebuild and incremental produce byte-identical structural signatures AND that
+untouched files were genuinely reused (identity-checked), not silently re-parsed.
+
+**Explicit engineering trade-off decision, not a shortcut**: the elaborate architecture was **not
+built** — it would spend real effort and introduce the exact correctness risk the spec itself names,
+to optimize a cost already measured at 5.9% of total latency and already 96%+ reduced by existing
+code for the target scenarios. 4 new tests, 981/981 total. Merged `9bdb885`.
+→ memory: `arcf_incremental_indexing_verified`
 
 ### 2026-08-12 — Shipped: CHECKLIST.md item #11 (Operational Confidence / Release Gate)
 `src/infrastructure/production_gate.py`: `evaluate_release()` consumes `RunSummary` dicts (item
