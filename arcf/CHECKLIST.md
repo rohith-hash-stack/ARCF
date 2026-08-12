@@ -414,13 +414,66 @@ the audit deliverable only, per the item's own "0 production code changes" succe
 
 ## 10. Expansion Consistency — Symbol-Identity Mode
 
-- **Status:** Not Started
-- **Source:** original doc §10
-- **Note:** real gap, directly useful for debugging future falsification work — an explicit
-  `ExpansionMode=FALLBACK` / `Reason=MissingGraphEdge` audit trail would have made several past
-  ablation traces (Arm 1, Arm 4, the disambiguation-pruning `_expand_calls` trace) faster to
-  attribute without manual code reading.
-- **Success criteria:** _not defined yet._
+- **Status:** In Progress
+- **Source:** original doc §10, detailed spec supplied by user 2026-08-12
+- **Branch:** `feature/symbol-identity-audit-trail` (off `Base`)
+
+- **Precise targets, found by tracing every `_add_file` call site in `context_resolver.py` before
+  writing anything (not assumed):**
+  1. Entry-point direct match (`resolve()`'s main loop, `f"defines {name}"`) — the disambiguated
+     `symbol` IS the identity. → `AST_DIRECT`.
+  2. `_expand_calls`'s hop-1 module-level calls via `locality_filtered_callers_of_name(index, name,
+     symbol.file_path)` — this is the exact raw-string bypass
+     [[arcf_disambiguation_pruning_shipped]]'s own "Stage 1" finding already identified: it re-
+     searches `SymbolIndex.find_by_name(name)` for EVERY same-named symbol repo-wide, not just the
+     disambiguated one. → `RAW_STRING_FALLBACK`.
+  3. `_expand_calls`'s `caller_hops`/`callee_hops` via `locality_filtered_transitive_callers/
+     callees(..., symbol.id, ...)` — genuinely ID-scoped. → `SCOPED_GRAPH_EXPANSION`, with
+     `parent_symbol_id` set to the BFS's own real immediate-parent id (`parent_id` from the
+     `(hop, parent_id)` tuple already computed), not just the original entry symbol.
+  4. `_expand_subclasses`'s first loop, `candidate_selector.subclasses_of(name, ...)` — checked
+     directly: `subclasses_of` calls `SymbolIndex.find_by_name(class_name)` internally, the exact
+     same raw-name-repo-wide-bypass shape as #2. → `RAW_STRING_FALLBACK`.
+
+- **Correction to the user's own spec:** "Enforce deterministic SymbolID propagation... disambiguated
+  candidates must be tracked by identity, not raw string names" reads as wanting the raw-name
+  lookups (#2/#4 above) *replaced* with ID-scoped ones. [[arcf_disambiguation_pruning_shipped]]
+  already tested exactly that for #2 and found it barely changes anything — `CallGraph`'s own
+  construction-time resolution over-attributes every bare call site to every same-named symbol's ID
+  regardless of which lookup reads it later (ID-scoped vs. name-scoped: 31 vs. 32 files, a 1-file
+  difference). Re-attempting that behavioral change without new evidence would re-litigate a closed
+  question. **This item is scoped as tagging/observability, not a retrieval-behavior change**: the
+  raw-string fallback paths keep working exactly as they do today (they're structurally necessary —
+  real same-named module-level call sites do need this), but every file they produce now carries an
+  explicit, honest `RAW_STRING_FALLBACK` tag instead of being indistinguishable from an
+  identity-propagated match. That satisfies "make unflagged re-introductions impossible" without
+  re-attempting the already-falsified behavioral fix.
+
+- **Design (extends item #5's own finding — `FileReference.reason`/`justification_chain` is
+  already a working provenance pattern, not new infrastructure):** new `OriginStage` enum
+  (`AST_DIRECT`, `SCOPED_GRAPH_EXPANSION`, `RAW_STRING_FALLBACK`) and two new `FileReference`
+  fields, `origin_stage: OriginStage | None = None` and `parent_symbol_id: str | None = None` —
+  same additive, default-`None`, first-write-wins discipline as every existing optional field on
+  `FileReference` (`anchor_confidence`, `ambiguity_confidence`, `path_mask_confidence`). Threaded
+  through `_add_file` the same way those are, into two new parallel dicts
+  (`file_origin_stage`/`file_parent_symbol_id`), read at the final `FileReference(...)`
+  construction in `resolve()`.
+
+- **Success criteria (the user's own 3 gates, made concretely checkable):**
+  1. **100% Symbol Traceability** — every `FileReference` in a real `resolve()` call's
+     `candidate_files` has a non-`None` `origin_stage`. Checked by a script asserting this on real
+     Consul queries (including "New"/"Register", the known worst-case fan-out cases), not just unit
+     tests on synthetic fixtures.
+  2. **Zero Unflagged Re-introductions** — every file reached via `locality_filtered_callers_of_name`
+     or `candidate_selector.subclasses_of` (the two confirmed raw-name paths) is tagged
+     `RAW_STRING_FALLBACK`, checked directly against real traversal, not inferred.
+  3. **Traceability velocity** — re-run item #3's own dropped-file trace (`agent/acl_test.go` etc.,
+     reached via `NewBaseDeps`) and confirm the origin is now a direct field read
+     (`origin_stage`/`parent_symbol_id`) instead of the manual `justification_chain`-string-reading
+     this session actually had to do to produce that finding.
+- **Failure criteria:** any candidate file with `origin_stage=None` on a real query, or a
+  raw-string-reached file NOT tagged `RAW_STRING_FALLBACK`, means the tagging is incomplete — fix
+  before merge, not a partial ship.
 
 ## 11. Operational Confidence — Deployment Strategy
 
