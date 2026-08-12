@@ -1,6 +1,6 @@
 # ARCF Progress Log
 
-**Last updated:** 2026-08-12 IST · **Base/main HEAD:** `fa81a27` · **Tests:** 988/988 passing
+**Last updated:** 2026-08-12 IST · **Base/main HEAD:** `79cb8b9` · **Tests:** 992/992 passing
 
 Read this file top-to-bottom to pick up where things stand — it's the fast-start doc for a new
 chat session. Detailed *why* for each entry lives in Claude's memory files (per-topic, e.g.
@@ -42,7 +42,7 @@ touches); tasks 4/6 held their 1.0 scores (task4's file set changed but only by 
 non-ground-truth SUPPORTING filler files, a purely subtractive trade-off). All token usage stayed
 within budget. 4 new unit tests (default-off regression guard, the core displacement effect,
 relative-order preservation within each tier, falloff-gate independence), 992/992 total. Merged
-`<pending>`.
+`79cb8b9`.
 → memory: `arcf_primary_priority_floor_shipped`
 
 ### 2026-08-12 — Shipped: CHECKLIST.md item #8 (Validation Breadth — Repository Topology & Scale)
