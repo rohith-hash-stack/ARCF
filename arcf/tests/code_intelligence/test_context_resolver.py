@@ -368,6 +368,99 @@ def test_ambiguous_target_name_narrowed_by_prior_target_context(tmp_path: Path) 
     assert "b.py" in {f.file_path for f in result.candidate_files}
 
 
+# --- Disambiguation-Driven Candidate Pruning (2026-08-12) ---
+
+
+def _pruning_fixture(tmp_path: Path) -> None:
+    # "near.py" shares a directory with "marker.py" (same-package
+    # locality once Marker establishes context); "far.py" shares
+    # nothing with either -- cross-directory on purpose, so this
+    # exercises the SAME locality boundary _expand_calls' own
+    # locality_filtered_callers_of_name uses (has_locality), not just
+    # the direct target-name resolution loop. Two files sharing one
+    # directory (as in an earlier draft of this fixture) still let a
+    # same-named-but-unrelated file through via that separate,
+    # independently-locality-filtered call-graph expansion path -- a
+    # real, pre-existing, documented behavior
+    # (CandidateFileSelector.callers_of's own "plus the file(s)
+    # defining it" clause), not a bug in this fix.
+    (tmp_path / "pkg").mkdir()
+    (tmp_path / "pkg" / "marker.py").write_text("class Marker:\n    pass\n")
+    (tmp_path / "pkg" / "near.py").write_text("def helper():\n    return 1\n")
+    (tmp_path / "unrelated").mkdir()
+    (tmp_path / "unrelated" / "far.py").write_text("def helper():\n    return 2\n")
+
+
+def test_disambiguated_target_prunes_non_preferred_same_named_candidate(
+    tmp_path: Path,
+) -> None:
+    # Before this fix, "unrelated/far.py" stayed in candidate_files
+    # even though locality scoring confidently preferred "pkg/near.py"
+    # (disambiguation.preferred was computed but never consumed).
+    _pruning_fixture(tmp_path)
+    index = _build_index(tmp_path)
+    result = ContextResolver(index).resolve(
+        "ws1", "contract1", str(tmp_path), ["Marker", "helper"]
+    )
+
+    assert result.ambiguous_targets == ()
+    assert {f.file_path for f in result.candidate_files} == {"pkg/marker.py", "pkg/near.py"}
+
+
+def test_ambiguity_confidence_reflects_raw_match_count_not_pruned_count(
+    tmp_path: Path,
+) -> None:
+    # ambiguity_confidence must keep describing how ambiguous "helper"
+    # looked BEFORE disambiguation ran (2 raw matches -> 1/log2(3)),
+    # not silently jump to 1.0 (no-penalty) just because pruning
+    # narrowed the candidate set down to one file afterward. "near.py"
+    # is a DIFFERENT file from where "Marker" resolves, so this isn't
+    # confounded by _add_file's own first-write-wins dict semantics for
+    # a file two different target names both happen to touch.
+    _pruning_fixture(tmp_path)
+    index = _build_index(tmp_path)
+    result = ContextResolver(index).resolve(
+        "ws1", "contract1", str(tmp_path), ["Marker", "helper"]
+    )
+
+    helper_ref = next(f for f in result.candidate_files if f.file_path == "pkg/near.py")
+    assert helper_ref.ambiguity_confidence is not None
+    assert abs(helper_ref.ambiguity_confidence - 1.0 / math.log2(3)) < 1e-9
+
+
+def test_still_tied_candidates_at_equal_locality_are_not_pruned(tmp_path: Path) -> None:
+    # Both same-named candidates sit in the SAME directory as the
+    # context file, so they tie at "same directory" locality with no
+    # way to break the tie -- must stay genuinely ambiguous and keep
+    # BOTH, not arbitrarily prune to one.
+    (tmp_path / "pkg").mkdir()
+    (tmp_path / "pkg" / "a.py").write_text("def helper():\n    return 1\n")
+    (tmp_path / "pkg" / "b.py").write_text("def helper():\n    return 2\n")
+    (tmp_path / "pkg" / "marker.py").write_text("class Marker:\n    pass\n")
+    index = _build_index(tmp_path)
+    result = ContextResolver(index).resolve(
+        "ws1", "contract1", str(tmp_path), ["Marker", "helper"]
+    )
+
+    assert result.ambiguous_targets == ("helper",)
+    helper_files = {
+        f.file_path for f in result.candidate_files if f.file_path in {"pkg/a.py", "pkg/b.py"}
+    }
+    assert helper_files == {"pkg/a.py", "pkg/b.py"}
+
+
+def test_zero_match_target_name_unaffected_by_pruning(tmp_path: Path) -> None:
+    (tmp_path / "a.py").write_text("def known():\n    pass\n")
+    index = _build_index(tmp_path)
+    result = ContextResolver(index).resolve(
+        "ws1", "contract1", str(tmp_path), ["known", "does_not_exist"]
+    )
+
+    assert "does_not_exist" in result.unresolved_symbols
+    assert result.ambiguous_targets == ()
+    assert {f.file_path for f in result.candidate_files} == {"a.py"}
+
+
 def test_path_qualified_target_name_resolves_the_directory_collision(tmp_path: Path) -> None:
     # Real Consul regression shape: two DIFFERENT packages each happen to
     # have a directory (and a same-named symbol inside it) called

@@ -21,6 +21,21 @@ Every file gets a `justification_chain` recording the hop-by-hop path
 that pulled it in, so widening the traversal never turns into a black
 box — narrowing an ever-larger candidate set further (ranking,
 compression) remains Phase 6's job, not this one's.
+
+Disambiguation-Driven Candidate Pruning (2026-08-12): found during a
+same-process ablation while validating an ARCF Type Graph experiment
+that never itself shipped -- `ReferenceResolver.resolve_with
+_disambiguation`'s locality scoring (same file, same directory, import
+graph) had always computed a `preferred` candidate for an unambiguous
+name, but `resolve()` here never consumed it: every same-named raw
+match still became a candidate file/entry point regardless. `matches`
+is now pruned to `[preferred]` whenever `disambiguation.ambiguous` is
+False and there was more than one raw match to narrow from -- trusting
+the resolver's own locality-derived signal the same way `path_hints`
+(Feature 1, immediately below) already trusts a caller-provided one.
+`ambiguity_confidence` still reflects the RAW (pre-prune) match count,
+unchanged -- this only narrows WHICH symbols get added, not how
+ambiguous the name looked before disambiguation ran.
 """
 
 import math
@@ -206,6 +221,32 @@ class ContextResolver:
             ambiguity_confidence = (
                 1.0 if len(matches) <= 1 else 1.0 / math.log2(len(matches) + 1)
             )
+            # ARCF fix (2026-08-12, Disambiguation-Driven Candidate
+            # Pruning): `disambiguation.preferred` was computed by
+            # locality scoring (same file, same directory, import graph
+            # -- ReferenceResolver.resolve_with_disambiguation) but never
+            # actually consumed here -- every raw same-named match still
+            # became a candidate file/entry point even when disambiguation
+            # had already narrowed a multi-symbol name down to exactly
+            # one confident winner. `ambiguous=False` is that method's
+            # own contract for "resolved to a single answer, not silently
+            # guessed" (see its own docstring) -- trusting it here is the
+            # same posture `path_hints` (Feature 1, below) already has
+            # for a stronger, caller-provided signal; this extends
+            # equivalent trust to the resolver's own locality-derived
+            # one. Deliberately AFTER `ambiguity_confidence` above, which
+            # must keep describing how ambiguous the RAW (pre-prune)
+            # resolution was, per its own comment -- unchanged by this
+            # fix. Safe by construction: only fires when there's a real
+            # `preferred` AND more than one raw match to narrow FROM,
+            # so a zero-match or still-ambiguous (tied/no-context) name
+            # always falls through with `matches` completely untouched.
+            if (
+                not disambiguation.ambiguous
+                and disambiguation.preferred is not None
+                and len(matches) > 1
+            ):
+                matches = [disambiguation.preferred]
             # Feature 1 safety fallback: query_path_hints existed but
             # NONE of this entity's candidates matched any of them (a
             # legitimate cross-package query, e.g. "How does agent/cache
