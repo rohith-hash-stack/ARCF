@@ -92,6 +92,41 @@ def test_get_run_summary_empty_collector() -> None:
     assert summary["event_count"] == 0
     assert summary["resolve_latency_ms"] is None
     assert summary["overall_fallback_ratio"] == 0.0
+    assert summary["quality_data_available"] is False
+    assert summary["mean_precision"] is None
+    assert summary["mean_recall"] is None
+
+
+def test_quality_data_available_false_when_no_precision_or_recall_supplied(tmp_path: Path) -> None:
+    _write_call_chain_fixture(tmp_path)
+    index = _build_index(tmp_path)
+    result = ContextResolver(index).resolve(
+        "ws1", "c1", str(tmp_path), ["authenticate"], traversal_depth=None
+    )
+    collector = TelemetryCollector()
+    collector.record(result, resolve_latency_ms=1.0)  # no precision/recall -- the real-world default
+
+    summary = collector.get_run_summary()
+    assert summary["quality_data_available"] is False
+    assert summary["mean_precision"] is None
+    assert summary["mean_recall"] is None
+
+
+def test_quality_data_aggregates_when_caller_supplies_ground_truth(tmp_path: Path) -> None:
+    _write_call_chain_fixture(tmp_path)
+    index = _build_index(tmp_path)
+    result = ContextResolver(index).resolve(
+        "ws1", "c1", str(tmp_path), ["authenticate"], traversal_depth=None
+    )
+    collector = TelemetryCollector()
+    collector.record(result, resolve_latency_ms=1.0, precision=0.8, recall=1.0)
+    collector.record(result, resolve_latency_ms=1.0, precision=0.6, recall=0.5)
+
+    summary = collector.get_run_summary()
+    assert summary["quality_data_available"] is True
+    assert summary["mean_precision"] == 0.7
+    assert summary["mean_recall"] == 0.75
+    assert summary["min_recall"] == 0.5
 
 
 def test_get_run_summary_aggregates_across_multiple_events(tmp_path: Path) -> None:
