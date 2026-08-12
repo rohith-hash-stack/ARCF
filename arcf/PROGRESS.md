@@ -7,6 +7,39 @@ chat session. Detailed *why* for each entry lives in Claude's memory files (per-
 `arcf_payload_optimization_path_masking`); this file is the curated *what/when* summary, updated
 after each merge to `Base`, not after every small step.
 
+### 2026-08-12 — Shipped: CHECKLIST.md item #14 (Failure Taxonomy & Automated Regression Attribution)
+`scripts/failure_taxonomy.py`: `FailureCategory` (the user's exact 5 values) +
+`classify_grounding_failure()`, pure/deterministic, harness-only. Reconciled against real code
+before designing anything: read `ContextBudgetManager.select()` directly (not assumed) and mapped
+every category onto one of its real, already-shipped exclusion mechanisms — the relative score
+falloff gate (`_RELATIVE_FALLOFF_GAMMA=0.45`), task-type budget tiering
+(`_BUDGET_TIER_BY_TASK_TYPE` — UNKNOWN/BUG_FIX get 4500 tokens, not the caller's nominal 8000, a
+real fact this item's own tracing surfaced), and greedy-fill crowding — importing those constants
+rather than duplicating them, zero drift risk. **Zero `src/` changes**; wired into
+`validate_llm_grounding.py`'s Arm A path only (Arm B deliberately bypasses
+`ContextBudgetManager` entirely per its own docstring, so applying this classifier there would
+misclassify against a mechanism it never runs) via underscore-prefixed keys that get consumed into
+a plain, JSON-serializable list and deleted before the result dict is ever persisted.
+
+**Real verification** (`scripts/failure_taxonomy_real_consul_check.py`, real Consul, no LLM calls,
+reusing item #4's own `BENCHMARK_TASKS`/`_structural_behavioral_grounding_metrics` to decide which
+files are real failures — the Telemetry Alignment gate): 5 real failures classified across 4
+tasks, **60% `AMBIGUITY_DECAY_DROPPED`, 20% `OVERSIZED_FILE_EXCLUDED`, 20%
+`ZERO_CANDIDATE_EXTRACTION`**, 0% unclassified. task1's `catalog_endpoint.go` (10,069 tokens)
+exceeds the *effective* 4500-token ceiling on its own — a genuine size failure, ambiguity decay as
+a real secondary factor. task2/3/5's entries cleared their own size ceiling but fell below the
+falloff gate purely from ambiguity decay (`Cache`×3, `Config`×7, `New`×224 same-named matches).
+`watch.go` never became a candidate at all (the already-diagnosed "Notify" 78-way collision).
+Determinism verified: task5 re-classified twice through the full real pipeline produced
+byte-identical output.
+
+**Real gap caught in item #4's own write-up while building this classifier, corrected there, not
+silently left wrong**: task2's `G_struct` also failed in the full pipeline (not just `G_behav`),
+for a different real reason (`Cache` itself is 3-way ambiguous and falls below the falloff gate)
+than the already-documented `Notify`-collision `G_behav` failure — item #4's entry didn't
+separately call this out originally. 988/988 tests (unchanged). Merged `<pending>`.
+→ memory: `arcf_failure_taxonomy_shipped`
+
 ### 2026-08-12 — Shipped: CHECKLIST.md item #4 (Grounding Quality — Structural vs. Behavioral Split)
 `_structural_behavioral_grounding_metrics()` in `scripts/validate_llm_grounding.py`: `G_struct`
 (recall of packaged files against a task's entry-point/interface/type files) and `G_behav`/R_path
