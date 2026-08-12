@@ -39,12 +39,14 @@ limit) can resume without re-deriving anything.
   `exp/semantic-reranker`, `exp/type-graph-indexing`)
 - **Active item:** none. Item #3 (Locality UPS suppression) is `Parked (falsified)` — see its own
   section for the full evidence chain (free ablation → real disconfirming n=1 LLM check → user
-  chose to stop before the full paid run).
-- **In-flight state:** none. `main`/`Base` are clean, 945/945 tests green on the last checkpoint
-  before the experiment branch diverged. `PROGRESS.md` updated in the same session with the final
-  dated entry.
-- **Next step:** pick the next checklist item per the decided priority order above. #5 (Canonical
-  IR gap check) is next in Tier 1 and is a cheap verify-first spike, not a build — good next pick.
+  chose to stop before the full paid run). Item #5 (Canonical IR gap check) is `Done` — zero-code
+  audit, schema matrix + dependency mapping + gap spec all in its own section, no branch needed.
+- **In-flight state:** none. `main`/`Base` are clean, 945/945 tests unaffected (item #5 touched no
+  source, audit only).
+- **Next step:** pick the next checklist item per the decided priority order above. #10
+  (Symbol-Identity Mode) is the last remaining Tier-1 item, and #5's own audit just re-scoped it
+  smaller than originally assumed (extend `FileReference`'s existing `reason`/`justification_chain`
+  pattern, not build new provenance infrastructure) — good next pick.
   #10 (Symbol-Identity mode) is the other remaining Tier-1 item.
 
 ## Priority order (decided 2026-08-12)
@@ -57,7 +59,8 @@ items parked until new evidence shows up.
 **Tier 1 — next up**
 1. **#3** Locality UPS suppression — aimed at the one concrete open lever (`has_locality`
    import-reachability permissiveness), direct continuation of the disambiguation-pruning thread.
-2. **#5** Canonical IR gap check — cheap spike, scopes #2/#6/#10 correctly instead of guessing.
+2. **#5** Canonical IR gap check — cheap spike, scopes #2/#10 correctly (done 2026-08-12; turned out
+   to be a weaker dependency for #6 than assumed here — see item #5's own dependency mapping).
 3. **#10** Symbol-Identity mode / audit trail — small, pays for itself immediately in the next
    falsification experiment's ablation trace (would have sped up Arm 1 / Arm 4's own tracing).
 
@@ -304,15 +307,66 @@ items parked until new evidence shows up.
 
 ## 5. Determinism — Canonical Intermediate Representation
 
-- **Status:** Verify gap exists before building
-- **Source:** original doc §5
-- **Correction:** largely already built. `Symbol` already carries `param_types`/`return_type`,
-  there's a `FieldReference` type, and symbol IDs are already the unit `CallGraph.
-  caller_files_of()` operates on ([[arcf_arm1_type_graph_falsified]],
-  [[arcf_disambiguation_pruning_shipped]]). Check current `code_intelligence/` types for what's
-  actually missing (likely: `Language`, `Span` completeness, or a documented consumer contract)
-  before treating this as greenfield work.
-- **Success criteria:** _not defined yet._
+- **Status:** Done — zero-code audit complete, gap spec drafted, 0 production changes, $0 spent
+- **Source:** original doc §5, re-scoped 2026-08-12 to the user's own 4-field verification-spike
+  spec (Canonical SymbolID / Scope Boundary Metadata / Type & Receiver Info / Provenance Metadata
+  Hooks), read directly against real code (`src/domain/code_intelligence.py`, `src/code_intelligence/
+  symbol_index.py`, all 8 `*_analyzer.py` files, `src/domain/context_resolution.py`) — no line
+  quoted below without opening the file first.
+
+- **Self-correction on this item's own earlier note:** that note (written before this audit) claimed
+  `Symbol` "already carries `param_types`/`return_type`" and a `FieldReference` type. **That was
+  wrong** — checked `src/domain/code_intelligence.py` directly: those fields do not exist on
+  `Base`/`main` at all. They were added on `exp/type-graph-indexing` for
+  [[arcf_arm1_type_graph_falsified]], which was **not merged** (falsified, preserved unmerged as a
+  historical record). The earlier note conflated an unmerged experimental branch with current
+  `Base` state — exactly the kind of stale-memory risk this whole audit exists to catch. Corrected
+  here, not silently left wrong.
+
+### Schema Audit Matrix
+
+| Field | Verdict | Evidence |
+|---|---|---|
+| **Canonical SymbolID** | **Partial** | `Symbol.id` exists (`domain/code_intelligence.py:42`), built identically by all 8 language analyzers as `f"{file_path}::{qualified_name}#{location.start_line}"` (verified byte-identical across `go_analyzer.py:469`, `python_analyzer.py:421`, `cpp/csharp/java/kotlin/rust/typescript_analyzer.py`, each with its own duplicate copy of the same formula — a real DRY gap, not a schema gap). Deterministic and unique within one file version, **but line-coupled**: a one-line edit above a declaration changes its `id` even though it's semantically the same symbol — not stable across trivial edits, which matters for the "replay, debugging, caching, regression comparison" use case the original proposal wanted. `Symbol.qualified_name` (`:44`) is the more refactor-stable identifier, but is per-file-scoped text (e.g. Go's `ReceiverType.MethodName`), not globally unique on its own — needs `file_path` alongside it to disambiguate two types with the same name in different files/packages. |
+| **Scope Boundary Metadata** | **Partial** | `Symbol.parent_id` (`:53`, enclosing class/function) and `Symbol.file_path` (`:46`) exist and are populated by every analyzer. **No explicit package/module field** — "package context" is never stored, only derivable by calling `posixpath.dirname(file_path)` at every call site that needs it (`SymbolIndex.same_package`, `locality.py`, item #3's own UPS scoring all do this independently). Workable today, but a real package-path field would remove several independent re-derivations of the same fact. |
+| **Type & Receiver Info** | **Missing** | `Symbol` has `kind: SymbolKind` (CLASS/FUNCTION/METHOD/INTERFACE, `:45`) but no structured parameter types, return type, or receiver type field. Go's own receiver is captured **as a string, folded into `qualified_name`** (`go_analyzer.py:329-336`, `_receiver_type_name` — e.g. `qualified_name = f"{receiver_type_name}.{name}"`), not as a separate structured field — exactly the "hacky string-parsing workaround downstream" the problem statement warned about, already happening today for anyone who needs the receiver type as data rather than as a text fragment inside a name. (`param_types`/`return_type`/`FieldReference` exist only on the unmerged `exp/type-graph-indexing` branch — see self-correction above.) |
+| **Provenance Metadata Hooks** | **Missing on the IR itself, but a real pattern exists one layer downstream** | `Symbol`/`CallReference` (`domain/code_intelligence.py`) carry no origin-step or disambiguation-history field at all — `CallReference` (`:58-70`) has no edge-provenance/call-kind field either (relevant to item #2's own "lexical/type-based/interface-based/reflection/string-dispatch" classification — that data has nowhere to live on the current IR). But `FileReference` (`domain/context_resolution.py:87`, a *downstream, per-query resolution* object, not the canonical IR) already has exactly this shape of thing: `reason` (`:91`, human-readable justification) and `justification_chain` (`:102`, full hop-by-hop path). This is a real, working provenance pattern — just scoped to one query's resolution result, not attached to the canonical Symbol that gets indexed once and reused across queries. |
+
+### Dependency mapping (item #2 / #6 / #10)
+
+- **#2 (CallGraph Edge Provenance)** — directly blocked on the Type & Receiver Info gap (needs to
+  distinguish interface-dispatched calls from concrete ones) and needs a genuinely new field on
+  `CallReference` itself (a `call_kind`/edge-provenance tag) — nothing today. Already scoped in
+  item #2's own entry to stay a read-side wrapper over `CallGraph`, consistent with this finding:
+  the new field would need to live on `CallReference`/a wrapper structure, not require touching
+  `CallGraph`'s own construction.
+- **#6 (Typed Query Dependency Graph)** — **weaker dependency than assumed.** This item models the
+  *query text* as a typed graph (Symbol/File/Package/Concept nodes, compare/trace/call/configure/
+  implement edges) — that's a new, separate data model over parsed query intent, not something that
+  reads Symbol/IR completeness at all. The real blocker for #6 (per its own entry) is SLM-1
+  entity-extraction determinism, not IR schema. Correcting the priority-order rationale: #5 does
+  not meaningfully unblock #6.
+- **#10 (Symbol-Identity Mode / audit trail)** — directly served by the Provenance finding above:
+  the natural implementation is extending `FileReference`'s already-working `reason`/
+  `justification_chain` convention with an explicit `ExpansionMode`/`Reason=MissingGraphEdge` tag,
+  **not** a new canonical-IR field. This re-scopes #10 from "build new provenance infrastructure"
+  to "extend an existing, proven pattern" — smaller and lower-risk than its own entry currently
+  assumes.
+
+### Gap spec (drafted, not implemented — zero runtime changes)
+
+If pursued: (1) consolidate the 8 duplicate `_symbol_id` implementations into one shared helper —
+pure refactor, zero behavior change, fixes the DRY gap only. (2) Add `Symbol.package_path: str`
+(computed once at analysis time from `file_path`, same value every call site already derives
+independently) — additive, default-computable, no consumer breakage. (3) Add
+`Symbol.receiver_type: str | None` (Go-specific today, `None` elsewhere) — additive. (4) Add
+`CallReference.call_kind: str | None` (lexical/type-based/interface-based/reflection/heuristic,
+`None` = unclassified) for item #2 to eventually populate. None of these are scheduled — this is
+the audit deliverable only, per the item's own "0 production code changes" success gate.
+
+- **Success criteria, verified met:** 100% of the 4 fields classified (table above) — ✅. 0
+  production code changes, 0 API cost — ✅ (pure read/grep, no branch created). Concrete gap spec
+  drafted without touching runtime logic — ✅ (above).
 
 ## 6. Query Understanding — Typed Dependency Graph
 
