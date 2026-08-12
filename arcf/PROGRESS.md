@@ -1,6 +1,6 @@
 # ARCF Progress Log
 
-**Last updated:** 2026-08-12 11:17 IST · **Base/main HEAD:** `ebdebb6` (unchanged) · **Tests:** 938/938 passing
+**Last updated:** 2026-08-12 12:02 IST · **Base/main HEAD:** `ebdebb6` (unchanged) · **Tests:** 938/938 passing
 
 Read this file top-to-bottom to pick up where things stand — it's the fast-start doc for a new
 chat session. Detailed *why* for each entry lives in Claude's memory files (per-topic, e.g.
@@ -16,7 +16,42 @@ after each merge to `Base`, not after every small step.
 - Every merge to `Base` is preceded by a full `pytest` run (currently 930 tests) — zero regressions
   is the bar, not a goal.
 
-## Timeline (most recent first)
+### 2026-08-12 — Competitive Multi-Frontier Experimentation: Arm 1 (Type Graph / G_type Indexing, Go-only) falsified — with the most precise root cause of the three arms so far
+Third arm of the planned 4-arm experiment (Arms 2 and 4 above; Arm 3 String Dispatch Index not
+yet attempted). Go-only scope by explicit decision (Consul is Go, zero class inheritance —
+struct composition/field types is where the real blind spot is). On `exp/type-graph-indexing`:
+extended the shared IR (`Symbol.param_types`/`return_type`, new `FieldReference` type,
+`FileAnalysis.fields`), populated Go-only in `GoLanguageAnalyzer` (verified against real
+tree-sitter-go grammar — 36/36 analyzer tests passed on first run). New `TypeGraph`
+(`code_intelligence/type_graph.py`, mirrors `InheritanceGraph`'s resolve-via-`ReferenceResolver`
+pattern): single-hop composition adjacency. Wired into `ReferenceResolver._locality_score` as a
+new tier between "same file" and "same directory". 965/965 tests (27 new).
+
+**Same-process ablation (identical `ContextResolutionResult`, `type_graph` swapped for an empty
+one, one process — the standard established by Arm 2's own catch)**: real data exists (14,674
+`FieldReference`s indexed on real Consul, 3,510 resolved to real Symbols), mechanism verified
+correct in isolation (31 unit tests) — but **zero packaged-file delta** across 7 general real
+queries AND 3 further queries deliberately chosen where the field resolves to a *concrete
+struct*, not an interface (ruling out the first, plausible-looking hypothesis).
+
+**Root cause, more precisely diagnosed than either prior arm**: one case
+(`PermissionDeniedError` → `Resource` field → ambiguous `Apply` method) showed a genuine
+disambiguation-layer win — `disambiguation.ambiguous` flipped `True`→`False`. But
+`ContextResolver.resolve()` never actually consumes `disambiguation.preferred` to prune the
+candidate set for **any** locality tier (same file, type-graph, same directory, import-graph
+alike) — it adds every match in `disambiguation.resolved` regardless of whether locality scoring
+narrowed anything; `ambiguous_targets` is populated for reporting only. Only `path_hints` (a
+separate, deliberate hard filter) actually prunes. This is a pre-existing architectural property
+of the whole disambiguation layer, not a defect specific to this arm — consuming `preferred` to
+prune would be a separate, more general fix (affecting all four tiers at once), out of this arm's
+own scope.
+
+**Outcome**: not merged — preserved unmerged on `exp/type-graph-indexing` (commit `cf40ab3`) as
+the historical record, same disposition as Arms 2 and 4. No harness-side keeper this time (unlike
+Arm 4's Task 6) — this arm's diagnostic value is the `disambiguation.preferred`-never-consumed
+finding itself, now documented for whichever future work (this arm's own follow-up, or a
+different one) wants to pursue it.
+→ memory: `arcf_arm1_type_graph_falsified`
 
 ### 2026-08-12 — Competitive Multi-Frontier Experimentation: Arm 2 (Semantic Re-Ranker) falsified via same-process ablation
 Second arm of the planned 4-arm competitive experiment (see Arm 4 entry below). Implemented on
