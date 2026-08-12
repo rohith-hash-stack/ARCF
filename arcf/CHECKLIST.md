@@ -36,17 +36,18 @@ limit) can resume without re-deriving anything.
 - **Last updated:** 2026-08-12 (this session)
 - **Active branch:** none. `experiment/locality-utility-suppression` left unmerged as a historical
   record (same treatment as `exp/enhanced-path-locality`, `exp/semantic-reranker`,
-  `exp/type-graph-indexing`); `feature/symbol-identity-audit-trail` and
-  `feature/observability-telemetry` both merged and deleted.
+  `exp/type-graph-indexing`); `feature/symbol-identity-audit-trail`,
+  `feature/observability-telemetry`, and `feature/operational-release-gate` all merged and deleted.
 - **Active item:** none — **Tier 1 fully closed out** (#3 `Parked (falsified)`, #5 `Done`, #10
-  `Shipped`), **Tier 2 item #13 (Observability & Telemetry) shipped** — `TelemetryCollector` +
-  `TelemetryEvent`, all 4 user success gates verified with real measurements (-2.224% overhead,
-  957/957 tests 0 schema violations, `get_run_summary()`/`assert_no_fallbacks()` ready for #11).
-- **In-flight state:** none. `main`/`Base` clean and in sync, 957/957 tests green.
-- **Next step:** Tier 2 continues — **#11 Operational Confidence** (deployment/versioning/canary/
-  rollback), now directly actionable since it can gate on `TelemetryCollector.assert_no_fallbacks()`
-  and `get_run_summary()`, then **#7 Incremental Indexing remaining gap**, per the decided priority
-  order above.
+  `Shipped`), **Tier 2 items #13 and #11 both shipped**. `production_gate.py`'s `evaluate_release()`
+  consumes item #13's `RunSummary` directly, all 4 gates real-Consul-verified. Real operational
+  finding: the spec's literal zero-fallback-tolerance default rejects real Consul data (2.36%
+  natural fallback rate) — needs a realistic threshold in practice, not the literal spec default.
+- **In-flight state:** none. `main`/`Base` clean and in sync, 977/977 tests green.
+- **Next step:** Tier 2's last item — **#7 Incremental Indexing remaining gap** (verify the
+  narrower partial-recompute gap; base index caching already shipped per
+  [[arcf_persistent_index_cache]], the real remaining scope is narrower than "build from scratch"),
+  per the decided priority order above.
 
 ## Priority order (decided 2026-08-12)
 
@@ -69,6 +70,7 @@ items parked until new evidence shows up.
    **Done 2026-08-12, shipped.**
 5. **#11** Operational Confidence (versioning/canary/shadow/rollback) — sequenced right after #13
    on purpose; a deployment flow with no metrics feeding it isn't a safety net.
+   **Done 2026-08-12, shipped.**
 6. **#7** Incremental Indexing remaining gap — verify the narrower partial-recompute gap, close it;
    production repos churn continuously, a benchmark-only pass doesn't prove this.
 
@@ -510,7 +512,7 @@ the audit deliverable only, per the item's own "0 production code changes" succe
 
 ## 11. Operational Confidence — Deployment Strategy
 
-- **Status:** In Progress
+- **Status:** Shipped — merged to `main`/`Base`, branch deleted after merge
 - **Source:** original doc §11, detailed spec supplied by user 2026-08-12
 - **Note:** real, currently-zero production-deployment infrastructure — every finding on this
   project today lives in a memory file and a hand-run script, not a versioned index or a canary.
@@ -560,6 +562,37 @@ the audit deliverable only, per the item's own "0 production code changes" succe
 - **Failure criteria:** any gate that can't independently catch its own injected regression, or any
   input the gate reads that doesn't trace back to `get_run_summary()`'s real return shape, means
   this stays unmerged/fixed before merge.
+
+- **Real result, all 4 gates verified:**
+  1. **100% Automated Evaluation** — `evaluate_release()` is a pure function, real end-to-end
+     round-trip verified (real `resolve()`+`package()` → real `TelemetryCollector` → real
+     `ReleaseDecision`, `scripts/release_gate_real_consul_check.py`).
+  2. **100% Regression Sensitivity** — 18 unit tests, one per gate independently injecting a
+     synthetic regression and confirming ONLY that gate fails (specificity, not just sensitivity),
+     plus a synthetic regression (fallback spike to 0.8, 3x latency) injected on top of **real**
+     Consul baseline data, correctly caught with exactly the two affected gates flagged.
+  3. **Zero Overhead on Baseline** — structural, not measured-small: `production_gate.py` imports
+     nothing from `code_intelligence`/`context`/`domain.context_resolution` (stdlib + pydantic +
+     `shared.clock` only) — cannot touch the retrieval pipeline by construction.
+  4. **Seamless #13 Integration** — `evaluate_release()`'s only required shape is literally
+     `TelemetryCollector.get_run_summary()`'s own return value, no adapter layer, real round-trip
+     tested.
+
+- **Real finding, surfaced not hidden:** running the real end-to-end check against real Consul (4
+  queries) showed `RELEASE_REJECTED` under the **default** config — real Consul's own natural
+  fallback rate (2.36%, from `RAW_STRING_FALLBACK`) exceeds the spec's own literal "zero unflagged
+  fallbacks" default (`max_fallback_ratio=0.0`). This is real, not a bug: the fallback and
+  token-budget gates are **absolute** ceilings (matching the spec's own wording), independent of
+  baseline — even comparing a run against itself doesn't bypass them if the real data itself
+  exceeds the ceiling (confirmed directly: self-comparison correctly showed the *relative* latency
+  gate at exactly 0% overhead, while the *absolute* fallback gate still rejected). A realistic
+  `max_fallback_ratio=0.05` config approved the same real data cleanly. **Operational takeaway for
+  whoever configures this in practice**: the spec's literal zero-tolerance default is not
+  achievable against this codebase's real behavior — pick a realistic ceiling informed by actual
+  measured data (item #10's own real-Consul fallback rates), not the literal spec default, or every
+  real release will be rejected by design.
+
+- **Result**: Merged to `Base`/`main`, zero known open issues. 977/977 tests.
 
 ## 12. Confidence Propagation Across the Pipeline
 

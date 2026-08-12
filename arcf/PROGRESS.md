@@ -1,6 +1,6 @@
 # ARCF Progress Log
 
-**Last updated:** 2026-08-12 IST · **Base/main HEAD:** `bb0e596` · **Tests:** 957/957 passing
+**Last updated:** 2026-08-12 IST · **Base/main HEAD:** `ed5cf86` · **Tests:** 977/977 passing
 
 Read this file top-to-bottom to pick up where things stand — it's the fast-start doc for a new
 chat session. Detailed *why* for each entry lives in Claude's memory files (per-topic, e.g.
@@ -18,6 +18,42 @@ after each merge to `Base`, not after every small step.
 - **`CHECKLIST.md`** (repo root) — the forward-looking backlog/tracker, separate from this file.
   Read its session-tracker block first when starting a session; this file (`PROGRESS.md`) stays the
   dated shipped/falsified log.
+
+### 2026-08-12 — Shipped: CHECKLIST.md item #11 (Operational Confidence / Release Gate)
+`src/infrastructure/production_gate.py`: `evaluate_release()` consumes `RunSummary` dicts (item
+#13's `TelemetryCollector.get_run_summary()` own return shape, no adapter layer) and emits an
+immutable `ReleaseDecision` (`RELEASE_APPROVED`/`RELEASE_REJECTED`) with a structured
+per-gate failure report — 4 gates (fallback ratio ceiling, latency-vs-baseline ceiling,
+token-budget-utilization ceiling, quality recall-floor + precision-drop-vs-baseline), each
+independently skippable (not silently passed) when its required data isn't present.
+`compare_collectors()` is the shadow/canary driver — a generic two-`RunSummary` comparison rather
+than a hardcoded "candidate ARCF version" (none exists to compare against; item #3 was falsified,
+never shipped).
+
+**Scope correction**: the spec's Quality Gate needs ground-truth precision/recall, data
+`TelemetryCollector` structurally can't compute itself. Extended `TelemetryEvent` (item #13,
+already shipped) with optional caller-supplied `precision`/`recall` fields — additive, default
+`None`, zero behavior change — so the gate's input is still 100% RunSummary-sourced, with a
+`quality_data_available` flag distinguishing "never checked" from "checked and fine."
+
+**All 4 user success gates verified, real measurements**: 100% automated evaluation (real
+end-to-end round-trip, `scripts/release_gate_real_consul_check.py`); 100% regression sensitivity
+(18 unit tests, one per gate independently injecting a synthetic regression with only that gate
+failing, plus a synthetic regression injected on top of *real* Consul baseline data); zero overhead
+by structural construction (`production_gate.py` imports nothing from the retrieval pipeline —
+stdlib + pydantic + `shared.clock` only); seamless #13 integration (real round-trip tested).
+
+**Real operational finding, surfaced not hidden**: the real end-to-end check showed
+`RELEASE_REJECTED` under the spec's own literal default (`max_fallback_ratio=0.0`) — real Consul's
+natural fallback rate (2.36%) exceeds a zero-tolerance ceiling by design. Confirmed this is correct
+behavior, not a bug: fallback/token-budget gates are absolute ceilings (matching the spec's own
+wording), independent of baseline — even a self-comparison smoke test doesn't bypass them if the
+real data itself exceeds the ceiling (the *relative* latency gate correctly showed 0% overhead in
+the same self-comparison). A realistic `max_fallback_ratio=0.05` approved the same real data
+cleanly. Whoever configures this gate in production needs a realistic threshold informed by
+measured data, not the spec's literal zero-tolerance default. 18 new unit tests, 977/977 total.
+Merged `ed5cf86`.
+→ memory: `arcf_operational_release_gate_shipped`
 
 ### 2026-08-12 — Shipped: CHECKLIST.md item #13 (Observability & Telemetry)
 New `TelemetryCollector`/`TelemetryEvent` (`src/infrastructure/telemetry.py`): in-memory, zero
