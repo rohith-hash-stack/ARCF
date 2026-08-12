@@ -7,6 +7,44 @@ chat session. Detailed *why* for each entry lives in Claude's memory files (per-
 `arcf_payload_optimization_path_masking`); this file is the curated *what/when* summary, updated
 after each merge to `Base`, not after every small step.
 
+### 2026-08-12 — Shipped: CHECKLIST.md item #15 (Oversized Entry-Point Budget Allocation — PRIMARY Priority Floor)
+Follow-on falsification experiment (not in the original 15-section doc) against item #4's own
+"Task 1 regression" finding — recommended over bare-name fan-out (same shape as the
+8-times-falsified recall-gap thread) and the fallback-ratio disparity investigation (a measurement
+exercise, not a fix) specifically because it targets a genuinely different mechanism with real
+numbers already in hand.
+
+**Real mechanism traced before writing anything** (monkey-patching `ContextBudgetManager._compress`
+to observe real args/return on a real Consul run): task1's real entry point
+(`agent/consul/catalog_endpoint.go`) clears the relative score falloff gate and is ranked 20th of 25
+survivors — every single one of the 19 candidates ranked above it is `SUPPORTING`-tier call-graph
+fan-out noise; it's the first `PRIMARY` candidate in the whole list. `_compress` IS called for it
+with only 19 tokens remaining — its own compressed excerpt is a tiny 46-50 tokens (confirmed via
+`SymbolRangeCompressor`), but even that doesn't fit after 19 SUPPORTING decoys consumed 4,481 of the
+4,500-token budget first.
+
+**Scope correction against the spec's own two proposed mechanisms**: "AST Structural Windowing" was
+**not built** — the trace above shows compression was never the bottleneck (46-50 tokens is already
+about as small as anything gets); it would have zero marginal effect on this real case. Only
+"PRIMARY Node Priority Floor" was implemented. `ContextBudgetManager.select()` gained
+`enable_primary_priority_floor: bool = False` (every existing caller byte-identical unaffected): the
+falloff gate still runs first over the original score-sorted order untouched; only the greedy-fill
+PACKING pass reorders survivors into a stable two-group partition (every PRIMARY survivor, in its
+own existing relative order, packed before every SUPPORTING/EXPERIMENTAL survivor, also in its own
+order).
+
+**Real regression risk checked before trusting the fix**: task6 has the OPPOSITE shape from task1 —
+its real behavioral answer (`tls.go`, SUPPORTING) is ranked #1, its PRIMARY candidates (including
+the structural entry point) are ranked last. A same-process ablation across all 6 real
+`BENCHMARK_TASKS` confirmed the fix is scoped precisely: **task1's `G_struct` recovered 0.0 → 1.0**;
+tasks 2/3/5 are byte-identical (their failures are at the falloff gate, a mechanism this flag never
+touches); tasks 4/6 held their 1.0 scores (task4's file set changed but only by displacing 4
+non-ground-truth SUPPORTING filler files, a purely subtractive trade-off). All token usage stayed
+within budget. 4 new unit tests (default-off regression guard, the core displacement effect,
+relative-order preservation within each tier, falloff-gate independence), 992/992 total. Merged
+`<pending>`.
+→ memory: `arcf_primary_priority_floor_shipped`
+
 ### 2026-08-12 — Shipped: CHECKLIST.md item #8 (Validation Breadth — Repository Topology & Scale)
 `scripts/validation_breadth_matrix_check.py`: real 4-tier matrix (Go=consul, Python=flask,
 Java=spring-petclinic — freshly shallow-cloned, no Java repo existed in `.benchmark_repos` before
@@ -610,11 +648,14 @@ Fixed a false-positive tie where `"implement"` substring-matched inside `"implem
   entry-point fan-out (a name resolving to 100+ same-named candidates repo-wide), a different
   mechanism from everything fixed so far.
 - **Grounding-score target (≥3.4/5.0 composite)** — never hit in three measured benchmark runs.
-  **Task 1 regression's real cause now confirmed** (checklist item #4, above): the genuine entry-
-  point file is both oversized (competes for the whole token budget) and ambiguity-decayed (ranks
-  below decoy files) — the same mechanism as the closed recall-gap thread, now shown to also hit
-  ranking/packaging. Deliberately not fixed (needs its own isolated falsification experiment, same
-  as the 8 prior recall-gap attempts) — diagnosed, not resolved.
+  **Task 1's own regression is now fixed** (checklist item #15): the real cause was budget-crowding
+  by SUPPORTING-tier fan-out, not the file's own size — `enable_primary_priority_floor` recovers
+  `G_struct` to 1.0. Tasks 3/5 (`Config`×7, `New`×224 same-named matches) still fail via a
+  *different* mechanism — cut by the relative score falloff gate itself, before packing order ever
+  matters — which is the same closed, 8-times-falsified recall-gap boundary and was deliberately
+  left untouched by item #15. The composite-score target overall remains unverified end-to-end
+  (needs a fresh paid LLM judge run to confirm the real effect on judged grounding quality, not just
+  the deterministic G_struct/G_behav proxy).
 - **Benchmark noise floor** — SLM-1 entity extraction is non-deterministic in *content*
   (not just order) even at `temperature=0.0`. Single-run score deltas on the 5-task grounding
   benchmark should not be trusted to attribute cause without multiple runs.

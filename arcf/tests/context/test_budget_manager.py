@@ -672,3 +672,115 @@ def test_unknown_and_bug_fix_task_types_use_the_cross_module_tier(tmp_path: Path
         )
         assert {p.file_path for p in packaged} == {file_path}
         assert excluded == 0
+
+
+# Oversized Entry-Point Budget Allocation experiment (2026-08-12), real
+# mechanism traced against real Consul before writing anything (see
+# scripts/primary_priority_floor_ablation.py's own module docstring):
+# a confident PRIMARY entry-point match can score below a pile of
+# SUPPORTING call-graph fan-out noise, so the noise exhausts the budget
+# before the PRIMARY file's own (often tiny, compressed) turn ever
+# comes -- even though nothing is wrong with its own size once
+# compressed. `enable_primary_priority_floor` reorders only the
+# greedy-fill PACKING pass (never the falloff gate's own survivor
+# selection) so every PRIMARY survivor packs before any SUPPORTING/
+# EXPERIMENTAL survivor, each group keeping its own existing relative
+# score order.
+
+def test_primary_priority_floor_disabled_by_default_lets_supporting_crowd_out_primary(
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "primary.py").write_text("x = 1\n")
+    (tmp_path / "supp1.py").write_text("x = 1\n")
+    (tmp_path / "supp2.py").write_text("x = 1\n")
+    (tmp_path / "supp3.py").write_text("x = 1\n")
+    manager = _manager(tmp_path)
+    ranked = [
+        _ranked("supp1.py", token_count=40, score=0.8, evidence_tier=EvidenceTier.SUPPORTING),
+        _ranked("supp2.py", token_count=40, score=0.8, evidence_tier=EvidenceTier.SUPPORTING),
+        _ranked("supp3.py", token_count=40, score=0.8, evidence_tier=EvidenceTier.SUPPORTING),
+        _ranked("primary.py", token_count=30, score=0.5, evidence_tier=EvidenceTier.PRIMARY),
+    ]
+
+    packaged, used, excluded = manager.select(ranked, _empty_result(), max_tokens=100)
+
+    # Default (flag off, every existing caller): pure score order --
+    # both SUPPORTING files ahead of primary.py fully consume the
+    # budget before primary.py's own turn, exactly today's behavior.
+    assert {p.file_path for p in packaged} == {"supp1.py", "supp2.py"}
+    assert "primary.py" not in {p.file_path for p in packaged}
+
+
+def test_primary_priority_floor_enabled_packs_primary_before_supporting(tmp_path: Path) -> None:
+    (tmp_path / "primary.py").write_text("x = 1\n")
+    (tmp_path / "supp1.py").write_text("x = 1\n")
+    (tmp_path / "supp2.py").write_text("x = 1\n")
+    (tmp_path / "supp3.py").write_text("x = 1\n")
+    manager = _manager(tmp_path)
+    ranked = [
+        _ranked("supp1.py", token_count=40, score=0.8, evidence_tier=EvidenceTier.SUPPORTING),
+        _ranked("supp2.py", token_count=40, score=0.8, evidence_tier=EvidenceTier.SUPPORTING),
+        _ranked("supp3.py", token_count=40, score=0.8, evidence_tier=EvidenceTier.SUPPORTING),
+        _ranked("primary.py", token_count=30, score=0.5, evidence_tier=EvidenceTier.PRIMARY),
+    ]
+
+    packaged, used, excluded = manager.select(
+        ranked, _empty_result(), max_tokens=100, enable_primary_priority_floor=True,
+    )
+
+    # primary.py now packs regardless of its lower raw score; only ONE
+    # SUPPORTING file is displaced to make room, not both -- a real,
+    # measured trade-off (real Consul: task4 lost 4 SUPPORTING filler
+    # files to make room, ground truth unaffected), not a free win.
+    packaged_paths = {p.file_path for p in packaged}
+    assert "primary.py" in packaged_paths
+    assert "supp1.py" in packaged_paths
+    assert used <= 100
+
+
+def test_primary_priority_floor_preserves_relative_order_within_each_tier(tmp_path: Path) -> None:
+    (tmp_path / "primary_hi.py").write_text("x = 1\n")
+    (tmp_path / "primary_lo.py").write_text("x = 1\n")
+    (tmp_path / "supp_hi.py").write_text("x = 1\n")
+    (tmp_path / "supp_lo.py").write_text("x = 1\n")
+    manager = _manager(tmp_path)
+    # Interleaved input order deliberately NOT sorted by tier -- only
+    # each tier's own internal relative score order must be preserved,
+    # not the input order itself.
+    ranked = [
+        _ranked("supp_hi.py", token_count=20, score=0.9, evidence_tier=EvidenceTier.SUPPORTING),
+        _ranked("primary_hi.py", token_count=20, score=0.7, evidence_tier=EvidenceTier.PRIMARY),
+        _ranked("supp_lo.py", token_count=20, score=0.5, evidence_tier=EvidenceTier.SUPPORTING),
+        _ranked("primary_lo.py", token_count=20, score=0.46, evidence_tier=EvidenceTier.PRIMARY),
+    ]
+
+    packaged, used, excluded = manager.select(
+        ranked, _empty_result(), max_tokens=1000, enable_primary_priority_floor=True,
+    )
+
+    # All 4 fit comfortably in this budget -- packing ORDER is what's
+    # under test, read off token accumulation order via `used` deltas
+    # is indirect, so assert on the packaged list's own order instead.
+    assert [p.file_path for p in packaged] == [
+        "primary_hi.py", "primary_lo.py", "supp_hi.py", "supp_lo.py",
+    ]
+
+
+def test_primary_priority_floor_does_not_change_falloff_gate_survivors(tmp_path: Path) -> None:
+    # The flag only reorders the packing pass over SURVIVORS -- it must
+    # never rescue a candidate the falloff gate already cut, regardless
+    # of that candidate's evidence_tier.
+    (tmp_path / "a.py").write_text("def foo():\n    pass\n")
+    (tmp_path / "b.py").write_text("def bar():\n    pass\n")
+    manager = _manager(tmp_path)
+    ranked = [
+        _ranked("a.py", token_count=10, score=1.0, evidence_tier=EvidenceTier.SUPPORTING),
+        _ranked("b.py", token_count=10, score=0.4, evidence_tier=EvidenceTier.PRIMARY),
+    ]
+
+    packaged, used, excluded = manager.select(
+        ranked, _empty_result(), max_tokens=10_000, enable_primary_priority_floor=True,
+    )
+
+    assert {p.file_path for p in packaged} == {"a.py"}
+    assert excluded == 1

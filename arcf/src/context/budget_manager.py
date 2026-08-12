@@ -254,11 +254,38 @@ class ContextBudgetManager:
         result: ContextResolutionResult,
         max_tokens: int,
         task_type: RetrievalTaskType | None = None,
+        enable_primary_priority_floor: bool = False,
     ) -> tuple[list[PackagedFile], int, int]:
         """Returns (packaged_files, tokens_used, excluded_file_count).
         `task_type`, when given (Feature 3), further tightens
         `max_tokens` to that task's own ceiling -- see this module's own
-        docstring. Never loosens it: `min(max_tokens, tier)`."""
+        docstring. Never loosens it: `min(max_tokens, tier)`.
+
+        `enable_primary_priority_floor` (Oversized Entry-Point Budget
+        Allocation experiment, 2026-08-12, default False -- every
+        existing caller byte-identical unaffected): the relative score
+        falloff gate below still runs first, over `ranked_files` in its
+        original score-sorted order -- that gate's own "sorted
+        descending, so once below threshold everyone after also is"
+        invariant is untouched, this flag never changes WHICH candidates
+        survive it. Once survivors are known, this flag reorders ONLY
+        the greedy-fill/compression PACKING pass: every PRIMARY survivor
+        (in its own existing relative score order) is packed before any
+        SUPPORTING/EXPERIMENTAL survivor (also in its own existing
+        relative order) -- a stable two-group partition, not a re-sort
+        by a new score. Real motivating case (checklist item #4/#14's
+        own task1 trace, `scripts/primary_priority_floor_ablation.py`):
+        a confident, disambiguated PRIMARY entry-point match can score
+        below a pile of SUPPORTING call-graph fan-out noise (each
+        individually irrelevant, but numerous), so 20 SUPPORTING files
+        exhaust the entire budget before the one PRIMARY answer ever
+        gets a turn -- even though its own compressed excerpt is a few
+        dozen tokens. See this experiment's own CHECKLIST.md entry for
+        why AST Structural Windowing (the spec's other proposed
+        mechanism) was NOT built: `_compress`'s existing symbol-range
+        extraction already produces a tiny excerpt here, so windowing
+        would have zero marginal effect on this specific mechanism --
+        traced before building anything, not assumed."""
         symbols_by_file = self._symbols_by_file(result)
 
         if task_type is not None:
@@ -280,12 +307,7 @@ class ContextBudgetManager:
         top_score = ranked_files[0].relevance_score if ranked_files else 0.0
         falloff_threshold = _RELATIVE_FALLOFF_GAMMA * top_score
 
-        # Feature 2: counts only compress-eligible (SUPPORTING/
-        # EXPERIMENTAL-with-symbols) candidates actually reached below --
-        # PRIMARY files don't compete for "focal" rank, since they
-        # already get full-body treatment regardless.
-        compress_first_seen = 0
-
+        survivors: list[RankedFile] = []
         for index, ranked in enumerate(ranked_files):
             if ranked.relevance_score < falloff_threshold:
                 # Every remaining candidate is sorted lower still, so all
@@ -294,7 +316,21 @@ class ContextBudgetManager:
                 # budget on long-tail noise just because it remains.
                 excluded += len(ranked_files) - index
                 break
+            survivors.append(ranked)
 
+        candidates = survivors
+        if enable_primary_priority_floor:
+            primary_survivors = [r for r in survivors if r.evidence_tier is EvidenceTier.PRIMARY]
+            other_survivors = [r for r in survivors if r.evidence_tier is not EvidenceTier.PRIMARY]
+            candidates = primary_survivors + other_survivors
+
+        # Feature 2: counts only compress-eligible (SUPPORTING/
+        # EXPERIMENTAL-with-symbols) candidates actually reached below --
+        # PRIMARY files don't compete for "focal" rank, since they
+        # already get full-body treatment regardless.
+        compress_first_seen = 0
+
+        for ranked in candidates:
             remaining = max_tokens - used
             if remaining <= 0:
                 excluded += 1

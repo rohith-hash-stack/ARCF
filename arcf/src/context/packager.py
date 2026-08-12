@@ -63,6 +63,7 @@ class ContextPackager:
         max_tokens: int,
         ranking_profile: dict[str, float] | None = None,
         task_type: RetrievalTaskType | None = None,
+        enable_primary_priority_floor: bool = False,
     ) -> tuple[ContextPackage, LLMResponse | None]:
         permissions = PermissionManager(Path(result.repository_root))
         budget_manager = ContextBudgetManager(
@@ -71,7 +72,7 @@ class ContextPackager:
 
         ranked = await asyncio.to_thread(self._ranker.rank, result, ranking_profile)
         packaged_files, used_tokens, excluded_count = await asyncio.to_thread(
-            budget_manager.select, ranked, result, max_tokens, task_type
+            budget_manager.select, ranked, result, max_tokens, task_type, enable_primary_priority_floor,
         )
 
         understanding_notes: list[str] = []
