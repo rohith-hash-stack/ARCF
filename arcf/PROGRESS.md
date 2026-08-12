@@ -1,6 +1,6 @@
 # ARCF Progress Log
 
-**Last updated:** 2026-08-12 07:14 IST · **Base/main HEAD:** `5de39e8` · **Tests:** 930/930 passing
+**Last updated:** 2026-08-12 08:30 IST · **Base/main HEAD:** `38ae7c5` · **Tests:** 930/930 passing
 
 Read this file top-to-bottom to pick up where things stand — it's the fast-start doc for a new
 chat session. Detailed *why* for each entry lives in Claude's memory files (per-topic, e.g.
@@ -17,6 +17,37 @@ after each merge to `Base`, not after every small step.
   is the bar, not a goal.
 
 ## Timeline (most recent first)
+
+### 2026-08-12 — Grounding-harness statistics (P/R/F1, multi-pass) + 8th recall-gap falsification
+A static codebase audit (child branch `fix/grounding-metrics-and-lexical-probe` off `Base`
+`cd0e808`) implemented three targeted improvements; one shipped, one was empirically falsified
+and reverted before merge:
+
+**Shipped — new infrastructure/harness gains:**
+- **Programmatic grounding assertions:** `scripts/validate_llm_grounding.py` now computes
+  set-intersection Precision/Recall/F1 of each arm's actually-`packaged_files` against
+  `ground_truth_files` (`_file_overlap_metrics`), supplementing the pre-existing free-text
+  `_key_term_check`. Safe on empty sets (returns `0.0`, no `ZeroDivisionError`).
+- **Multi-pass statistical harness:** new `--n-runs` flag (default 3) repeats every benchmark
+  task that many times and reports **mean ± stddev** per arm/metric (tokens, latency, judge
+  scores, and the new P/R/F1 + budget-utilization + key-term metrics) — directly addresses the
+  "benchmark noise floor" open item below by making SLM-1's run-to-run non-determinism visible
+  as a number instead of a single-sample guess.
+
+**Falsified and reverted — 8th attempt at the closed recall-gap thread ([[arcf_recall_gap_closed]]):**
+Un-gating `lexical_symbol_probe.py` in `src/code_intelligence/service.py` to run as a standing,
+always-on corroboration source (set-unioned with SLM-1's resolution) instead of only firing as a
+zero-result fallback. Real Consul run (`--n-runs 3`) showed overall recall nudging up (0.1→0.2),
+but a direct `resolution_reason` code-path trace on `task5_ambiguous_common_name` (the flagship
+"New" case) proved the correct file was already resolved via the pre-existing `path_hint`
+propagation mechanism *before* the standing probe ran — the probe's only real contribution was 13
+additional candidate files, all unrelated same-named `New` functions in disconnected subsystems
+(auto-config, grpc-external/peerstream, proxycfg-glue, structs, submatview). Zero measured recall
+benefit once attributed correctly; reproduces the exact high-frequency-name-ambiguity noise the
+recall-gap closure already documented. Reverted in commit `38ae7c5`; the harness improvements
+above were kept since they're what made the falsification traceable rather than a guess from
+aggregate scores alone.
+→ memory: `arcf_recall_gap_closed` (now 8 falsified attempts), `arcf_payload_optimization_path_masking`
 
 ### 2026-08-12 — Safe High-Efficiency Payload Optimization (Features 1–4)
 Query-wide path-hint masking (fixes SLM-1 entity-*order* non-determinism), two-tier AST snippet
