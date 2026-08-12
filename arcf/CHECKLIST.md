@@ -508,8 +508,10 @@ the audit deliverable only, per the item's own "0 production code changes" succe
   hunting down where `NewBaseDeps` was defined. 947/947 tests (5 new). Merged to `Base`/`main`,
   zero known open issues.
 
-- **Status:** Not Started
-- **Source:** original doc §11
+## 11. Operational Confidence — Deployment Strategy
+
+- **Status:** In Progress
+- **Source:** original doc §11, detailed spec supplied by user 2026-08-12
 - **Note:** real, currently-zero production-deployment infrastructure — every finding on this
   project today lives in a memory file and a hand-run script, not a versioned index or a canary.
   No overlap with falsified work. High priority if the goal is actually going live.
