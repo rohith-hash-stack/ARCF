@@ -1,6 +1,6 @@
 # ARCF Progress Log
 
-**Last updated:** 2026-08-12 10:25 IST · **Base/main HEAD:** `ebdebb6` · **Tests:** 938/938 passing
+**Last updated:** 2026-08-12 11:17 IST · **Base/main HEAD:** `ebdebb6` (unchanged) · **Tests:** 938/938 passing
 
 Read this file top-to-bottom to pick up where things stand — it's the fast-start doc for a new
 chat session. Detailed *why* for each entry lives in Claude's memory files (per-topic, e.g.
@@ -17,6 +17,44 @@ after each merge to `Base`, not after every small step.
   is the bar, not a goal.
 
 ## Timeline (most recent first)
+
+### 2026-08-12 — Competitive Multi-Frontier Experimentation: Arm 2 (Semantic Re-Ranker) falsified via same-process ablation
+Second arm of the planned 4-arm competitive experiment (see Arm 4 entry below). Implemented on
+`exp/semantic-reranker` (off `main` `39b8275`): an `ENABLE_SEMANTIC_RERANKER`-gated lightweight
+term-overlap relevance proxy for candidates the relative-score falloff gate excludes — scores
+each SUPPORTING/EXPERIMENTAL falloff-excluded candidate's call-site-window excerpt against the
+query's own lowercase content words, packs those scoring >0.2 (highest first) until `used` hits
+75% of `max_tokens`. Threaded `query` through `ContextPackager.package()` ->
+`ContextBudgetManager.select()` as a new optional param (`None` fully backward compatible).
+952/952 tests (14 new).
+
+**Ablation protocol upgraded mid-task, a real methodological catch:** the literal two-process
+diff this arm's own spec called for (`ENABLE_SEMANTIC_RERANKER=1` vs `=0`, two separate
+`--n-runs 1` invocations) showed deltas on task5 — but `baseline_raw` (Arm B, whose code never
+touches `ContextBudgetManager` or this toggle at all) *also* showed a delta on the same task,
+proving at least part of the observed "delta" was SLM-1 entity-extraction noise between the two
+process invocations (task5 is the documented flaky `'New'` case), not the toggle. Re-ran as a
+**same-process** ablation instead — identical resolution, toggle on vs. off, one Python process —
+across all 6 real tasks: **byte-identical packaged output in every single task.**
+
+**Root cause, fully diagnosed per-task:** tasks 1/2/4/5 already use >90% of the 8000-token budget
+in the main loop alone, past the pass's own 75% ceiling before it ever runs; task6 lands at
+76.9%, blocked by the same ceiling by roughly one token's margin; task3 has zero
+falloff-excluded candidates at all — nothing to re-rank regardless of budget headroom. ARCF's
+existing falloff gate + Call-Site Slicing compression is volume-efficient enough (many small
+excerpts, not a few large ones) that it already saturates either the budget or the real candidate
+graph on its own, leaving no genuine gap for a post-hoc lexical re-ranker to fill on this
+benchmark's real queries. (Caveat: this diagnosis used a flat `max_tokens=8000`, not
+`task_type`-tiered — the exact percentages aren't what production enforces, but the same-process
+zero-delta finding holds regardless of that detail.)
+
+**Outcome:** not merged — preserved unmerged on `exp/semantic-reranker` (commit `149eb3a`) as the
+historical record, same disposition as Arm 4. **Methodology takeaway, now load-bearing for Arms 1
+and 3:** a same-process ablation (identical resolution, factor on vs. off, one process) is the
+only trustworthy verification for a ranking/packaging change — a two-*process* diff is
+confounded by SLM-1 non-determinism and can show a "delta" on an arm that provably cannot have
+caused it, exactly like this task5 case.
+→ memory: `arcf_arm2_semantic_reranker_falsified`
 
 ### 2026-08-12 — Competitive Multi-Frontier Experimentation: Arm 4 (Path-Hint Locality) falsified via ablation trace; Task 6 shipped
 First arm of a planned 4-arm competitive experiment (Type Graph, Semantic Re-Ranker, String
