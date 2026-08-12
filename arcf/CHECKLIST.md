@@ -34,20 +34,17 @@ Update this block at the end of every session so a new session (or a continuatio
 limit) can resume without re-deriving anything.
 
 - **Last updated:** 2026-08-12 (this session)
-- **Active branch:** none — item #3 closed out, `experiment/locality-utility-suppression` left
+- **Active branch:** none — Tier 1 complete. `experiment/locality-utility-suppression` left
   unmerged as a historical record (same treatment as `exp/enhanced-path-locality`,
-  `exp/semantic-reranker`, `exp/type-graph-indexing`)
-- **Active item:** none. Item #3 (Locality UPS suppression) is `Parked (falsified)` — see its own
-  section for the full evidence chain (free ablation → real disconfirming n=1 LLM check → user
-  chose to stop before the full paid run). Item #5 (Canonical IR gap check) is `Done` — zero-code
-  audit, schema matrix + dependency mapping + gap spec all in its own section, no branch needed.
-- **In-flight state:** none. `main`/`Base` are clean, 945/945 tests unaffected (item #5 touched no
-  source, audit only).
-- **Next step:** pick the next checklist item per the decided priority order above. #10
-  (Symbol-Identity Mode) is the last remaining Tier-1 item, and #5's own audit just re-scoped it
-  smaller than originally assumed (extend `FileReference`'s existing `reason`/`justification_chain`
-  pattern, not build new provenance infrastructure) — good next pick.
-  #10 (Symbol-Identity mode) is the other remaining Tier-1 item.
+  `exp/semantic-reranker`, `exp/type-graph-indexing`); `feature/symbol-identity-audit-trail` merged
+  and deleted.
+- **Active item:** none — **Tier 1 fully closed out**: #3 `Parked (falsified)` (free ablation →
+  real disconfirming n=1 LLM check → user chose to stop before the full paid run), #5 `Done`
+  (zero-code audit, no branch needed), #10 `Shipped` (merged to `Base`/`main`, 947/947 tests, all 3
+  user success gates verified on real Consul).
+- **In-flight state:** none. `main`/`Base` clean and in sync, 947/947 tests green.
+- **Next step:** Tier 1 done — move to Tier 2 (#13 Observability & Telemetry, then #11 Operational
+  Confidence, then #7 Incremental Indexing remaining gap), per the decided priority order above.
 
 ## Priority order (decided 2026-08-12)
 
@@ -63,6 +60,7 @@ items parked until new evidence shows up.
    to be a weaker dependency for #6 than assumed here — see item #5's own dependency mapping).
 3. **#10** Symbol-Identity mode / audit trail — small, pays for itself immediately in the next
    falsification experiment's ablation trace (would have sped up Arm 1 / Arm 4's own tracing).
+   **Done 2026-08-12, shipped.**
 
 **Tier 2 — required before "live" means anything**
 4. **#13** Observability & Telemetry — nothing to gate a promotion on without this first.
@@ -414,9 +412,8 @@ the audit deliverable only, per the item's own "0 production code changes" succe
 
 ## 10. Expansion Consistency — Symbol-Identity Mode
 
-- **Status:** In Progress
+- **Status:** Shipped — merged to `main`/`Base`, branch deleted after merge
 - **Source:** original doc §10, detailed spec supplied by user 2026-08-12
-- **Branch:** `feature/symbol-identity-audit-trail` (off `Base`)
 
 - **Precise targets, found by tracing every `_add_file` call site in `context_resolver.py` before
   writing anything (not assumed):**
@@ -475,7 +472,38 @@ the audit deliverable only, per the item's own "0 production code changes" succe
   raw-string-reached file NOT tagged `RAW_STRING_FALLBACK`, means the tagging is incomplete — fix
   before merge, not a partial ship.
 
-## 11. Operational Confidence — Deployment Strategy
+- **Scope extended beyond `_expand_calls` alone, found by grepping every `FileReference(` in
+  `src/` before claiming "100%" (not assumed): two more real, unconditionally-or-commonly-reachable
+  construction sites in the default classic path — `evidence_fallback.py` (confirmed
+  `expand_with_evidence` runs unconditionally on every classic-path query) and `service.py`'s
+  anchor-classification Tier 4 filename match. Both genuinely symbol-less (filename/glob matching,
+  no `SymbolIndex` lookup at all), so a 4th `OriginStage` value (`EVIDENCE_FALLBACK_MATCH`) was
+  added rather than mislabeling them `RAW_STRING_FALLBACK`. Explicitly **out of scope, documented
+  not silently skipped**: `drp_resolver.py` (3 sites — a separate `resolver_strategy` entirely) and
+  `multi_hop_orchestrator.py`/`evidence_validator.py`'s `_to_file_reference` (only reachable via an
+  experimental Phase 7 spike `service.py` never calls today, confirmed by checking its own
+  docstring and import graph).
+
+- **Real bug caught by this item's own unit test, fixed in the same flow:** first implementation
+  used first-write-wins for `origin_stage` (matching `file_reasons`/`file_chains`'s existing
+  discipline) — but `locality_filtered_callers_of_name` isn't module-level-only despite its own
+  call site's comment (it calls `CallGraph.caller_files_of`, which returns every same-named caller
+  file regardless of whether the call is symbol-owned), so it can reach the same file a properly
+  ID-scoped `caller_hops` walk also reaches. Since that raw-name loop runs first in code order,
+  first-write-wins let code order — not evidence strength — decide the label. Fixed with a
+  precedence-based merge (`_ORIGIN_STAGE_PRECEDENCE`), same "stronger evidence wins" shape as
+  `file_tiers`' existing PRIMARY-always-wins rule.
+
+- **Real result, verified on real Consul (`scripts/symbol_identity_audit_trail_verification.py`,
+  no LLM calls) at traversal depths 1/2/3, both flagship queries ("Register", "New"):** all 3 user
+  success gates pass cleanly — 100% Symbol Traceability (0 untagged files across every run), Zero
+  Unflagged Re-introductions (every `RAW_STRING_FALLBACK` file has a real `parent_symbol_id`), and
+  a concrete traceability-velocity demonstration: re-ran item #3's own dropped-file trace
+  (`agent/acl_test.go` etc.) and confirmed `parent_symbol_id='agent/setup.go::NewBaseDeps#101'`
+  gives the exact file+symbol+line in one field read — the same information item #3's own
+  investigation had to get by manually parsing a `justification_chain` string and separately
+  hunting down where `NewBaseDeps` was defined. 947/947 tests (5 new). Merged to `Base`/`main`,
+  zero known open issues.
 
 - **Status:** Not Started
 - **Source:** original doc §11

@@ -1,6 +1,6 @@
 # ARCF Progress Log
 
-**Last updated:** 2026-08-12 IST · **Base/main HEAD:** `d0476ad` · **Tests:** 945/945 passing
+**Last updated:** 2026-08-12 IST · **Base/main HEAD:** `3b53144` · **Tests:** 947/947 passing
 
 Read this file top-to-bottom to pick up where things stand — it's the fast-start doc for a new
 chat session. Detailed *why* for each entry lives in Claude's memory files (per-topic, e.g.
@@ -18,6 +18,38 @@ after each merge to `Base`, not after every small step.
 - **`CHECKLIST.md`** (repo root) — the forward-looking backlog/tracker, separate from this file.
   Read its session-tracker block first when starting a session; this file (`PROGRESS.md`) stays the
   dated shipped/falsified log.
+
+### 2026-08-12 — Shipped: CHECKLIST.md item #10 (Symbol-Identity Mode / Provenance Audit Trail)
+New `OriginStage` enum (`AST_DIRECT`, `SCOPED_GRAPH_EXPANSION`, `RAW_STRING_FALLBACK`,
+`EVIDENCE_FALLBACK_MATCH`) + `FileReference.origin_stage`/`parent_symbol_id`, additive/default-
+`None`, wired through every real candidate-producing path in the default classic resolver: the
+entry-point match, the two confirmed raw-name-lookup bypasses
+(`locality_filtered_callers_of_name`, `candidate_selector.subclasses_of` — both call
+`SymbolIndex.find_by_name` internally, verified by reading them directly), the ID-scoped
+`caller_hops`/`callee_hops` walks (`parent_symbol_id` = the BFS's own real immediate parent, not
+just the entry symbol), and the two symbol-less filename-match paths (`evidence_fallback.py`,
+`service.py`'s anchor Tier 4) — confirmed `expand_with_evidence` runs unconditionally on the
+default classic path, so these are real, reachable origins, not edge cases. Explicitly out of
+scope, documented not silently skipped: `drp_resolver.py` (a separate `resolver_strategy`) and
+`multi_hop_orchestrator.py`/`evidence_validator.py` (only reachable via an experimental spike
+`service.py` never calls today).
+
+**Real bug caught by this item's own unit test, fixed in the same flow**: first-write-wins tagging
+let code order (not evidence strength) decide the label — `locality_filtered_callers_of_name` isn't
+module-level-only despite its own comment, so it can reach the same file a properly ID-scoped
+`caller_hops` walk also reaches, and since it runs first, first-write-wins picked the weaker
+`RAW_STRING_FALLBACK` tag even when a stronger `SCOPED_GRAPH_EXPANSION` path also applied. Fixed
+with a precedence-based merge, same "stronger evidence wins" shape as `file_tiers`' existing
+PRIMARY-always-wins rule.
+
+**Verified on real Consul** (`scripts/symbol_identity_audit_trail_verification.py`, no LLM calls)
+at traversal depths 1/2/3, both flagship queries: all 3 user success gates pass — 100% Symbol
+Traceability (0 untagged files, every run), Zero Unflagged Re-introductions, and a concrete
+traceability-velocity demonstration re-running item #3's own dropped-file trace:
+`parent_symbol_id='agent/setup.go::NewBaseDeps#101'` gives the exact file+symbol+line in one field
+read, versus the manual `justification_chain` string-parsing that trace actually required. 947/947
+tests (5 new). Merged `3b53144`.
+→ memory: `arcf_symbol_identity_audit_trail_shipped`
 
 ### 2026-08-12 — CHECKLIST.md item #3 (Locality UPS Suppression) falsified — same disposition as Arms 1/2/4
 Package-level Utility Package Score (`indegree + cross_subsystem_usage`, top-5th-percentile
