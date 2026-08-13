@@ -212,6 +212,29 @@ class ImportReference(BaseModel):
         return f"import:{self.source_file}::{self.raw_module}#{self.location.start_line}"
 
 
+class DeclaredDependency(BaseModel):
+    """ARCF-DI Phase 2: one dependency as declared in a manifest file —
+    the input DependencyManifestParser produces and LibraryBoundaryClassifier
+    consumes. `name` is lowercased and, for scoped npm packages, includes
+    the scope (e.g. "@playwright/test") — never the ecosystem-specific
+    quoting/casing a manifest happened to use, so lookups are exact-match
+    without the classifier re-normalizing on every call.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    name: str
+    ecosystem: str
+    """"npm" | "pip" | "go" for this phase — see BLUEPRINT.md Phase 2.
+    An ecosystem ARCF-DI can't yet parse a manifest for is never
+    represented here at all, never guessed."""
+    version_spec: str | None = None
+    """Verbatim as declared (a range, not a resolved version) — this
+    phase reads manifests, not lockfiles, so there is no CONFIRMED_LOCKED
+    tier yet, only the manifest's own declared range."""
+    manifest_location: SourceLocation
+
+
 class ExternalLibraryReference(BaseModel):
     """ARCF-DI Phase 1 (schema only): the library, the literal API surface
     used, and which repository symbols use it — deliberately nothing
