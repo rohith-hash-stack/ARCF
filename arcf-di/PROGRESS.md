@@ -1,6 +1,6 @@
 # ARCF-DI Progress Log
 
-**Last updated:** 2026-08-13 · **Branch:** `arcf-di/base` (off `main`) · **Status:** Phase 0 (scope freeze) complete, blueprint drafted, no code written yet.
+**Last updated:** 2026-08-13 · **Branch:** `arcf-di/feature/phase1-evidence-layer` (off `arcf-di/base`) · **Tests:** 954/954 passing (942 pre-existing + 12 new) · **Status:** Phase 1 (deterministic evidence layer) shipped.
 
 Read this file top-to-bottom to pick up where things stand — the fast-start doc for a new session, same convention as the parent project's `arcf/PROGRESS.md`. Detailed design lives in `arcf-di/docs/BLUEPRINT.md`; this file is the curated *what/when* summary, updated after each phase lands.
 
@@ -28,4 +28,18 @@ Reviewed ARCF's actual codebase (not just the target architecture) against the p
 
 **Outcome**: no code written yet. `arcf-di/` scaffolded on `arcf-di/base` (branched off `main`) with this file and the full blueprint doc.
 
-**Next**: Phase 1 (deterministic evidence layer — additive IR fields) per the migration order in `docs/BLUEPRINT.md`, step 1.
+### 2026-08-13 — Shipped: Phase 1 (deterministic evidence layer)
+
+On `arcf-di/feature/phase1-evidence-layer` (off `arcf-di/base`): extended `arcf/src/domain/code_intelligence.py` additively per `BLUEPRINT.md`'s Phase 1 schema — nothing here is wired to a producer yet, this phase is the canonical shape later phases populate.
+
+**What landed:**
+- Content-derived `id` (`@computed_field`, not an independently-settable field) on `CallReference`, `ImportReference`, `DecoratorReference` — same `file::name#line` scheme `Symbol.id` already used (duplicated per-language-analyzer as `_symbol_id`), namespaced with a type prefix (`call:`/`import:`/`decorator:`) so ids can never collide across evidence types. Verified as a pure function of content, not construction order — see `test_call_reference_id_is_content_derived_and_reproducible`.
+- Two new enums (`ImportResolutionKind`, `CallResolutionConfidence`) naming the resolution tiers Phase 2 and Phase 3 will populate — defined now so those phases ship as "populate this existing field" rather than "add a field and change behavior in the same PR."
+- `CallReference.resolution_confidence`/`candidates` and `ImportReference.resolved_kind`/`resolved_library` — all default `None`/empty, zero behavior change today. Notably: traced `call_graph.py:28-37` while doing this and confirmed the mechanism behind the `New()` collision precisely — `CallGraph.__init__` adds a real graph edge to **every** candidate `resolver.resolve()` returns, with no record an ambiguous name was ever ambiguous. `candidates` exists so Phase 3 has somewhere to preserve that fact instead of discarding it, as it does today.
+- Four new evidence types — `ExternalLibraryReference`, `Route`, `ConfigReference`, `SQLReference` — wired into `FileAnalysis` as empty-default lists, the exact rollout shape `decorators` already established (Phase 7 spike precedent). No analyzer populates any of them yet.
+
+**Verification**: 954/954 tests passing (942 pre-existing untouched + 12 new), `ruff check` and `mypy` clean on the changed files. The 12 new tests include a direct reproducibility check (`test_call_reference_id_is_content_derived_and_reproducible`) — two independently-constructed `CallReference`s with identical evidence produce identical ids regardless of `caller_id`, which is the unit-level form of the "byte-identical index across repeated runs" acceptance test agreed for the whole project.
+
+**Outcome**: PR opened from `arcf-di/feature/phase1-evidence-layer` into `arcf-di/base`, pending merge. No existing consumer of `domain.code_intelligence` types changed behavior — confirmed by the full untouched pre-existing suite staying green.
+
+**Next**: Phase 2 (external-library boundary classifier) per `docs/BLUEPRINT.md`.
