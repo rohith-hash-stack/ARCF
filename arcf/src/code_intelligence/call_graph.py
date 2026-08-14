@@ -34,12 +34,34 @@ default.
 """
 
 from collections import defaultdict
+from dataclasses import dataclass
 
 from code_intelligence.import_graph import ImportGraph
 from code_intelligence.reference_resolver import ReferenceResolver
 from domain.code_intelligence import CallReference, CallResolutionConfidence, Symbol, SymbolKind
 
 _CALLABLE_KINDS = (SymbolKind.FUNCTION, SymbolKind.METHOD)
+
+
+@dataclass(frozen=True)
+class TraversalStep:
+    """ARCF-DI Phase 7: one node's arrival during transitive_*_trace's
+    BFS — the graph traversal log BLUEPRINT.md Phase 7 calls for,
+    adapted to what CallGraph's traversal actually is: unscored graph
+    reachability, not a ranked search (RelevanceRanker.ScoreBreakdown
+    is the scored counterpart, for retrieval results). `step` is the
+    trace's own 1-indexed sequential order, built from a sorted
+    frontier at each hop — deterministic across runs, not a claim about
+    a single true real-world visit order, which BFS doesn't have one of
+    across same-hop ties anyway."""
+
+    step: int
+    node_visited: str
+    hop: int
+    reached_via: str
+    """The predecessor symbol id this node's hop was recorded from —
+    same value transitive_*_symbols_of's own (hop, parent_symbol_id)
+    already carries, just also given a sequential position here."""
 
 
 class CallGraph:
@@ -166,6 +188,26 @@ class CallGraph:
         `(hop, parent_symbol_id)` — hop 1 is a direct callee."""
         return self._layered_bfs(symbol_id, self._callee_symbols_of, max_depth)
 
+    def transitive_caller_trace(
+        self, symbol_id: str, max_depth: int | None = None
+    ) -> list[TraversalStep]:
+        """ARCF-DI Phase 7: same traversal as transitive_caller_symbols_of,
+        plus an ordered, auditable log of every node's arrival —
+        BLUEPRINT.md Phase 7's graph traversal log. Computed by the exact
+        same algorithm (`_layered_bfs_traced`), not a second
+        implementation that could drift from it — see `_layered_bfs`
+        below, which is now this method's own thin wrapper."""
+        _, trace = self._layered_bfs_traced(symbol_id, self._caller_symbols_of, max_depth)
+        return trace
+
+    def transitive_callee_trace(
+        self, symbol_id: str, max_depth: int | None = None
+    ) -> list[TraversalStep]:
+        """ARCF-DI Phase 7: traced counterpart to
+        transitive_callee_symbols_of — see transitive_caller_trace."""
+        _, trace = self._layered_bfs_traced(symbol_id, self._callee_symbols_of, max_depth)
+        return trace
+
     @staticmethod
     def _layered_bfs(
         start: str, edges: dict[str, set[str]], max_depth: int | None
@@ -175,26 +217,57 @@ class CallGraph:
         iteration order: when a node is reachable from multiple same-hop
         predecessors, the lexicographically smallest predecessor id is
         recorded as its parent, so the result never depends on Python's
-        hash-randomized set ordering."""
+        hash-randomized set ordering.
+
+        ARCF-DI Phase 7: thin wrapper over `_layered_bfs_traced` — same
+        algorithm, trace discarded — so this method's return value is
+        byte-for-byte identical to before Phase 7 existed; every existing
+        caller (transitive_caller_symbols_of, transitive_callee_symbols_of,
+        and every test asserting on their output) is unaffected."""
+        result, _trace = CallGraph._layered_bfs_traced(start, edges, max_depth)
+        return result
+
+    @staticmethod
+    def _layered_bfs_traced(
+        start: str, edges: dict[str, set[str]], max_depth: int | None
+    ) -> tuple[dict[str, tuple[int, str]], list["TraversalStep"]]:
+        """The actual traversal algorithm — `_layered_bfs` and
+        transitive_*_trace both call this, never duplicate it.
+
+        Excludes `start` itself, matching the `neighbor != start` guard
+        applied to every later hop below — without it, a symbol with a
+        direct self-referential edge (e.g. a `super().method()` call an
+        imprecise resolver links back to the same method, or genuine
+        recursion) seeds the frontier with `start`, which then records
+        `result[start] = (1, start)`: a hop whose parent is itself.
+        `_chain_for`'s parent-pointer walk assumes the result is acyclic
+        and has no other termination check, so that single self-parented
+        entry made it loop forever, appending the same node until the
+        process ran out of memory (real, reproduced failure: resolving a
+        single real-world recursive-looking symbol in a 236-file repository).
+
+        `trace` iterates each hop's frontier in sorted order before
+        recording — `result`'s content never depended on that order (only
+        on the deterministic `min(preds)` tie-break below), but a step
+        log whose own sequence varied between runs would be a determinism
+        bug in exactly the property Phase 7 exists to make auditable, so
+        the trace is built more strictly than the minimum `result` itself
+        required."""
         result: dict[str, tuple[int, str]] = {}
-        # Excludes `start` itself, matching the `neighbor != start` guard
-        # applied to every later hop below (line ~92) — without it, a
-        # symbol with a direct self-referential edge (e.g. a `super().
-        # method()` call an imprecise resolver links back to the same
-        # method, or genuine recursion) seeds the frontier with `start`,
-        # which then records `result[start] = (1, start)`: a hop whose
-        # parent is itself. `_chain_for`'s parent-pointer walk assumes the
-        # result is acyclic and has no other termination check, so that
-        # single self-parented entry made it loop forever, appending the
-        # same node until the process ran out of memory (real, reproduced
-        # failure: resolving a single real-world recursive-looking symbol
-        # in a 236-file repository).
+        trace: list[TraversalStep] = []
+        step = 0
         frontier: set[str] = set(edges.get(start, set())) - {start}
         parents: dict[str, str] = dict.fromkeys(frontier, start)
         depth = 1
         while frontier and (max_depth is None or depth <= max_depth):
-            for node in frontier:
+            for node in sorted(frontier):
                 result[node] = (depth, parents[node])
+                step += 1
+                trace.append(
+                    TraversalStep(
+                        step=step, node_visited=node, hop=depth, reached_via=parents[node]
+                    )
+                )
             candidates: dict[str, set[str]] = defaultdict(set)
             for node in frontier:
                 for neighbor in edges.get(node, set()):
@@ -203,4 +276,4 @@ class CallGraph:
             frontier = set(candidates.keys())
             parents = {neighbor: min(preds) for neighbor, preds in candidates.items()}
             depth += 1
-        return result
+        return result, trace

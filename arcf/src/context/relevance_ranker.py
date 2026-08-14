@@ -54,6 +54,27 @@ _IMPACT_BONUS_CAP = 5
 
 
 @dataclass(frozen=True)
+class ScoreBreakdown:
+    """ARCF-DI Phase 7: the constituent signals `rank()`'s single
+    `relevance_score` scalar is computed from — additive, computed
+    alongside the existing score, never changing it. `role_score`,
+    `confidence_factor`, `ambiguity_factor`, `path_mask_factor` multiply
+    together (capped at 1.0, then rounded to 4dp) to produce
+    `final_score`, which always equals the RankedFile's own
+    `relevance_score` — this is that computation's audit trail, not a
+    second, independent signal that could disagree with it."""
+
+    role_score: float
+    """weights[verb] + entry-point bonus + impact bonus, capped at 1.0 —
+    the deterministic reason-verb/entry-point/impact-count component,
+    unaffected by any of the confidence factors below."""
+    confidence_factor: float
+    ambiguity_factor: float
+    path_mask_factor: float
+    final_score: float
+
+
+@dataclass(frozen=True)
 class RankedFile:
     file_path: str
     relevance_score: float
@@ -79,6 +100,11 @@ class RankedFile:
     (Two-Tier AST Snippet Rendering) reads this directly to detect a
     hop-1 (directly call-graph-linked) secondary candidate, which keeps
     its full body even when it isn't the focal (rank-1) candidate."""
+    score_breakdown: ScoreBreakdown | None = None
+    """ARCF-DI Phase 7: always populated by rank() itself; defaults to
+    None only so a RankedFile constructed by hand (existing tests,
+    ContextBudgetManager fixtures) elsewhere in the codebase doesn't
+    need to supply one."""
 
 
 class RelevanceRanker:
@@ -88,29 +114,32 @@ class RelevanceRanker:
         entry_point_files = {symbol.file_path for symbol in result.entry_points}
         impacted_counts = Counter(symbol.file_path for symbol in result.impacted_symbols)
 
-        ranked = [
-            RankedFile(
-                file_path=file_ref.file_path,
-                relevance_score=self._score(
-                    file_ref.reason,
-                    file_ref.file_path,
-                    entry_point_files,
-                    impacted_counts,
-                    profile,
-                    file_ref.anchor_confidence,
-                    file_ref.ambiguity_confidence,
-                    file_ref.path_mask_confidence,
-                ),
-                reason=file_ref.reason,
-                language=file_ref.language,
-                token_count=file_ref.token_count,
-                evidence_tier=file_ref.evidence_tier,
-                ambiguity_confidence=file_ref.ambiguity_confidence,
-                path_mask_confidence=file_ref.path_mask_confidence,
-                justification_chain=file_ref.justification_chain,
+        ranked = []
+        for file_ref in result.candidate_files:
+            breakdown = self._score(
+                file_ref.reason,
+                file_ref.file_path,
+                entry_point_files,
+                impacted_counts,
+                profile,
+                file_ref.anchor_confidence,
+                file_ref.ambiguity_confidence,
+                file_ref.path_mask_confidence,
             )
-            for file_ref in result.candidate_files
-        ]
+            ranked.append(
+                RankedFile(
+                    file_path=file_ref.file_path,
+                    relevance_score=breakdown.final_score,
+                    reason=file_ref.reason,
+                    language=file_ref.language,
+                    token_count=file_ref.token_count,
+                    evidence_tier=file_ref.evidence_tier,
+                    ambiguity_confidence=file_ref.ambiguity_confidence,
+                    path_mask_confidence=file_ref.path_mask_confidence,
+                    justification_chain=file_ref.justification_chain,
+                    score_breakdown=breakdown,
+                )
+            )
         return sorted(ranked, key=lambda ranked_file: ranked_file.relevance_score, reverse=True)
 
     @staticmethod
@@ -123,7 +152,7 @@ class RelevanceRanker:
         anchor_confidence: float | None = None,
         ambiguity_confidence: float | None = None,
         path_mask_confidence: float | None = None,
-    ) -> float:
+    ) -> ScoreBreakdown:
         weights = profile if profile is not None else _REASON_WEIGHTS
         verb = reason.split(" ", 1)[0]
         base = weights.get(verb, weights.get("*", _DEFAULT_REASON_WEIGHT))
@@ -150,4 +179,13 @@ class RelevanceRanker:
         # Optimization): same independent-multiplier shape, stacks with
         # the two factors above rather than replacing either.
         path_mask_factor = path_mask_confidence if path_mask_confidence is not None else 1.0
-        return round(min(role_score * confidence_factor * ambiguity_factor * path_mask_factor, 1.0), 4)
+        final_score = round(
+            min(role_score * confidence_factor * ambiguity_factor * path_mask_factor, 1.0), 4
+        )
+        return ScoreBreakdown(
+            role_score=role_score,
+            confidence_factor=confidence_factor,
+            ambiguity_factor=ambiguity_factor,
+            path_mask_factor=path_mask_factor,
+            final_score=final_score,
+        )

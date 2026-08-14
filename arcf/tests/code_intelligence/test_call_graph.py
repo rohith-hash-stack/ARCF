@@ -289,3 +289,76 @@ def test_ablation_mandatory_disambiguation_matches_default_topology_except_where
         unrelated_helper.id,
     }
     assert disambiguated_graph.callee_symbols_of(caller_with_locality.id) == {local_helper.id}
+
+
+# --- ARCF-DI Phase 7: transitive_*_trace (graph traversal audit log) ----
+
+
+def test_trace_agrees_with_the_untraced_result_it_wraps() -> None:
+    graph, authenticate, login, handle_login = _chain_graph()
+    result = graph.transitive_caller_symbols_of(authenticate.id)
+    trace = graph.transitive_caller_trace(authenticate.id)
+
+    assert {step.node_visited: (step.hop, step.reached_via) for step in trace} == result
+
+
+def test_trace_steps_are_sequential_and_hop_ordered() -> None:
+    graph, authenticate, login, handle_login = _chain_graph()
+    trace = graph.transitive_caller_trace(authenticate.id)
+
+    assert [step.step for step in trace] == list(range(1, len(trace) + 1))
+    assert [step.hop for step in trace] == sorted(step.hop for step in trace)
+
+
+def test_trace_records_reached_via_matching_the_chain() -> None:
+    graph, authenticate, login, handle_login = _chain_graph()
+    trace = graph.transitive_caller_trace(authenticate.id)
+
+    by_node = {step.node_visited: step for step in trace}
+    assert by_node[login.id].reached_via == authenticate.id
+    assert by_node[handle_login.id].reached_via == login.id
+
+
+def test_trace_respects_max_depth() -> None:
+    graph, authenticate, login, handle_login = _chain_graph()
+    trace = graph.transitive_caller_trace(authenticate.id, max_depth=1)
+
+    assert [step.node_visited for step in trace] == [login.id]
+
+
+def test_callee_trace_is_the_reverse_direction() -> None:
+    graph, authenticate, login, handle_login = _chain_graph()
+    trace = graph.transitive_callee_trace(handle_login.id)
+
+    assert [step.node_visited for step in trace] == [login.id, authenticate.id]
+
+
+def test_trace_terminates_on_cycles_same_as_untraced() -> None:
+    a = _function("a", file_path="a.py")
+    b = _function("b", file_path="b.py")
+    resolver = ReferenceResolver(SymbolIndex([a, b]))
+    calls = [_call(a.id, "b", file_path="a.py"), _call(b.id, "a", file_path="b.py")]
+    graph = CallGraph(calls, resolver)
+
+    trace = graph.transitive_caller_trace(a.id)
+    assert [step.node_visited for step in trace] == [b.id]
+
+
+def test_trace_deterministic_across_independent_calls() -> None:
+    """Same acceptance test as every prior phase: identical graph,
+    independently queried, byte-identical trace."""
+    graph, authenticate, _login, _handle_login = _chain_graph()
+    first = graph.transitive_caller_trace(authenticate.id)
+    second = graph.transitive_caller_trace(authenticate.id)
+    assert first == second
+
+
+def test_layered_bfs_public_behavior_unchanged_by_the_traced_refactor() -> None:
+    """_layered_bfs is now a thin wrapper over _layered_bfs_traced --
+    this pins its return value to exactly what it was before Phase 7,
+    on top of the existing transitive_*_symbols_of tests above."""
+    graph, authenticate, login, handle_login = _chain_graph()
+    assert graph.transitive_caller_symbols_of(authenticate.id) == {
+        login.id: (1, authenticate.id),
+        handle_login.id: (2, login.id),
+    }

@@ -1,6 +1,6 @@
 # ARCF-DI Progress Log
 
-**Last updated:** 2026-08-14 · **Branch:** `arcf-di/feature/phase6-retrieval-integration` (off `arcf-di/base`) · **Tests:** 1027/1027 passing (1020 prior + 7 new) · **Status:** Phase 6 (evidence attribution) shipped, partial scope — see gaps below. Phases 7-10 in progress, proceeding automatically per user instruction.
+**Last updated:** 2026-08-14 · **Branch:** `arcf-di/feature/phase7-auditability` (off `arcf-di/base`) · **Tests:** 1042/1042 passing (1027 prior + 15 new) · **Status:** Phase 7 (auditability) shipped. Phases 8-10 in progress, proceeding automatically per user instruction.
 
 Read this file top-to-bottom to pick up where things stand — the fast-start doc for a new session, same convention as the parent project's `arcf/PROGRESS.md`. Detailed design lives in `arcf-di/docs/BLUEPRINT.md`; this file is the curated *what/when* summary, updated after each phase lands.
 
@@ -139,3 +139,18 @@ On `arcf-di/feature/phase6-retrieval-integration` (off `arcf-di/base`, Phases 1-
 **Outcome**: PR to be opened from `arcf-di/feature/phase6-retrieval-integration` into `arcf-di/base`.
 
 **Next**: Phase 7 (auditability) — additive instrumentation only, lowest risk per `BLUEPRINT.md`'s own build order, and the natural next consumer of `citations`/`ambiguous_evidence_ids`.
+
+### 2026-08-14 — Shipped: Phase 7 (auditability)
+
+On `arcf-di/feature/phase7-auditability` (off `arcf-di/base`, Phases 1-6 all merged). Additive instrumentation only, as `BLUEPRINT.md` itself characterizes this phase — no decision logic changed anywhere, only what's recorded.
+
+**What landed:**
+- `context/relevance_ranker.py`: new `ScoreBreakdown` dataclass (`role_score`, `confidence_factor`, `ambiguity_factor`, `path_mask_factor`, `final_score`) decomposing `RelevanceRanker`'s single `relevance_score` scalar into the four multiplier stages it's actually built from. `RankedFile.score_breakdown` (default `None`, so hand-built `RankedFile`s elsewhere in the codebase are unaffected) is always populated by `rank()` itself. `_score` now returns the full `ScoreBreakdown` instead of a bare float — confirmed nothing outside `relevance_ranker.py` called it directly before changing its signature. `breakdown.final_score` always equals the file's own `relevance_score`, by construction, not by a separate assertion — same value, computed once.
+- `code_intelligence/call_graph.py`: new `TraversalStep` dataclass and `transitive_caller_trace`/`transitive_callee_trace` methods — the graph traversal audit log `BLUEPRINT.md` Phase 7 calls for, adapted to what `CallGraph` traversal actually is (unscored reachability, not a ranked search — `ScoreBreakdown` above is the scored counterpart, for retrieval results). Implemented by extracting the existing `_layered_bfs` algorithm into `_layered_bfs_traced`, with `_layered_bfs` reduced to a thin wrapper that discards the trace — **not a second, parallel implementation that could silently drift from the original**: pinned by `test_layered_bfs_public_behavior_unchanged_by_the_traced_refactor` and by confirming all 15 pre-existing `CallGraph` tests pass completely unmodified. One real, deliberate strengthening found while doing this: the trace iterates each hop's frontier in `sorted()` order before recording, since a step log whose own sequence varied between runs (Python's hash-randomized set iteration) would itself be a determinism bug in exactly the property this phase exists to make auditable — `result`'s *content* never depended on that order (only the existing `min(preds)` tie-break did), so this only affects the new trace, not any existing behavior.
+- `domain/audit.py`: `AuditStamp` (`commit_sha`, `resolver_version`, `schema_version`) — schema only, matching the schema-first-then-populate pattern already established since Phase 1 (`ImportResolutionKind`/`CallResolutionConfidence` defined in Phase 1, populated in Phase 2/3). Nothing constructs one yet — meaningful stamping requires something actually persisted with a versioned schema, which is Phase 8's job, not this one.
+
+**Verification**: 1042/1042 tests (1027 prior + 15 new), `ruff`/`mypy` clean. `ScoreBreakdown` tests cover: `final_score` always matching `relevance_score`, `role_score` isolating the reason-verb/entry/impact component alone, all three confidence factors defaulting to `1.0` when absent, all three captured independently and correctly multiplied when present, and survival across every `RANKING_PROFILES` entry, not just the default weight table. `TraversalStep` tests cover: agreement with the untraced `transitive_*_symbols_of` result it wraps, sequential step numbering in hop order, correct `reached_via` chains, `max_depth` respected, the reverse (`callee`) direction, cycle termination matching the untraced path, and same-process reproducibility.
+
+**Outcome**: PR to be opened from `arcf-di/feature/phase7-auditability` into `arcf-di/base`.
+
+**Next**: Phase 8 (persistent index) — the natural consumer of `AuditStamp`, and where `CodeIntelligenceIndex`'s current "not meant to be embedded... or round-tripped through JSON" status (its own docstring) gets revisited.
