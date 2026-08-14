@@ -20,6 +20,25 @@ an input to prompt assembly — giving it no import path here is what
 makes "PRHL never influences the final prompt" a structural fact
 rather than a convention, verified by
 tests/execution/test_context_goal_composer.py.
+
+ARCF-DI wiring (BLUEPRINT.md Phase 0's boundary contract: "ARCF-DI owns
+evidence production; contracts/ and execution/ only read it"): once
+context/packager.py is given a symbol_index/call_graph/file_analyses
+(context/packager.py's own docstring), ContextPackage carries
+citation-verified `behavioral_summaries` and per-file `citations`/
+`ambiguous_evidence_ids` — this module is the first and only place in
+execution/ that reads them, appending them as one additional, clearly-
+labeled prompt section. Deliberately gated on `package.behavioral_summaries`
+being non-empty: every caller that doesn't populate it (every caller
+today — that wiring is a separate, not-yet-done follow-up) gets a
+byte-identical prompt to before this change, verified by
+test_prompt_is_byte_identical_when_behavioral_summaries_absent. This
+section is additive evidence for the model to use, same as
+`file_sections`/`symbol_list`/`dependency_list` above it — it does not
+change final_generation.py's own no-`response_format` guarantee, and
+the evidence itself is exactly what ARCF-DI already verified (citation-
+checked, never invented); this module doesn't re-verify it, only
+renders it.
 """
 
 from context.evidence_fallback import build_repository_summary
@@ -47,7 +66,7 @@ Relevant symbols:
 
 Dependency relationships among the selected files:
 {dependency_list}
-"""
+{evidence_section}"""
 
 
 class ContextGoalComposer:
@@ -76,6 +95,7 @@ class ContextGoalComposer:
             file_sections=self._file_sections(package.relevant_files),
             symbol_list=symbol_list,
             dependency_list=dependency_list,
+            evidence_section=self._evidence_section(package),
         )
 
     @staticmethod
@@ -85,3 +105,50 @@ class ContextGoalComposer:
         return "\n\n".join(
             f"### {f.file_path} ({f.reason})\n```\n{f.content}\n```" for f in files
         )
+
+    @staticmethod
+    def _evidence_section(package: ContextPackage) -> str:
+        """Empty string when `package.behavioral_summaries` is empty —
+        the exact condition every caller before this change satisfies,
+        so the composed prompt is byte-identical to before for them.
+        Never re-derives or re-verifies anything: every value rendered
+        here already passed context/evidence_summarizer.py's
+        citation/denylist verification or context/evidence_attribution.py's
+        BehavioralRecordBuilder-backed attribution before reaching this
+        module."""
+        if not package.behavioral_summaries:
+            return ""
+
+        lines = [
+            "",
+            "Deterministic evidence (ARCF-DI — compressed and citation-verified; "
+            "never invented, only ever compressed from real static-analysis facts):",
+        ]
+        for evidence_summary in package.behavioral_summaries:
+            if evidence_summary.insufficient_evidence or not evidence_summary.text:
+                continue
+            cites = (
+                ", ".join(evidence_summary.citations) if evidence_summary.citations else "(none)"
+            )
+            lines.append(
+                f"- {evidence_summary.symbol_id}: {evidence_summary.text} [cites: {cites}]"
+            )
+
+        cited_files = [f for f in package.relevant_files if f.citations]
+        if cited_files:
+            lines.append("")
+            lines.append("Evidence citations by file:")
+            for f in cited_files:
+                lines.append(f"- {f.file_path}: {', '.join(f.citations)}")
+
+        ambiguous_files = [f for f in package.relevant_files if f.ambiguous_evidence_ids]
+        if ambiguous_files:
+            lines.append("")
+            lines.append(
+                "Ambiguity warnings (call could not be resolved to a single definition — "
+                "treat with appropriate caution):"
+            )
+            for f in ambiguous_files:
+                lines.append(f"- {f.file_path}: {', '.join(f.ambiguous_evidence_ids)}")
+
+        return "\n".join(lines) + "\n"

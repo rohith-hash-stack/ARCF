@@ -32,6 +32,7 @@ from domain.context_resolution import (
 )
 from domain.contract import Contract
 from domain.intent import UserIntent
+from domain.summarization import EvidenceSummary, SummaryConfidence, SummarySource
 from execution.context_goal_composer import ContextGoalComposer
 from execution.prhl import PRHLAnalyzer
 from infrastructure.llm_client import LiteLLMClient
@@ -187,3 +188,150 @@ async def test_compose_output_unaffected_by_prhl(monkeypatch: pytest.MonkeyPatch
     after = composer.compose(contract, package, resolution)
 
     assert before == after
+
+
+# --- ARCF-DI wiring: behavioral_summaries/citations/ambiguous_evidence_ids
+# --- rendered as one additional, clearly-labeled evidence section --------
+
+
+def _package_with_evidence(
+    summaries: list[EvidenceSummary] | None = None,
+    citations: list[str] | None = None,
+    ambiguous_evidence_ids: list[str] | None = None,
+) -> ContextPackage:
+    base = _package()
+    files = [
+        f.model_copy(
+            update={
+                "citations": citations or [],
+                "ambiguous_evidence_ids": ambiguous_evidence_ids or [],
+            }
+        )
+        for f in base.relevant_files
+    ]
+    return base.model_copy(
+        update={"relevant_files": files, "behavioral_summaries": summaries or []}
+    )
+
+
+def test_prompt_is_unaffected_when_behavioral_summaries_absent() -> None:
+    # _package() itself already has empty behavioral_summaries/citations --
+    # every caller before this wiring existed. No evidence section at all.
+    prompt = ContextGoalComposer().compose(_contract(), _package(), _resolution())
+    assert "Deterministic evidence" not in prompt
+    assert "Evidence citations by file" not in prompt
+    assert "Ambiguity warnings" not in prompt
+
+
+def test_prompt_changes_only_when_behavioral_summaries_exist() -> None:
+    """The actual regression test: composing with an empty
+    behavioral_summaries package produces a prompt that is an exact
+    PREFIX of composing the same contract/resolution against an
+    otherwise-identical package that does carry behavioral_summaries --
+    proving the new section is purely additive at the very end and
+    changes nothing about the existing goal/file/symbol/dependency
+    rendering."""
+    contract, resolution = _contract(), _resolution()
+    composer = ContextGoalComposer()
+
+    without_evidence = composer.compose(contract, _package(), resolution)
+
+    with_evidence_package = _package_with_evidence(
+        summaries=[
+            EvidenceSummary(
+                symbol_id="auth/service.py::AuthService.authenticate#1",
+                text="Calls check_password.",
+                citations=["auth/service.py::check_password#1"],
+                source=SummarySource.TEMPLATE,
+                confidence=SummaryConfidence.HIGH,
+            )
+        ],
+        citations=["auth/service.py::check_password#1"],
+    )
+    with_evidence = composer.compose(contract, with_evidence_package, resolution)
+
+    assert with_evidence != without_evidence
+    assert with_evidence.startswith(without_evidence)
+    assert "Deterministic evidence" in with_evidence
+    assert "Calls check_password." in with_evidence
+    assert "[cites: auth/service.py::check_password#1]" in with_evidence
+
+
+def test_prompt_renders_citations_by_file() -> None:
+    package = _package_with_evidence(
+        summaries=[
+            EvidenceSummary(
+                symbol_id="auth/service.py::AuthService.authenticate#1",
+                text="Calls check_password.",
+                citations=["auth/service.py::check_password#1"],
+                source=SummarySource.TEMPLATE,
+                confidence=SummaryConfidence.HIGH,
+            )
+        ],
+        citations=["auth/service.py::check_password#1", "requests"],
+    )
+    prompt = ContextGoalComposer().compose(_contract(), package, _resolution())
+
+    assert "Evidence citations by file" in prompt
+    assert "auth/service.py: auth/service.py::check_password#1, requests" in prompt
+
+
+def test_prompt_surfaces_ambiguity_warnings_only_when_present() -> None:
+    package = _package_with_evidence(
+        summaries=[
+            EvidenceSummary(
+                symbol_id="auth/service.py::AuthService.authenticate#1",
+                text="Calls check_password.",
+                citations=["call:auth/service.py::check_password#3"],
+                source=SummarySource.TEMPLATE,
+                confidence=SummaryConfidence.MEDIUM,
+            )
+        ],
+        citations=["call:auth/service.py::check_password#3"],
+        ambiguous_evidence_ids=["call:auth/service.py::check_password#3"],
+    )
+    prompt = ContextGoalComposer().compose(_contract(), package, _resolution())
+
+    assert "Ambiguity warnings" in prompt
+    assert "auth/service.py: call:auth/service.py::check_password#3" in prompt
+
+
+def test_prompt_skips_insufficient_evidence_summaries() -> None:
+    package = _package_with_evidence(
+        summaries=[
+            EvidenceSummary(
+                symbol_id="auth/service.py::AuthService.authenticate#1",
+                text="",
+                source=SummarySource.SLM,
+                confidence=SummaryConfidence.LOW,
+                insufficient_evidence=True,
+            )
+        ],
+    )
+    prompt = ContextGoalComposer().compose(_contract(), package, _resolution())
+
+    # The section header still appears (behavioral_summaries is non-empty),
+    # but no bullet line is rendered for a summary with nothing to say --
+    # never a blank "- symbol_id: [cites: (none)]" line.
+    assert "Deterministic evidence" in prompt
+    assert "AuthService.authenticate#1:" not in prompt
+
+
+def test_final_generation_prompt_still_unconstrained_by_evidence_section() -> None:
+    """The evidence section is additive context, not a schema constraint
+    -- this module never sets response_format, and adding evidence text
+    doesn't change that (final_generation.py's own no-response_format
+    guarantee lives entirely in that file, untouched here)."""
+    package = _package_with_evidence(
+        summaries=[
+            EvidenceSummary(
+                symbol_id="auth/service.py::AuthService.authenticate#1",
+                text="Calls check_password.",
+                citations=["auth/service.py::check_password#1"],
+                source=SummarySource.TEMPLATE,
+                confidence=SummaryConfidence.HIGH,
+            )
+        ],
+    )
+    prompt = ContextGoalComposer().compose(_contract(), package, _resolution())
+    assert "prose, a unified diff, or complete file contents are all acceptable" in prompt
