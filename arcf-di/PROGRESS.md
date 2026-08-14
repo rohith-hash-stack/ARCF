@@ -1,6 +1,6 @@
 # ARCF-DI Progress Log
 
-**Last updated:** 2026-08-14 · **Branch:** `arcf-di/feature/phase7-auditability` (off `arcf-di/base`) · **Tests:** 1042/1042 passing (1027 prior + 15 new) · **Status:** Phase 7 (auditability) shipped. Phases 8-10 in progress, proceeding automatically per user instruction.
+**Last updated:** 2026-08-14 · **Branch:** `arcf-di/feature/phase8-persistent-index` (off `arcf-di/base`) · **Tests:** 1059/1059 passing (1042 prior + 17 new) · **Status:** Phase 8 (persistence for BehavioralRecord) shipped, partial scope. Phases 9-10 in progress, proceeding automatically per user instruction.
 
 Read this file top-to-bottom to pick up where things stand — the fast-start doc for a new session, same convention as the parent project's `arcf/PROGRESS.md`. Detailed design lives in `arcf-di/docs/BLUEPRINT.md`; this file is the curated *what/when* summary, updated after each phase lands.
 
@@ -154,3 +154,20 @@ On `arcf-di/feature/phase7-auditability` (off `arcf-di/base`, Phases 1-6 all mer
 **Outcome**: PR to be opened from `arcf-di/feature/phase7-auditability` into `arcf-di/base`.
 
 **Next**: Phase 8 (persistent index) — the natural consumer of `AuditStamp`, and where `CodeIntelligenceIndex`'s current "not meant to be embedded... or round-tripped through JSON" status (its own docstring) gets revisited.
+
+### 2026-08-14 — Shipped: Phase 8 (persistence for BehavioralRecord), partial scope
+
+On `arcf-di/feature/phase8-persistent-index` (off `arcf-di/base`, Phases 1-7 all merged). **Scoped to `BehavioralRecord` persistence only** — not the full `CodeIntelligenceIndex` (graphs/`SymbolIndex` themselves stay in-memory-only, as `index.py`'s own docstring already establishes) and not incremental resolution-aware rebuild (`BLUEPRINT.md` Phase 8 itself flags that as "the one piece of genuinely new complexity," deserving its own phase rather than being folded in here).
+
+**What landed:**
+- `domain/audit.py` extended: `PersistedBehavioralRecord` (an `AuditStamp` + `BehavioralRecord` pair — "what actually gets stored") and the `BehavioralRecordStore` `Protocol`. The Protocol lives in `domain/`, not `infrastructure/`, specifically so `code_intelligence/integrity.py` can depend on the interface without importing a concrete store implementation — keeps `code_intelligence/`'s existing "never imports infrastructure for anything but token counting" posture intact (confirmed again, same check as Phase 5).
+- `infrastructure/behavioral_record_store.py`: `InMemoryBehavioralRecordStore` and `SqliteBehavioralRecordStore`, keyed by `(commit_sha, symbol_id)` — mirrors `infrastructure/contract_store.py`'s own Protocol + InMemory + Sqlite pattern exactly (same `contextlib.closing`/`model_dump_json`/`model_validate_json` shape). "The store is a cache of a pure function, not a source of truth" (`BLUEPRINT.md` Phase 8's own framing) is the explicit design note in the module docstring, not just implied.
+- `code_intelligence/integrity.py`: `verify_integrity(store, builder, commit_sha, symbol_ids)` — re-derives each given symbol live via `BehavioralRecordBuilder` and diffs it against what's stored, returning an `IntegrityReport` with `IntegrityMismatch`es tagged `"not found in store"` / `"no longer resolvable"` / `"content drift"`. Deliberately does not try to decide *why* a mismatch happened (repo changed since storage, resolver version drift, or a real bug) — that judgment needs `commit_sha`/`resolver_version` comparison the caller is better placed to make; this function only detects and reports.
+
+**Verification**: 1059/1059 tests (1042 prior + 17 new), `ruff`/`mypy` clean. Both store implementations run through the exact same test suite via the established `@pytest.fixture(params=["memory", "sqlite"])` pattern (`test_contract_store.py`'s own convention). Includes `test_save_is_byte_identical_across_independent_saves` — this project's core reproducibility acceptance test, now checked at the actual persistence layer, not just in-memory construction. `verify_integrity` tests cover clean/missing/drifted/unresolvable cases and confirm mismatches are reported in the caller's given order, never a set/dict-derived one.
+
+**Deliberately not done in this phase**: no versioned-schema migration logic (schema bumps still mean "reindex," per `BLUEPRINT.md`'s own framing — nothing to build yet since nothing has shipped a schema change against real stored data); no resolution-aware incremental invalidation (still requires tracking which stored records depended on which changed file's exports — real, separate work); nothing wired into `CodeIntelligenceEngine.build_index()` — this phase proves the storage layer in isolation, the same "build and verify standalone, wire in later" discipline every SLM/infra-adjacent phase so far has followed (Phase 5, Phase 6).
+
+**Outcome**: PR to be opened from `arcf-di/feature/phase8-persistent-index` into `arcf-di/base`.
+
+**Next**: Phase 9 (validation framework) — much of the reproducibility/determinism suite already exists piecemeal (one test per phase); Phase 9's job is consolidating that into an explicit, named benchmark suite per `BLUEPRINT.md`'s own test-class breakdown.

@@ -1,15 +1,23 @@
 """AuditStamp (ARCF-DI Phase 7, schema only) — the version/commit
 provenance BLUEPRINT.md Phase 7 calls for ("version identifiers",
-"commit hash linkage", "reproducibility requirement"). Nothing
-constructs or attaches one yet: this is only meaningful once something
-is actually persisted with a versioned schema (BLUEPRINT.md Phase 8),
-so wiring it onto real evidence records is that phase's job, not this
-one — the same schema-first-then-populate pattern Phase 1's enums
-(ImportResolutionKind, CallResolutionConfidence) already established
-for Phase 2/3.
+"commit hash linkage", "reproducibility requirement").
+
+ARCF-DI Phase 8 makes the stamp real: PersistedBehavioralRecord wraps a
+BehavioralRecord with the AuditStamp it was built under, and
+BehavioralRecordStore (implemented in infrastructure/
+behavioral_record_store.py, mirroring infrastructure/contract_store.py's
+own Protocol + InMemory + Sqlite pattern) persists that pair keyed by
+(commit_sha, symbol_id). The Protocol lives here, not in
+infrastructure/, so code_intelligence/integrity.py's verify_integrity
+can depend on the interface without importing a concrete store
+implementation.
 """
 
+from typing import Protocol
+
 from pydantic import BaseModel, ConfigDict
+
+from domain.behavioral_record import BehavioralRecord
 
 
 class AuditStamp(BaseModel):
@@ -31,3 +39,23 @@ class AuditStamp(BaseModel):
     domain/behavioral_record.py, ...) — a bump here is BLUEPRINT.md
     Phase 8's trigger for a full reindex rather than a data migration,
     per its "the store is a cache of a pure function" framing."""
+
+
+class PersistedBehavioralRecord(BaseModel):
+    """ARCF-DI Phase 8: what actually gets stored — a BehavioralRecord
+    plus the AuditStamp identifying exactly what produced it. The store
+    is a cache of a pure function (BehavioralRecordBuilder.build,
+    deterministic given the same commit and resolver ruleset), not a
+    source of truth — the repository at `stamp.commit_sha` remains
+    that, per BLUEPRINT.md Phase 8's own framing."""
+
+    model_config = ConfigDict(frozen=True)
+
+    stamp: AuditStamp
+    record: BehavioralRecord
+
+
+class BehavioralRecordStore(Protocol):
+    def save(self, persisted: PersistedBehavioralRecord) -> None: ...
+    def get(self, commit_sha: str, symbol_id: str) -> PersistedBehavioralRecord | None: ...
+    def get_all_for_commit(self, commit_sha: str) -> list[PersistedBehavioralRecord]: ...
