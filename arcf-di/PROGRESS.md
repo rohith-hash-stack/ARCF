@@ -1,6 +1,6 @@
 # ARCF-DI Progress Log
 
-**Last updated:** 2026-08-13 · **Branch:** `arcf-di/feature/phase1-evidence-layer` (off `arcf-di/base`) · **Tests:** 954/954 passing (942 pre-existing + 12 new) · **Status:** Phase 1 (deterministic evidence layer) shipped.
+**Last updated:** 2026-08-13 · **Branch:** `arcf-di/feature/phase2-library-boundary` (stacked on `arcf-di/feature/phase1-evidence-layer`, pending its merge to `arcf-di/base`) · **Tests:** 977/977 passing (954 prior + 23 new) · **Status:** Phase 2 (external-library boundary) shipped.
 
 Read this file top-to-bottom to pick up where things stand — the fast-start doc for a new session, same convention as the parent project's `arcf/PROGRESS.md`. Detailed design lives in `arcf-di/docs/BLUEPRINT.md`; this file is the curated *what/when* summary, updated after each phase lands.
 
@@ -43,3 +43,21 @@ On `arcf-di/feature/phase1-evidence-layer` (off `arcf-di/base`): extended `arcf/
 **Outcome**: PR opened from `arcf-di/feature/phase1-evidence-layer` into `arcf-di/base`, pending merge. No existing consumer of `domain.code_intelligence` types changed behavior — confirmed by the full untouched pre-existing suite staying green.
 
 **Next**: Phase 2 (external-library boundary classifier) per `docs/BLUEPRINT.md`.
+
+### 2026-08-13 — Shipped: Phase 2 (external-library boundary)
+
+On `arcf-di/feature/phase2-library-boundary`, stacked on top of the (still-unmerged) Phase 1 branch since this phase populates the `ImportResolutionKind`/`resolved_kind`/`resolved_library` schema Phase 1 only defined. PR opened against `arcf-di/feature/phase1-evidence-layer`; retarget to `arcf-di/base` once Phase 1 merges.
+
+**What landed:**
+- `workspace/dependency_manifest.py` — `DependencyManifestParser`, deterministic per-ecosystem parsing of declared dependencies. Scoped to three ecosystems this phase: npm (`package.json`), pip (`pyproject.toml` — both PEP 621 `[project.dependencies]` and Poetry's table, plus `requirements.txt`), go (`go.mod`, single-line and block `require`). Reuses `PermissionManager.safe_read_text` (never raw `open()`) and `ProjectStructureAnalyzer`'s existing `MANIFEST_FILENAMES` convention for which files to look at; deliberately duplicates (rather than imports) `FrameworkDetector`'s private parsing methods to keep this phase additive-only against a file with existing tests and callers — flagged in the module docstring as a reasonable future consolidation, not done here.
+- `code_intelligence/library_boundary.py` — `LibraryBoundaryClassifier`. Classifies each `ImportReference` as `REPOSITORY`/`EXTERNAL`/`STDLIB`/`UNRESOLVED`. Deliberately does **not** re-derive repository-internal resolution: every language analyzer already fills `ImportReference.resolved_file_path` when an import resolves inside the repo, so this classifier only decides the remaining three tiers — same "read, never re-derive" discipline the codebase already applies to that field. Python stdlib detection uses `sys.stdlib_module_names` (the interpreter's own enumeration, not hand-maintained); Go stdlib detection uses the standard "no dot in the first import-path segment" convention, explicitly documented as a heuristic, not a language guarantee; Node built-ins are a static, extend-as-needed set. Go external matching is longest-declared-module-root-prefix (a go.mod `require` typically declares a root, e.g. `github.com/hashicorp/consul`, that real imports are subpackages of, e.g. `.../agent/cache`) with deterministic tie-break.
+- Three languages get real EXTERNAL/STDLIB classification this phase (python→pip, typescript→npm, go→go); every other language ARCF supports (java, csharp, kotlin, cpp, rust) has no manifest parser yet and classifies `REPOSITORY` (via `resolved_file_path`) or `UNRESOLVED` — never a guessed `EXTERNAL`, confirmed by a dedicated test (`test_language_without_manifest_support_never_guesses_external`).
+- `DeclaredDependency` added to `domain/code_intelligence.py` alongside `ExternalLibraryReference` (Phase 1's placeholder), completing the input/output pair for this phase's classifier.
+
+**Verification**: 977/977 tests (954 prior + 23 new), `ruff`/`mypy` clean on every changed file. One test (`test_library_boundary_integration.py`) is the integration-level form of the project's core reproducibility requirement: parses a manifest and classifies imports twice, independently, against the same synthetic repo, and asserts byte-identical JSON output — same acceptance criterion agreed for the whole project, now with a passing test exercising it end to end rather than only at the unit level (Phase 1's `id`-reproducibility test).
+
+**Known gaps, deliberately left open rather than guessed at**: lockfiles aren't read yet (`CONFIRMED_LOCKED` tier from `BLUEPRINT.md` isn't implemented — every match is `CONFIRMED_RANGE`-equivalent, using the manifest's own declared range); monorepo workspace-internal packages published under their own name aren't special-cased yet (a real gap flagged in `BLUEPRINT.md` Phase 2's edge cases — could misclassify as `UNRESOLVED` rather than `REPOSITORY` today, never as a false `EXTERNAL`, but still a known miss); vendored in-repo library source isn't special-cased.
+
+**Outcome**: PR opened from `arcf-di/feature/phase2-library-boundary` into `arcf-di/feature/phase1-evidence-layer`, pending both merges.
+
+**Next**: Phase 3 (symbol resolution redesign — mandatory disambiguation) per `docs/BLUEPRINT.md`. Note Phase 3's `candidates`/`resolution_confidence` schema fields already exist from Phase 1; this phase is "populate them," not "add them."
