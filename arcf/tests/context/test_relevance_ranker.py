@@ -318,3 +318,75 @@ def test_ambiguity_confidence_reorders_below_an_unambiguous_lower_base_score() -
     )
     ranked = RelevanceRanker().rank(result)
     assert [r.file_path for r in ranked] == ["specific.py", "ambiguous.py"]
+
+
+# --- ARCF-DI Phase 7: score_breakdown ------------------------------------
+
+
+def test_score_breakdown_final_score_matches_relevance_score() -> None:
+    result = _result(
+        [FileReference(file_path="a.py", reason="defines foo", language="python", token_count=5)]
+    )
+    [ranked] = RelevanceRanker().rank(result)
+    assert ranked.score_breakdown is not None
+    assert ranked.score_breakdown.final_score == ranked.relevance_score
+
+
+def test_score_breakdown_role_score_reflects_reason_weight_alone() -> None:
+    result = _result(
+        [FileReference(file_path="a.py", reason="calls foo", language="python", token_count=5)]
+    )
+    [ranked] = RelevanceRanker().rank(result)
+    assert ranked.score_breakdown is not None
+    assert ranked.score_breakdown.role_score == 0.7  # "calls" weight, no entry/impact bonus
+
+
+def test_score_breakdown_factors_default_to_one_when_confidences_absent() -> None:
+    result = _result(
+        [FileReference(file_path="a.py", reason="defines foo", language="python", token_count=5)]
+    )
+    [ranked] = RelevanceRanker().rank(result)
+    assert ranked.score_breakdown is not None
+    assert ranked.score_breakdown.confidence_factor == 1.0
+    assert ranked.score_breakdown.ambiguity_factor == 1.0
+    assert ranked.score_breakdown.path_mask_factor == 1.0
+
+
+def test_score_breakdown_captures_each_multiplier_independently() -> None:
+    result = _result(
+        [
+            FileReference(
+                file_path="a.py",
+                reason="defines foo",
+                language="python",
+                token_count=5,
+                anchor_confidence=0.5,
+                ambiguity_confidence=0.8,
+                path_mask_confidence=0.9,
+            )
+        ]
+    )
+    [ranked] = RelevanceRanker().rank(result)
+    breakdown = ranked.score_breakdown
+    assert breakdown is not None
+    assert breakdown.confidence_factor == 0.5
+    assert breakdown.ambiguity_factor == 0.8
+    assert breakdown.path_mask_factor == 0.9
+    expected = round(min(breakdown.role_score * 0.5 * 0.8 * 0.9, 1.0), 4)
+    assert breakdown.final_score == expected == ranked.relevance_score
+
+
+def test_score_breakdown_present_for_every_ranked_file_across_profiles() -> None:
+    """Same style as test_every_ranking_profile_produces_a_valid_
+    deterministic_order -- the breakdown must survive every profile,
+    not just the default weight table."""
+    result = _result(
+        [
+            FileReference(file_path="a.py", reason="defines foo", language="python", token_count=5),
+            FileReference(file_path="b.py", reason="calls foo", language="python", token_count=5),
+        ]
+    )
+    for profile in RANKING_PROFILES.values():
+        ranked = RelevanceRanker().rank(result, profile=profile)
+        assert all(r.score_breakdown is not None for r in ranked)
+        assert all(r.score_breakdown.final_score == r.relevance_score for r in ranked)
