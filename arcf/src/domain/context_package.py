@@ -32,6 +32,25 @@ class PackagedFile(BaseModel):
     ranges only) rather than the file's full text — see
     context/compressor.py."""
 
+    citations: list[str] = Field(default_factory=list)
+    """ARCF-DI Phase 6: evidence ids (ImportReference/CallReference ids,
+    external-library names) backing this file's inclusion — the union of
+    every FUNCTION/METHOD symbol's citable evidence in this file, per
+    context/evidence_attribution.py. Additive: `reason` (free text) is
+    unchanged and remains the human-readable summary; `citations` is the
+    machine-checkable record `reason` itself doesn't carry. Empty when
+    evidence attribution wasn't run (older packages, or a
+    CodeIntelligenceIndex not supplied) — not a claim of "no evidence.\""""
+    ambiguous_evidence_ids: list[str] = Field(default_factory=list)
+    """ARCF-DI Phase 6: subset of `citations` whose underlying CallGraph
+    resolution was AMBIGUOUS_MULTI (Phase 3) — surfaced separately so a
+    caller can tell "included on solid evidence" apart from "included,
+    but part of why involves an unresolved name collision" without
+    re-deriving it from the CallGraph. Always empty unless the
+    CodeIntelligenceIndex's CallGraph was built with
+    mandatory_disambiguation=True; see BehavioralRecord.
+    disambiguation_aware for the same distinction at the record level."""
+
 
 class ContextPackage(BaseModel):
     model_config = ConfigDict(frozen=True)

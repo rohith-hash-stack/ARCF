@@ -1,6 +1,6 @@
 # ARCF-DI Progress Log
 
-**Last updated:** 2026-08-14 · **Branch:** `arcf-di/feature/phase5-evidence-summarization` (off `arcf-di/base`) · **Tests:** 1020/1020 passing (998 prior + 22 new) · **Status:** Phase 5 (evidence-constrained summarization) shipped, not yet wired into production retrieval. Phases 6-10 in progress, proceeding automatically per user instruction.
+**Last updated:** 2026-08-14 · **Branch:** `arcf-di/feature/phase6-retrieval-integration` (off `arcf-di/base`) · **Tests:** 1027/1027 passing (1020 prior + 7 new) · **Status:** Phase 6 (evidence attribution) shipped, partial scope — see gaps below. Phases 7-10 in progress, proceeding automatically per user instruction.
 
 Read this file top-to-bottom to pick up where things stand — the fast-start doc for a new session, same convention as the parent project's `arcf/PROGRESS.md`. Detailed design lives in `arcf-di/docs/BLUEPRINT.md`; this file is the curated *what/when* summary, updated after each phase lands.
 
@@ -118,3 +118,24 @@ On `arcf-di/feature/phase5-evidence-summarization` (off `arcf-di/base`, Phases 1
 **Outcome**: PR to be opened from `arcf-di/feature/phase5-evidence-summarization` into `arcf-di/base`.
 
 **Next**: Phase 6 (query-time retrieval integration) — thread `EvidenceSummary`/citations through `context/packager.py`, `compressor.py`, `budget_manager.py`, and extend search to the evidence types Phase 1/2 introduced but retrieval doesn't index yet (routes, config, SQL, external-library references).
+
+### 2026-08-14 — Shipped: Phase 6 (evidence attribution), partial scope
+
+On `arcf-di/feature/phase6-retrieval-integration` (off `arcf-di/base`, Phases 1-5 all merged). **Scoped down from the full Phase 6 ambition in `BLUEPRINT.md`** — see gaps below — to the part that's both low-risk and has real data behind it today.
+
+**What landed:**
+- `domain/context_package.py`: `PackagedFile` gets two new additive fields, `citations: list[str]` and `ambiguous_evidence_ids: list[str]`, both defaulting to empty. `reason` (free text) is untouched — this does not replace it as `BLUEPRINT.md` Phase 6/10 originally envisioned, it adds the machine-checkable record alongside it. Confirmed zero regressions: the full pre-existing suite, including every `packager.py`/`compressor.py`/`budget_manager.py` test that constructs a `PackagedFile`, stayed green untouched.
+- `context/evidence_attribution.py`: `attribute_citations(packaged_files, symbol_index, call_graph, file_analyses)` — a **post-processing step over `ContextPackager`'s existing output**, deliberately not a change to `RelevanceRanker`/`ContextBudgetManager`/`SymbolRangeCompressor` themselves. Reuses Phase 4's `BehavioralRecordBuilder` directly: for every packaged file, every FUNCTION/METHOD symbol defined in that file contributes its own citable evidence (imports, direct callees, external libraries, ambiguous-call ids) to the file's `citations`, unioned and sorted. `ambiguous_evidence_ids` is the subset that traces back to an `AMBIGUOUS_MULTI` resolution — always empty unless the `CallGraph` was built with `mandatory_disambiguation=True` (Phase 3), same distinction `BehavioralRecord.disambiguation_aware` already makes at the record level.
+- `resolves_cleanly(packaged, call_graph)` — convenience yes/no check, recomputed from the `CallGraph`'s own `resolved_calls` rather than trusting a `PackagedFile`'s `ambiguous_evidence_ids` blindly, so it stays correct even for a hand-built `PackagedFile` that skipped `attribute_citations`.
+
+**Deliberately not done in this phase — scoped down, not silently dropped:**
+- **Not wired into `ContextPackager.package()` itself.** `attribute_citations` exists and is fully tested, but nothing calls it from the production packaging path yet. Wiring it in requires `ContextPackager` to also receive a `SymbolIndex`/`CallGraph`/`file_analyses` bundle it doesn't take today — a real signature change to a heavily-used, well-tested class, deliberately left for a separate, smaller follow-up rather than bundled into this PR.
+- **No search-index extension for routes/config/SQL/comments.** `BLUEPRINT.md` Phase 6 calls for extending `lexical_symbol_probe.py`/`anchor_classifier.py`/`subsystem_localizer.py` to cover these evidence types — skipped here because **no analyzer populates any of them yet** (Phase 1 defined the schema, Phase 2/6 were supposed to populate it, neither has). Building search infrastructure over structurally-guaranteed-empty data isn't real integration work, it's dead code with tests that would only ever assert on empty results. Deferred until real extraction exists.
+- **No `EvidenceSummary` threading into `ContextPackage.understanding_notes`.** Phase 5's summarizer is proven in isolation; wiring it into the packaging pipeline as a `context/understanding.py` replacement is a bigger, separate decision (`BLUEPRINT.md` Phase 10 calls it "the biggest single-file change") not taken in this PR.
+- **No second ranking signal added** — per `BLUEPRINT.md`'s own explicit warning, informed by the semantic-reranker experiment's same-process-ablation falsification already in `arcf/PROGRESS.md`. `attribute_citations` only enriches already-ranked output; it never reorders or re-scores.
+
+**Verification**: 1027/1027 tests (1020 prior + 7 new), `ruff`/`mypy` clean. Tests cover: citation union across multiple symbols in one file, non-mutation of input, input-order preservation (this module doesn't re-rank), `ambiguous_evidence_ids` populated only when the source `CallGraph` used `mandatory_disambiguation=True`, `resolves_cleanly` in both directions, and a same-process reproducibility check.
+
+**Outcome**: PR to be opened from `arcf-di/feature/phase6-retrieval-integration` into `arcf-di/base`.
+
+**Next**: Phase 7 (auditability) — additive instrumentation only, lowest risk per `BLUEPRINT.md`'s own build order, and the natural next consumer of `citations`/`ambiguous_evidence_ids`.
