@@ -16,6 +16,7 @@ from uuid import UUID, uuid4
 from pydantic import BaseModel, ConfigDict, Field
 
 from domain.context_resolution import DependencyEdge
+from domain.summarization import EvidenceSummary
 from shared.clock import utc_now
 
 
@@ -86,5 +87,16 @@ class ContextPackage(BaseModel):
     excerpts (truncated=True) rather than full file content — part of the
     deterministic retrieval-completeness metadata, computed by counting,
     never estimated."""
+
+    behavioral_summaries: list[EvidenceSummary] = Field(default_factory=list)
+    """ARCF-DI Phase 5/6 wiring: one EvidenceSummary per resolved entry-
+    point symbol (see context/packager.py's ContextPackager.package),
+    each independently citation-verified against that symbol's own
+    BehavioralRecord — never SLM-2's free-text understanding_notes,
+    which this field is deliberately kept separate from. Empty when
+    ContextPackager.package wasn't given a symbol_index/call_graph/
+    file_analyses (every caller before this field existed, and any
+    caller that still omits them) — not a claim that a symbol has no
+    behavior, only that it wasn't computed for this package."""
 
     generated_at: datetime = Field(default_factory=utc_now)
