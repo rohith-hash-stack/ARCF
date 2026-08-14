@@ -23,6 +23,24 @@ excluded_file_count), keyed by context_resolution_id — the other half
 of the routing-decision log code_intelligence/service.py emits at
 resolution time (see that module's own docstring for why these are two
 correlated lines rather than one). Internal/DEBUG only.
+
+ARCF-DI Phase 5/6 wiring: `symbol_index`/`call_graph`/`file_analyses` are
+optional, same explicit-components shape context/evidence_attribution.py
+and code_intelligence/behavioral_record.py already require (never the
+whole CodeIntelligenceIndex — index.py's own docstring restricts that
+object to itself and context_resolver.py). When all three are supplied,
+`package()` populates `relevant_files[*].citations`/
+`ambiguous_evidence_ids` via `attribute_citations`, and builds one
+`EvidenceSummary` per `result.entry_points` symbol into
+`ContextPackage.behavioral_summaries` — the query's actual target
+symbols, not every FUNCTION/METHOD in every packaged file, which would
+be unboundedly larger than what one query is about. Summarization
+defaults to the zero-LLM `render_template` path; passing a
+`behavioral_summarizer` additionally escalates records whose evidence
+volume exceeds its own threshold to the citation-verified SLM path.
+Every existing caller that omits these four parameters gets today's
+exact behavior: empty citations, empty behavioral_summaries, no new
+imports exercised.
 """
 
 import asyncio
@@ -30,13 +48,20 @@ import json
 import logging
 from pathlib import Path
 
+from code_intelligence.behavioral_record import BehavioralRecordBuilder
+from code_intelligence.call_graph import CallGraph
+from code_intelligence.symbol_index import SymbolIndex
 from context.budget_manager import ContextBudgetManager
 from context.compressor import SymbolRangeCompressor
+from context.evidence_attribution import attribute_citations
+from context.evidence_summarizer import EvidenceConstrainedSummarizer, render_template
 from context.relevance_ranker import RelevanceRanker
 from context.task_profile import RetrievalTaskType
 from context.understanding import ContextUnderstandingAnalyzer
+from domain.code_intelligence import FileAnalysis
 from domain.context_package import ContextPackage
 from domain.context_resolution import ContextResolutionResult
+from domain.summarization import EvidenceSummary
 from infrastructure.cost import CostEstimator
 from infrastructure.llm_client import LLMResponse
 from shared.errors import ContextUnderstandingError, LLMInvocationError
@@ -63,6 +88,10 @@ class ContextPackager:
         max_tokens: int,
         ranking_profile: dict[str, float] | None = None,
         task_type: RetrievalTaskType | None = None,
+        symbol_index: SymbolIndex | None = None,
+        call_graph: CallGraph | None = None,
+        file_analyses: dict[str, FileAnalysis] | None = None,
+        behavioral_summarizer: EvidenceConstrainedSummarizer | None = None,
     ) -> tuple[ContextPackage, LLMResponse | None]:
         permissions = PermissionManager(Path(result.repository_root))
         budget_manager = ContextBudgetManager(
@@ -73,6 +102,15 @@ class ContextPackager:
         packaged_files, used_tokens, excluded_count = await asyncio.to_thread(
             budget_manager.select, ranked, result, max_tokens, task_type
         )
+
+        behavioral_summaries: list[EvidenceSummary] = []
+        if symbol_index is not None and call_graph is not None and file_analyses is not None:
+            packaged_files = attribute_citations(
+                packaged_files, symbol_index, call_graph, file_analyses
+            )
+            behavioral_summaries = await self._build_behavioral_summaries(
+                result, symbol_index, call_graph, file_analyses, behavioral_summarizer
+            )
 
         understanding_notes: list[str] = []
         llm_response: LLMResponse | None = None
@@ -103,6 +141,7 @@ class ContextPackager:
             excluded_file_count=excluded_count,
             understanding_notes=understanding_notes,
             compressed_snippet_count=sum(1 for file in packaged_files if file.truncated),
+            behavioral_summaries=behavioral_summaries,
         )
         if _logger.isEnabledFor(logging.DEBUG):
             _logger.debug(
@@ -116,3 +155,35 @@ class ContextPackager:
                 )
             )
         return package, llm_response
+
+    @staticmethod
+    async def _build_behavioral_summaries(
+        result: ContextResolutionResult,
+        symbol_index: SymbolIndex,
+        call_graph: CallGraph,
+        file_analyses: dict[str, FileAnalysis],
+        summarizer: EvidenceConstrainedSummarizer | None,
+    ) -> list[EvidenceSummary]:
+        """One EvidenceSummary per result.entry_points symbol — the
+        query's actual resolved targets (the same population
+        context_goal_composer.py's symbol_list already renders), not
+        every FUNCTION/METHOD symbol in every packaged file. Falls back
+        to the zero-LLM render_template path when no summarizer is
+        supplied, or when a symbol has no buildable BehavioralRecord
+        (e.g. it isn't a FUNCTION/METHOD) — skipped rather than guessed
+        at, same as BehavioralRecordBuilder.build's own None return."""
+        builder = BehavioralRecordBuilder(symbol_index, call_graph, file_analyses)
+        summaries: list[EvidenceSummary] = []
+        seen: set[str] = set()
+        for entry_point in result.entry_points:
+            if entry_point.symbol_id in seen:
+                continue
+            seen.add(entry_point.symbol_id)
+            record = builder.build(entry_point.symbol_id)
+            if record is None:
+                continue
+            if summarizer is not None:
+                summaries.append(await summarizer.summarize(record))
+            else:
+                summaries.append(render_template(record))
+        return summaries

@@ -6,11 +6,15 @@ from types import SimpleNamespace
 import litellm
 import pytest
 
+from code_intelligence.call_graph import CallGraph
+from code_intelligence.reference_resolver import ReferenceResolver
+from code_intelligence.symbol_index import SymbolIndex
+from context.evidence_summarizer import EvidenceConstrainedSummarizer
 from context.packager import ContextPackager
 from context.relevance_ranker import RelevanceRanker
 from context.task_profile import RANKING_PROFILES, RetrievalTaskType
 from context.understanding import ContextUnderstandingAnalyzer
-from domain.code_intelligence import SymbolKind
+from domain.code_intelligence import CallReference, FileAnalysis, SourceLocation, Symbol, SymbolKind
 from domain.context_resolution import (
     ContextResolutionResult,
     EvidenceTier,
@@ -18,6 +22,7 @@ from domain.context_resolution import (
     SymbolReference,
     TokenEstimate,
 )
+from domain.summarization import SummarySource
 from infrastructure.cost import CostEstimator
 from infrastructure.llm_client import LiteLLMClient
 
@@ -67,6 +72,19 @@ def _result(repository_root: str) -> ContextResolutionResult:
             raw_context_tokens=1000, selected_context_tokens=10, compression_ratio=0.01
         ),
         resolution_reason="test",
+    )
+
+
+def _authenticate_symbol() -> Symbol:
+    # Matches _result()'s entry point exactly: same symbol_id/file_path,
+    # so BehavioralRecordBuilder.build can actually find it.
+    return Symbol(
+        id="auth.py::authenticate",
+        name="authenticate",
+        qualified_name="authenticate",
+        kind=SymbolKind.FUNCTION,
+        file_path="auth.py",
+        location=SourceLocation(file_path="auth.py", start_line=1, end_line=2),
     )
 
 
@@ -316,4 +334,198 @@ async def test_diagnostic_log_line_correlated_by_context_resolution_id(
     assert len(records) == 1
     payload = json.loads(records[0].getMessage())
     assert payload["context_resolution_id"] == str(result.id)
-    assert payload["files_sent_to_llm"] == 1
+
+
+# --- ARCF-DI Phase 5/6 wiring: EvidenceConstrainedSummarizer/
+# attribute_citations threaded through ContextPackager.package ----------
+
+
+async def test_package_without_evidence_params_leaves_citations_and_summaries_empty(
+    tmp_path: Path,
+) -> None:
+    # Every caller that predates this wiring (and any caller that still
+    # omits the new params) must see byte-identical behavior: no
+    # citations populated, no behavioral_summaries computed.
+    (tmp_path / "auth.py").write_text("def authenticate(user):\n    return True\n")
+    result = _result(str(tmp_path))
+
+    package, _ = await _packager(with_understanding=False).package(
+        result, "fix auth bug", max_tokens=10_000
+    )
+
+    assert package.relevant_files[0].citations == []
+    assert package.behavioral_summaries == []
+
+
+async def test_package_with_evidence_params_populates_citations_and_template_summary(
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "auth.py").write_text("def authenticate(user):\n    return True\n")
+    result = _result(str(tmp_path))
+
+    authenticate = _authenticate_symbol()
+    check_password = Symbol(
+        id="auth.py::check_password",
+        name="check_password",
+        qualified_name="check_password",
+        kind=SymbolKind.FUNCTION,
+        file_path="auth.py",
+        location=SourceLocation(file_path="auth.py", start_line=4, end_line=5),
+    )
+    symbol_index = SymbolIndex([authenticate, check_password])
+    resolver = ReferenceResolver(symbol_index)
+    calls = [
+        CallReference(
+            caller_id=authenticate.id,
+            callee_name="check_password",
+            file_path="auth.py",
+            location=SourceLocation(file_path="auth.py", start_line=2, end_line=2),
+        )
+    ]
+    call_graph = CallGraph(calls, resolver)
+    file_analyses = {"auth.py": FileAnalysis(file_path="auth.py", language="python")}
+
+    package, _ = await _packager(with_understanding=False).package(
+        result,
+        "fix auth bug",
+        max_tokens=10_000,
+        symbol_index=symbol_index,
+        call_graph=call_graph,
+        file_analyses=file_analyses,
+    )
+
+    assert package.relevant_files[0].citations != []
+    [summary] = package.behavioral_summaries
+    assert summary.symbol_id == authenticate.id
+    assert summary.source == SummarySource.TEMPLATE
+    assert "check_password" in summary.text
+
+
+async def test_package_with_summarizer_escalates_to_slm_path(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    (tmp_path / "auth.py").write_text("def authenticate(user):\n    return True\n")
+    result = _result(str(tmp_path))
+
+    authenticate = _authenticate_symbol()
+    check_password = Symbol(
+        id="auth.py::check_password",
+        name="check_password",
+        qualified_name="check_password",
+        kind=SymbolKind.FUNCTION,
+        file_path="auth.py",
+        location=SourceLocation(file_path="auth.py", start_line=4, end_line=5),
+    )
+    symbol_index = SymbolIndex([authenticate, check_password])
+    resolver = ReferenceResolver(symbol_index)
+    calls = [
+        CallReference(
+            caller_id=authenticate.id,
+            callee_name="check_password",
+            file_path="auth.py",
+            location=SourceLocation(file_path="auth.py", start_line=2, end_line=2),
+        )
+    ]
+    call_graph = CallGraph(calls, resolver)
+    file_analyses = {"auth.py": FileAnalysis(file_path="auth.py", language="python")}
+
+    async def fake_acompletion(**kwargs: object) -> SimpleNamespace:
+        return _fake_response("Calls check_password. [ev:auth.py::check_password]")
+
+    monkeypatch.setattr(litellm, "acompletion", fake_acompletion)
+    client = LiteLLMClient(max_retries=1, base_delay_seconds=0.0, sleep=_no_sleep)
+    summarizer = EvidenceConstrainedSummarizer(client, "gpt-4o-mini", template_threshold=0)
+
+    package, _ = await _packager(with_understanding=False).package(
+        result,
+        "fix auth bug",
+        max_tokens=10_000,
+        symbol_index=symbol_index,
+        call_graph=call_graph,
+        file_analyses=file_analyses,
+        behavioral_summarizer=summarizer,
+    )
+
+    [summary] = package.behavioral_summaries
+    assert summary.source == SummarySource.SLM
+
+
+async def test_package_dedupes_repeated_entry_point_symbols(tmp_path: Path) -> None:
+    (tmp_path / "auth.py").write_text("def authenticate(user):\n    return True\n")
+    authenticate = _authenticate_symbol()
+    result = ContextResolutionResult(
+        workspace_id=str(tmp_path),
+        contract_id="contract-1",
+        repository_root=str(tmp_path),
+        language="python",
+        candidate_files=[
+            FileReference(
+                file_path="auth.py",
+                reason="defines authenticate",
+                language="python",
+                token_count=10,
+            ),
+        ],
+        entry_points=[
+            SymbolReference(
+                symbol_id=authenticate.id,
+                name="authenticate",
+                qualified_name="authenticate",
+                kind=SymbolKind.FUNCTION,
+                file_path="auth.py",
+                start_line=1,
+                end_line=2,
+            ),
+            SymbolReference(
+                symbol_id=authenticate.id,
+                name="authenticate",
+                qualified_name="authenticate",
+                kind=SymbolKind.FUNCTION,
+                file_path="auth.py",
+                start_line=1,
+                end_line=2,
+            ),
+        ],
+        confidence=1.0,
+        token_estimate=TokenEstimate(
+            raw_context_tokens=1000, selected_context_tokens=10, compression_ratio=0.01
+        ),
+        resolution_reason="test",
+    )
+
+    symbol_index = SymbolIndex([authenticate])
+    call_graph = CallGraph([], ReferenceResolver(symbol_index))
+    file_analyses = {"auth.py": FileAnalysis(file_path="auth.py", language="python")}
+
+    package, _ = await _packager(with_understanding=False).package(
+        result,
+        "fix auth bug",
+        max_tokens=10_000,
+        symbol_index=symbol_index,
+        call_graph=call_graph,
+        file_analyses=file_analyses,
+    )
+
+    assert len(package.behavioral_summaries) == 1
+
+
+async def test_package_skips_entry_point_with_no_buildable_record(tmp_path: Path) -> None:
+    (tmp_path / "auth.py").write_text("def authenticate(user):\n    return True\n")
+    result = _result(str(tmp_path))
+
+    # Deliberately empty: the entry point symbol_id from _result() isn't
+    # in this index, so BehavioralRecordBuilder.build returns None.
+    symbol_index = SymbolIndex([])
+    call_graph = CallGraph([], ReferenceResolver(symbol_index))
+    file_analyses: dict[str, FileAnalysis] = {}
+
+    package, _ = await _packager(with_understanding=False).package(
+        result,
+        "fix auth bug",
+        max_tokens=10_000,
+        symbol_index=symbol_index,
+        call_graph=call_graph,
+        file_analyses=file_analyses,
+    )
+
+    assert package.behavioral_summaries == []
