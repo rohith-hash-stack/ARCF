@@ -1,6 +1,6 @@
 # ARCF-DI Progress Log
 
-**Last updated:** 2026-08-14 · **Branch:** `arcf-di/feature/phase9-validation-suite` (off `arcf-di/base`) · **Tests:** 1066/1066 passing (1059 prior + 7 new) · **Status:** Phase 9 (validation framework) shipped. Phase 10 remaining, proceeding automatically per user instruction.
+**Last updated:** 2026-08-14 · **Branch:** `arcf-di/feature/phase10-boundary-enforcement` (off `arcf-di/base`) · **Tests:** 1068/1068 passing (1066 prior + 2 new) · **Status:** All 11 blueprint phases (0-10) shipped. See this entry's closing summary for what's wired into production vs. built-and-verified-standalone.
 
 Read this file top-to-bottom to pick up where things stand — the fast-start doc for a new session, same convention as the parent project's `arcf/PROGRESS.md`. Detailed design lives in `arcf-di/docs/BLUEPRINT.md`; this file is the curated *what/when* summary, updated after each phase lands.
 
@@ -195,3 +195,32 @@ On `arcf-di/feature/phase9-validation-suite` (off `arcf-di/base`, Phases 1-8 all
 **Outcome**: PR to be opened from `arcf-di/feature/phase9-validation-suite` into `arcf-di/base`.
 
 **Next**: Phase 10 (migration boundary enforcement) — the last phase: classify every module (keep/modify/replace/isolate, largely already done implicitly by which files this project has and hasn't touched across Phases 1-9) and add the CI import-lint enforcing Phase 0's scope freeze.
+
+### 2026-08-14 — Shipped: Phase 10 (migration boundary enforcement) — all blueprint phases complete
+
+On `arcf-di/feature/phase10-boundary-enforcement` (off `arcf-di/base`, Phases 1-9 all merged). The last phase in `BLUEPRINT.md`.
+
+**What landed:**
+- `tests/arcf_di/test_import_boundary.py` — `test_arcf_di_modules_never_import_execution_or_contracts`, walking each ARCF-DI-owned module's own `ast` import statements (direct imports only, deliberately not a transitive-closure check — matches `BLUEPRINT.md`'s own framing, and avoids flagging unrelated modules that happen to be reachable through some other path) against a fixed list of 13 modules Phases 1-9 actually created or extended. A companion test (`test_arcf_di_owned_modules_exist_at_the_expected_paths`) fails loudly if a listed path is ever renamed or moved, rather than silently shrinking the boundary being checked.
+- **Not a GitHub Actions workflow.** `BLUEPRINT.md` calls this a "CI import-lint," but this repository has no CI pipeline at all — confirmed repeatedly, every ARCF-DI PR so far showed zero configured status checks. Standing up actual CI is a repo-wide decision (it would gate every future PR in the whole repository, not just ARCF-DI's own changes) outside any single phase's scope, so it's left to the user rather than assumed. What's implemented is the enforcement mechanism actually available today: a test in the existing suite, run before every merge by the same `pytest -q` convention every prior phase in this log already followed.
+
+**Closing migration classification — what actually happened, against `BLUEPRINT.md`'s original prediction:**
+
+| Disposition | Modules | Matches original prediction? |
+|---|---|---|
+| Kept unchanged | `code_intelligence/languages/*`, `workspace/*` (besides the new `dependency_manifest.py`), `infrastructure/llm_client.py` | Yes |
+| Extended (additive only) | `domain/code_intelligence.py`, `code_intelligence/reference_resolver.py`, `code_intelligence/call_graph.py`, `code_intelligence/engine.py`, `domain/context_package.py` | Yes — every extension across all 9 phases defaulted to off/empty/`None` and left existing tests passing unmodified, confirmed phase by phase |
+| New modules | `domain/behavioral_record.py`, `domain/summarization.py`, `domain/audit.py`, `code_intelligence/behavioral_record.py`, `code_intelligence/library_boundary.py`, `code_intelligence/integrity.py`, `context/evidence_summarizer.py`, `context/evidence_attribution.py`, `infrastructure/behavioral_record_store.py`, `workspace/dependency_manifest.py` | Predicted in kind, not in exact shape — the blueprint sketched schemas and algorithms; actual field names, module boundaries (e.g. `evidence_summarizer.py` living in `context/` specifically because `code_intelligence/` was confirmed to never import `infrastructure.llm_client`) were determined during implementation |
+| Isolated (never touched) | `execution/*`, `contracts/*`, `telemetry/comparison_aggregator.py` | Yes — confirmed again just now by the import-boundary test itself |
+| **Diverged from prediction** | `context/understanding.py` — `BLUEPRINT.md` Phase 10 called this "the biggest single-file change." **It was never touched.** Phase 5 built `evidence_summarizer.py` as a new, parallel module instead of rewriting SLM-2 in place, deliberately: proving the summarization mechanism in isolation first, the same "verify standalone before wiring in" discipline every infra-adjacent phase followed. Rewiring `understanding.py`/`packager.py` to actually call the new modules remains real, unstarted work — see below. | No — smaller and safer than predicted, not larger |
+
+**What's wired into the production pipeline today, vs. built-and-verified-standalone:**
+- **Wired in**: Phase 1's schema extensions, Phase 3's `mandatory_disambiguation` flag (opt-in, still `False` by default in `engine.py`), Phase 7's `ScoreBreakdown`/`transitive_*_trace` (always computed now, additive).
+- **Built and fully tested, not yet called from the production path**: Phase 2's `LibraryBoundaryClassifier` (nothing in `engine.py` invokes it against real `ImportReference`s yet), Phase 5's `EvidenceConstrainedSummarizer` (not called from `context/packager.py`), Phase 6's `attribute_citations` (not called from `ContextPackager.package()`), Phase 8's persistence layer (nothing calls `BehavioralRecordStore.save()` from a real indexing run). Every one of these gaps is documented in its own phase's PROGRESS.md entry above, not newly disclosed here.
+- **Net effect**: ARCF-DI's deterministic evidence core (Phases 1-4, 7) is real and live. Its SLM-facing and persistence layers (Phases 5, 6, 8) are proven correct in isolation but still require a deliberate wiring decision — consistent with `BLUEPRINT.md`'s own repeated instruction to ship behind a flag and verify before defaulting anything on, not a shortfall introduced late.
+
+**Verification**: 1068/1068 tests (1066 prior + 2 new), `ruff` clean. Detector logic sanity-checked directly against a synthetic file containing both forbidden imports, confirmed to catch them (not a vacuously-passing check).
+
+**Outcome**: PR to be opened from `arcf-di/feature/phase10-boundary-enforcement` into `arcf-di/base`.
+
+**Next**: wiring decisions for Phases 2/5/6/8 into the production pipeline (each a separate, smaller PR in the same style), and/or standing up real CI — both require the user's direction, not further automatic phases.
