@@ -3,8 +3,9 @@ parsing of declared dependencies from manifest files already located by
 ProjectStructureAnalyzer's MANIFEST_FILENAMES.
 
 Deliberately narrow scope for this phase: npm (package.json), pip
-(pyproject.toml's [project.dependencies]/poetry, requirements.txt), and go
-(go.mod). Extending to another ecosystem (Java/Maven, C#/NuGet, Kotlin/
+(pyproject.toml's [project.dependencies], [dependency-groups] (PEP 735),
+and Poetry's table, plus requirements.txt), and go (go.mod). Extending
+to another ecosystem (Java/Maven, C#/NuGet, Kotlin/
 Gradle, Rust/Cargo) means adding one more `_parse_*` method and a filename
 branch in `parse()` — nothing else in ARCF-DI's boundary classifier needs
 to change, since it only ever consumes the resulting DeclaredDependency
@@ -124,7 +125,9 @@ class DependencyManifestParser:
         project_deps = data.get("project", {}).get("dependencies", [])
         if isinstance(project_deps, list):
             for entry in project_deps:
-                name, version = _pip_name(str(entry))
+                if not isinstance(entry, str):
+                    continue
+                name, version = _pip_name(entry)
                 if not name or name in seen:
                     continue
                 seen.add(name)
@@ -133,7 +136,30 @@ class DependencyManifestParser:
                         name=name,
                         ecosystem="pip",
                         version_spec=version,
-                        manifest_location=_locate_key_line(raw_text, name, relative_path),
+                        manifest_location=_locate_list_entry_line(raw_text, entry, relative_path),
+                    )
+                )
+
+        for group_entries in data.get("dependency-groups", {}).values():
+            if not isinstance(group_entries, list):
+                continue
+            for entry in group_entries:
+                # PEP 735 group entries are either a plain requirement
+                # string or a {include-group = "..."} table referencing
+                # another group -- the latter names a group, not a
+                # package, so it's skipped rather than parsed as one.
+                if not isinstance(entry, str):
+                    continue
+                name, version = _pip_name(entry)
+                if not name or name in seen:
+                    continue
+                seen.add(name)
+                results.append(
+                    DeclaredDependency(
+                        name=name,
+                        ecosystem="pip",
+                        version_spec=version,
+                        manifest_location=_locate_list_entry_line(raw_text, entry, relative_path),
                     )
                 )
 
@@ -245,6 +271,24 @@ def _locate_key_line(raw_text: str, key: str, file_path: str) -> SourceLocation:
     at the first one, a documented simplification rather than a claim of
     exhaustive provenance."""
     needle = f'"{key}"'
+    for line_number, line in enumerate(raw_text.splitlines(), start=1):
+        if needle in line:
+            return SourceLocation(file_path=file_path, start_line=line_number, end_line=line_number)
+    return SourceLocation(file_path=file_path, start_line=1, end_line=1)
+
+
+def _locate_list_entry_line(raw_text: str, entry: str, file_path: str) -> SourceLocation:
+    """Line lookup for a TOML/JSON list entry (a `[project.dependencies]`
+    or `[dependency-groups]` string), searching for the entry's own
+    quoted text rather than just the parsed package name. A version
+    specifier attached to the entry — the overwhelmingly common case —
+    means the bare name is rarely a literal substring of the source
+    line: `"fastapi"` does not appear inside `"fastapi>=0.115"`, so
+    `_locate_key_line(raw_text, "fastapi", ...)` silently fell back to
+    line 1 for nearly every real `[project.dependencies]` entry before
+    this existed. First occurrence only, same simplification as
+    `_locate_key_line`."""
+    needle = f'"{entry}"'
     for line_number, line in enumerate(raw_text.splitlines(), start=1):
         if needle in line:
             return SourceLocation(file_path=file_path, start_line=line_number, end_line=line_number)
