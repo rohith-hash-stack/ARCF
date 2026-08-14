@@ -1,6 +1,6 @@
 # ARCF-DI Progress Log
 
-**Last updated:** 2026-08-14 · **Branch:** `arcf-di/feature/real-repo-validation` (off `arcf-di/base`) · **Tests:** 1068/1068 passing, unchanged (validation script, no src/ changes) · **Status:** All 11 blueprint phases (0-10) shipped and now validated against a real codebase, not just unit-test fixtures.
+**Last updated:** 2026-08-14 · **Branch:** `arcf-di/feature/dependency-groups-support` (off `arcf-di/base`) · **Tests:** 1073/1073 passing (1068 prior + 5 new) · **Status:** All 11 blueprint phases shipped; second real-repo validation run (`pallets/click`) surfaced and closed a real manifest-parsing gap (PEP 735 `dependency-groups`).
 
 Read this file top-to-bottom to pick up where things stand — the fast-start doc for a new session, same convention as the parent project's `arcf/PROGRESS.md`. Detailed design lives in `arcf-di/docs/BLUEPRINT.md`; this file is the curated *what/when* summary, updated after each phase lands.
 
@@ -244,3 +244,21 @@ On `arcf-di/feature/real-repo-validation` (off `arcf-di/base`). Every test throu
 **Scope note**: this script is standalone tooling, not wired into any production code path, same posture as Phases 2/5/6/8 themselves — it demonstrates the modules work correctly together against real input, it doesn't change how `CodeIntelligenceEngine`/`ContextPackager` behave. `_OfflineCostEstimator` (length/4 token estimate) is a script-local workaround for this sandbox's blocked tiktoken download, not a change to the real `CostEstimator`.
 
 **Outcome**: PR to be opened from `arcf-di/feature/real-repo-validation` into `arcf-di/base`. 1068/1068 existing tests unaffected (no `src/` changes, only a new script).
+
+### 2026-08-14 — Second real-repo validation (`pallets/click`) finds and closes a real gap: PEP 735 `dependency-groups`
+
+Cloned a genuinely unrelated open-source project (`pallets/click`, not touched by any prior test or the `arcf/` self-hosting run) and ran the same validation script against it.
+
+**First run — a real finding, not a bug in the classifier**: `import_classification_counts` showed `external: 0` despite `declared_dependencies: 11`. Investigated rather than assumed: click's own library code (`src/click/`) genuinely has zero runtime dependencies — a deliberate, well-known fact about click — so every `import click` inside the repo's example scripts correctly resolved to `REPOSITORY` (click's real source is right there in the same clone), not a false `EXTERNAL`. Working as designed.
+
+**A second, real, previously-undiscovered gap, found the same way**: `unresolved: 50` — verified 19 real files under `tests/` import `pytest` (`grep` count), none of them classified. Cause: click declares test/dev dependencies via the newer PEP 735 `[dependency-groups]` TOML table, which `DependencyManifestParser` didn't read — only `[project.dependencies]` and Poetry's table were ever implemented (Phase 2's original, narrower scope).
+
+**Fixed on this branch, in `workspace/dependency_manifest.py`:**
+- `_parse_pyproject_toml` now also reads `[dependency-groups]` — each group's own list of PEP 508-style requirement strings, parsed with the same `_pip_name` helper already used for `[project.dependencies]`/`requirements.txt`. PEP 735 also allows a group entry to be `{include-group = "other-group"}` (referencing another group, not naming a package) — these are explicitly skipped (`isinstance(entry, str)` guard), never parsed as a dependency, since guessing a package name out of a group reference would be exactly the kind of invention this project's evidence-only discipline forbids.
+- **A second, adjacent bug found and fixed while implementing the first**: `_locate_key_line` (used for `[project.dependencies]`'s own manifest-line lookup) searches for the bare package name in quotes — but a version-specifier-bearing entry like `"fastapi>=0.115"` never contains the bare quoted substring `"fastapi"` (the closing quote comes after `>=0.115`, not after the name), so location lookup silently fell back to line 1 for nearly every real `[project.dependencies]` entry, undetected until now because the existing test suite only ever exercised this path with `requirements.txt` (a genuinely line-per-entry format with no such issue). New `_locate_list_entry_line` searches for the entry's full quoted text instead, fixing both `[project.dependencies]` and the new `[dependency-groups]` path with one helper.
+
+**Verified the fix against real data, not just synthetic tests**: re-ran the validation script against a fresh `pallets/click` clone. `declared_dependencies` went from 11 → 28, `external` from 0 → 26, `unresolved` from 50 → 24. Reproducibility (byte-identical across two independent runs) and persistence/integrity checks both still pass clean.
+
+**Verification**: 1073/1073 tests (1068 prior + 5 new), `ruff`/`mypy` clean. New tests cover: basic `dependency-groups` parsing, `include-group` references correctly skipped rather than guessed at, combination with `[project.dependencies]` in the same file, same-name dedup across groups, and the `[project.dependencies]` line-location fix specifically.
+
+**Outcome**: PR to be opened from `arcf-di/feature/dependency-groups-support` into `arcf-di/base`.

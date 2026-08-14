@@ -107,3 +107,82 @@ def test_result_sorted_by_ecosystem_then_name(tmp_path: Path) -> None:
         ("pip", "alpha"),
         ("pip", "zeta"),
     ]
+
+
+# --- PEP 735 [dependency-groups], found missing by real-repo validation --
+# (arcf-di/PROGRESS.md's "real-repo validation" entry: pallets/click
+# declares its test/dev dependencies this way, not via
+# [project.dependencies] or Poetry's table -- neither of which this
+# parser read before this fix, so real pytest/ruff/etc. imports were
+# landing UNRESOLVED instead of EXTERNAL for a repo shaped exactly like
+# a real, common, modern pyproject.toml.)
+
+
+def test_parses_dependency_groups(tmp_path: Path) -> None:
+    (tmp_path / "pyproject.toml").write_text(
+        "[dependency-groups]\n"
+        'dev = ["ruff", "tox"]\n'
+        'tests = ["pytest>=7.0"]\n'
+    )
+    deps = _parse(tmp_path)
+    by_name = {dep.name: dep for dep in deps}
+    assert by_name["ruff"].ecosystem == "pip"
+    assert by_name["tox"].version_spec is None
+    assert by_name["pytest"].version_spec == ">=7.0"
+
+
+def test_dependency_groups_include_group_reference_is_skipped_not_guessed(
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "pyproject.toml").write_text(
+        "[dependency-groups]\n"
+        'dev = ["ruff"]\n'
+        'combo = [{include-group = "dev"}, "black"]\n'
+    )
+    deps = _parse(tmp_path)
+    names = {dep.name for dep in deps}
+    assert names == {"ruff", "black"}
+
+
+def test_dependency_groups_combine_with_project_dependencies(tmp_path: Path) -> None:
+    (tmp_path / "pyproject.toml").write_text(
+        "[project]\n"
+        'dependencies = ["fastapi>=0.115"]\n\n'
+        "[dependency-groups]\n"
+        'tests = ["pytest"]\n'
+    )
+    deps = _parse(tmp_path)
+    names = {dep.name for dep in deps}
+    assert names == {"fastapi", "pytest"}
+
+
+def test_dependency_groups_same_name_not_duplicated_across_groups(tmp_path: Path) -> None:
+    (tmp_path / "pyproject.toml").write_text(
+        "[dependency-groups]\n"
+        'dev = ["pytest"]\n'
+        'tests = ["pytest"]\n'
+    )
+    deps = _parse(tmp_path)
+    assert len([d for d in deps if d.name == "pytest"]) == 1
+
+
+# --- manifest_location precision for [project.dependencies] entries -----
+# (a real, previously-unnoticed gap found while fixing the above: the
+# bare package name is rarely a literal substring of its own source
+# line once a version specifier is attached -- "fastapi" is not a
+# substring of "fastapi>=0.115" -- so every such entry silently fell
+# back to line 1 rather than pointing at its real line.)
+
+
+def test_project_dependencies_location_points_at_the_correct_line(tmp_path: Path) -> None:
+    (tmp_path / "pyproject.toml").write_text(
+        "[project]\n"
+        "dependencies = [\n"
+        '    "fastapi>=0.115",\n'
+        '    "pydantic>=2.9",\n'
+        "]\n"
+    )
+    deps = _parse(tmp_path)
+    by_name = {dep.name: dep for dep in deps}
+    assert by_name["fastapi"].manifest_location.start_line == 3
+    assert by_name["pydantic"].manifest_location.start_line == 4
