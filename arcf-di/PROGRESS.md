@@ -1,6 +1,6 @@
 # ARCF-DI Progress Log
 
-**Last updated:** 2026-08-13 · **Branch:** `arcf-di/feature/phase2-library-boundary` (stacked on `arcf-di/feature/phase1-evidence-layer`, pending its merge to `arcf-di/base`) · **Tests:** 977/977 passing (954 prior + 23 new) · **Status:** Phase 2 (external-library boundary) shipped.
+**Last updated:** 2026-08-14 · **Branch:** `arcf-di/feature/phase3-mandatory-disambiguation` (off `arcf-di/base`) · **Tests:** 987/987 passing (977 prior + 10 new) · **Status:** Phase 3a (mandatory disambiguation, opt-in) shipped.
 
 Read this file top-to-bottom to pick up where things stand — the fast-start doc for a new session, same convention as the parent project's `arcf/PROGRESS.md`. Detailed design lives in `arcf-di/docs/BLUEPRINT.md`; this file is the curated *what/when* summary, updated after each phase lands.
 
@@ -61,3 +61,22 @@ On `arcf-di/feature/phase2-library-boundary`, stacked on top of the (still-unmer
 **Outcome**: PR opened from `arcf-di/feature/phase2-library-boundary` into `arcf-di/feature/phase1-evidence-layer`, pending both merges.
 
 **Next**: Phase 3 (symbol resolution redesign — mandatory disambiguation) per `docs/BLUEPRINT.md`. Note Phase 3's `candidates`/`resolution_confidence` schema fields already exist from Phase 1; this phase is "populate them," not "add them."
+
+### 2026-08-14 — Shipped: Phase 3a (mandatory disambiguation, opt-in via flag)
+
+On `arcf-di/feature/phase3-mandatory-disambiguation` (off `arcf-di/base`, both Phase 1 and Phase 2 now merged). Scoped to 3a only, per `BLUEPRINT.md`'s own incremental rollout — 3b (threading ambiguity end-to-end through `ContextResolutionResult`) and 3c (real type resolution) not attempted.
+
+**What landed:**
+- `ReferenceResolver.resolve_tiered` (new, additive) — `resolve()` is now defined in terms of it, identical behavior/signature, every existing caller (including `resolve_with_disambiguation`, untouched) unaffected. Reports whether the simple-name-fallback tier was used, closing the gap that made it impossible to tag `CallResolutionConfidence` honestly from outside the resolver.
+- `CallGraph(..., mandatory_disambiguation: bool = False)` — **default False, so the existing default construction path (`engine.py`'s `_build_graphs`) is completely unaffected**; this is an opt-in mode, not a behavior change to production traffic. When `True`: uses the call site's own file as a locality context (same-file/same-directory/import-graph, `ReferenceResolver._locality_score`, unchanged) to narrow an ambiguous callee name to one edge whenever locality actually distinguishes the candidates; when it genuinely can't (no signal, or a real tie), preserves today's exact fan-out-to-every-candidate topology — recall is never sacrificed where there's no evidence to justify narrowing — but now records `resolution_confidence`/`candidates` on the resolved `CallReference` (new `CallGraph.resolved_calls` property) instead of leaving the ambiguity invisible, which is what happens today.
+- `import_graph` threaded into `CallGraph.__init__` (optional, defaults `None`) and wired at its one production call site (`engine.py:271`) — needed for the import-graph locality tier; zero behavior change since `mandatory_disambiguation` stays `False` there.
+
+**Verified via same-process ablation** (this project's own established discipline, applied here for the first time to a resolution change rather than a ranking one): built two `CallGraph`s from identical `calls`/`resolver`/`import_graph`, flag off vs on, one process, two scenarios in the same test (`test_ablation_mandatory_disambiguation_matches_default_topology_except_where_narrowed`). Confirmed exactly what the design predicts: **byte-identical topology** for a genuinely ambiguous name with no locality signal (two same-named symbols in unrelated directories, no import edge) — recall provably unaffected; **narrower topology** (fan-out-to-2 collapses to a single edge) only for a call with a real same-file locality signal, which is the intended, deliberate change.
+
+**Verification**: 987/987 tests (977 prior + 10 new), `ruff`/`mypy` clean. New tests cover: `resolve_tiered` tier reporting, single-candidate confidence tagging (both `EXACT_QUALIFIED` and `SIMPLE_NAME_FALLBACK`), same-file locality narrowing, import-graph locality narrowing, genuine-ambiguity fan-out preservation with `candidates` recorded (deterministically sorted, closing the "deterministic tie-breaking" requirement), and the ablation test above.
+
+**Deliberately not done in this phase**: `mandatory_disambiguation` is not defaulted to `True` anywhere — that's a separate decision (whether ARCF's production call graph should actually narrow ambiguous edges), out of scope for "does the mechanism work correctly," which is what this phase proves. `resolve_with_disambiguation` itself was not modified (no risk to `ContextResolver`, its only existing caller). Real type resolution (Phase 3c) remains explicitly out of scope, per `BLUEPRINT.md`'s own scoping: dynamic-dispatch/interface resolution still isn't attempted, and locality scoring is still a heuristic, not proof — now just an *auditable* one when the flag is on.
+
+**Outcome**: PR to be opened from `arcf-di/feature/phase3-mandatory-disambiguation` into `arcf-di/base`.
+
+**Next**: either Phase 3b (thread ambiguity through `ContextResolutionResult` and consumers) or Phase 4 (structured behavioral records, which only aggregates Phases 1–3's output — no new evidence extraction) per `docs/BLUEPRINT.md`'s build order.

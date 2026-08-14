@@ -268,7 +268,7 @@ class CodeIntelligenceEngine:
         import_graph = ImportGraph(all_imports)
         dependency_graph = DependencyGraph(import_graph)
         inheritance_graph = InheritanceGraph(all_symbols, resolver)
-        call_graph = CallGraph(all_calls, resolver)
+        call_graph = CallGraph(all_calls, resolver, import_graph=import_graph)
         candidate_selector = CandidateFileSelector(
             symbol_index, call_graph, inheritance_graph, dependency_graph
         )
