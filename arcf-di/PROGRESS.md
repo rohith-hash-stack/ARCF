@@ -1,6 +1,6 @@
 # ARCF-DI Progress Log
 
-**Last updated:** 2026-08-14 · **Branch:** `arcf-di/feature/wire-slm-summarizer` (off `arcf-di/base`) · **Tests:** 1090/1090 passing (1085 prior + 5 new — 6 tests added, 1 stray line removed from a bad edit) · **Status:** All 11 blueprint phases shipped and stability-validated (3 rounds of real-repo testing, 3 gaps found and closed, 0 open). Phase 5's `EvidenceConstrainedSummarizer` and Phase 6's `attribute_citations` are now wired into `context/packager.py` — ARCF-DI's SLM-facing/citation layer is live in the production packaging path for the first time, opt-in via new optional parameters.
+**Last updated:** 2026-08-14 · **Branch:** `arcf-di/feature/explainability-benchmark` (off `arcf-di/base`) · **Status:** All 11 blueprint phases shipped and stability-validated. `context/packager.py` wiring merged (PR #16). Explainability benchmark run against real Traefik/Consul/vLLM: citation coverage measured at 94.5–100%, recall confirmed unchanged (as designed — see entry below) — the measured gate the user set before touching `execution/context_goal_composer.py`.
 
 Read this file top-to-bottom to pick up where things stand — the fast-start doc for a new session, same convention as the parent project's `arcf/PROGRESS.md`. Detailed design lives in `arcf-di/docs/BLUEPRINT.md`; this file is the curated *what/when* summary, updated after each phase lands.
 
@@ -326,3 +326,34 @@ On `arcf-di/feature/wire-slm-summarizer` (off `arcf-di/base`). Everything ARCF-D
 **Outcome**: PR to be opened from `arcf-di/feature/wire-slm-summarizer` into `arcf-di/base`.
 
 **Next**: expose the cached `CodeIntelligenceIndex` from `CodeIntelligenceContractService` to `interfaces/api/routes/context_package.py` so the new parameters are actually threaded through in production — the second half of "SLM contexting." Separately, and requiring explicit user sign-off before any code changes (per `BLUEPRINT.md` Phase 0's own boundary contract: "`contracts/` and `execution/` only read [`ContextPackage`/`ContextResolutionResult`]"): `execution/context_goal_composer.py`, which builds the prompt for the one truly unconstrained final-generation LLM call, currently reads only `file_path`/`reason`/`content`/`dependency_chain`/`entry_points` from `ContextPackage` — it does not read `citations`, `ambiguous_evidence_ids`, or the new `behavioral_summaries` at all. Populating those fields here does nothing for the final LLM call's prompt until that file is deliberately changed to include them — a change ARCF-DI's own scope freeze reserves for explicit authorization, not something to drift into.
+
+### 2026-08-14 — Explainability benchmark: real numbers before touching execution/, per the user's revised plan
+
+The user's own risk assessment, before authorizing the `execution/context_goal_composer.py` change: measure "every retrieved artifact explainable by graph traversal" and compare current retrieval vs. ARCF-DI on real benchmark repos — especially the project's own documented vocabulary-mismatch failures (Traefik/Consul/vLLM) — *before* touching execution/, not after.
+
+**Reused, not reinvented**: this project already has an established ground-truth benchmark for exactly this — `arcf/scripts/run_multi_query_diagnosis.py`'s 5-repo x 8-query set (real NL queries with a real target file each), and `entropy_confidence_experiment.py`'s own docstring already labels Traefik/Consul/vLLM "confirmed-wrong" repositories vs. sqlalchemy/django "confirmed right." New script `arcf-di/scripts/measure_retrieval_explainability.py` reuses the exact same query/target pairs for those three repos (copied verbatim, not redrafted) and `pipeline_stage_diagnosis.build_repo_context` to build each repo's real index once.
+
+**What it deliberately does NOT do**: recompute recall as a new ARCF-DI result. `BLUEPRINT.md` Phase 6 explicitly forbids ARCF-DI from adding a second ranking signal ("don't add a second ranking signal without re-running the same ablation discipline that falsified the semantic-reranker experiment") — so ARCF-DI structurally cannot change which files `route_query` (the DRP resolver aimed at this exact vocabulary-mismatch problem) selects. Reporting an "ARCF-DI improved recall" number would misrepresent what was actually measured. What the script freshly measures is the one thing ARCF-DI actually adds on top of whatever `route_query` already decided to retrieve: does every one of those files now carry a real, `attribute_citations`-verified evidence trail, instead of being an opaque "trust me" file?
+
+**Real clones, real repos** (`.benchmark_repos/{consul,traefik,vllm}` — previously empty gitlink placeholders in this checkout, freshly `git clone --depth 1`'d for this run; not committed, see below):
+
+| Repo | Recall (target retrieved — DRP's own number, unaffected by ARCF-DI) | File-level citation coverage across all candidates | Of retrieved targets, target itself carries citations |
+|---|---|---|---|
+| Traefik | 3/8 | 147/147 (100.0%) | 3/3 |
+| Consul | 3/8 | 52/55 (94.5%) | 3/3 |
+| vLLM | 3/8 | 92/97 (94.8%) | 3/3 |
+
+**Honest reading, not spin**:
+- **Recall is unchanged, and confirmed still bad on all three vocabulary-mismatch repos (3/8 each, ~37.5%)** — exactly as `BLUEPRINT.md`'s own rule predicts, since ARCF-DI never touches selection. ARCF-DI does **not** fix vocabulary-mismatch retrieval; that remains DRP's own unsolved problem, out of ARCF-DI's mandate entirely. Anyone taking "ARCF-DI wired in" to mean "vocabulary mismatch is fixed" would be wrong, and this result exists specifically so that claim doesn't get made by accident.
+- **Explainability is the real, measured contribution**: 94.5–100% of every file `route_query` retrieved, across all three historically-hard repos, now carries a verifiable citation trail back to real evidence (imports, calls, external libraries) rather than being unexplained. Every one of the zero-citation files, checked individually (`files_with_zero_citations` in the JSON output), is a real absence of evidence, not an attribution bug — empty or re-export-only `__init__.py` files, a couple of Go test-helper files with no FUNCTION/METHOD symbols and no classified imports. There is genuinely nothing to cite there.
+- **100% of correctly-retrieved targets are explainable** (3/3 on all three repos) — whenever the pipeline does get the right file, ARCF-DI backs it with real evidence every single time, not just usually.
+- **Known limitation of this specific run, stated rather than hidden**: `ambiguous_citation_count` was 0 across all 42 zero-citation-adjacent measurements, because `build_repo_context` builds the index via `CodeIntelligenceEngine.build_index()` with `mandatory_disambiguation` at its default (`False`) — the same flag Phase 3 shipped opt-in and never defaulted on. This run doesn't exercise the ambiguity-surfacing path at all; a follow-up run with the flag on would be needed to measure that axis on these repos specifically (Phase 6's own unit tests already cover the mechanism in isolation).
+- **Minor discrepancy from the prior study, noted rather than smoothed over**: `multi_query_pipeline_diagnosis.json` (an earlier run) recorded Consul's recall as 2/8; this run measured 3/8. Both runs re-clone/re-index from a live GitHub HEAD rather than a pinned snapshot, so a small amount of drift between runs is expected and doesn't change the qualitative finding (Consul retrieval is bad either way).
+
+**Not committed**: `.benchmark_repos/{consul,traefik,vllm}` are gitlinks (mode 160000) in this repo, not real submodule checkouts — cloning real content into them for this run locally overwrote the placeholder and shows as a modified gitlink in `git status`. Left untouched/unstaged deliberately; only the new script and its JSON output (`arcf-di/docs/explainability_benchmark.json`) are part of this PR.
+
+**Verification**: no `arcf/src` changes this round — measurement only, existing 1090/1090 suite unaffected.
+
+**Outcome**: PR to be opened from `arcf-di/feature/explainability-benchmark` into `arcf-di/base`.
+
+**Gate cleared**: per the user's own ordering, the `execution/context_goal_composer.py` change (render `behavioral_summaries`, render `citations`, surface ambiguity warnings, leave `execution/final_generation.py` unconstrained, regression test that the prompt changes only when behavioral summaries exist) proceeds next, on its own branch/PR.
