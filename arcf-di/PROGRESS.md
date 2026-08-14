@@ -1,6 +1,6 @@
 # ARCF-DI Progress Log
 
-**Last updated:** 2026-08-14 · **Branch:** `arcf-di/feature/phase10-boundary-enforcement` (off `arcf-di/base`) · **Tests:** 1068/1068 passing (1066 prior + 2 new) · **Status:** All 11 blueprint phases (0-10) shipped. See this entry's closing summary for what's wired into production vs. built-and-verified-standalone.
+**Last updated:** 2026-08-14 · **Branch:** `arcf-di/feature/real-repo-validation` (off `arcf-di/base`) · **Tests:** 1068/1068 passing, unchanged (validation script, no src/ changes) · **Status:** All 11 blueprint phases (0-10) shipped and now validated against a real codebase, not just unit-test fixtures.
 
 Read this file top-to-bottom to pick up where things stand — the fast-start doc for a new session, same convention as the parent project's `arcf/PROGRESS.md`. Detailed design lives in `arcf-di/docs/BLUEPRINT.md`; this file is the curated *what/when* summary, updated after each phase lands.
 
@@ -224,3 +224,23 @@ On `arcf-di/feature/phase10-boundary-enforcement` (off `arcf-di/base`, Phases 1-
 **Outcome**: PR to be opened from `arcf-di/feature/phase10-boundary-enforcement` into `arcf-di/base`.
 
 **Next**: wiring decisions for Phases 2/5/6/8 into the production pipeline (each a separate, smaller PR in the same style), and/or standing up real CI — both require the user's direction, not further automatic phases.
+
+### 2026-08-14 — Real-repo validation: ARCF-DI run end-to-end against this codebase itself
+
+On `arcf-di/feature/real-repo-validation` (off `arcf-di/base`). Every test through Phase 9 ran against hand-built fixtures (a handful of `Symbol`/`CallReference` objects). This adds `arcf-di/scripts/validate_against_real_repo.py`, which runs the Phase 2→3→4→5→8 chain (classify imports, resolve with mandatory disambiguation, build behavioral records, template-summarize, persist + verify integrity) against a real codebase — self-hosting, targeting `arcf/` itself.
+
+**A real bug, found by testing against real code, not assumed away**: the script's first run scanned `arcf/src` (matching the target CodeIntelligenceEngine actually indexes), which silently excludes `arcf/pyproject.toml` — one directory up. `DependencyManifestParser` found zero declared dependencies, so `LibraryBoundaryClassifier` had nothing to match against and classified every real external import (pydantic, fastapi, litellm, tiktoken, ...) as `UNRESOLVED` instead of `EXTERNAL` — 0 `external`, 155 `unresolved`. Not a classifier bug — a script scoping bug — but exactly the class of thing synthetic fixtures can't surface, since a fixture test never has a real manifest sitting one directory above the scanned root to accidentally miss. Fixed by scanning `arcf/` (the actual project root) instead of `arcf/src`.
+
+**Results after the fix, against `arcf/` (374 files, 0 parse errors):**
+- 2273 symbols, 2046 FUNCTION/METHOD `BehavioralRecord`s built.
+- 19 declared dependencies parsed from the real `pyproject.toml`.
+- Import classification: 1615 `repository`, 135 `external`, 457 `stdlib`, 99 `unresolved`, 0 `unclassified` — a real, sane-looking distribution, not a degenerate all-one-bucket result.
+- 183 of 2046 records carry at least one genuinely unresolved-ambiguous call under `mandatory_disambiguation=True` — real-world confirmation that the `New()`-collision problem this whole project is built around is not a toy scenario: common short method names (`save`, `classify`, `extract`, `get`, `__init__`) collide across dozens of unrelated classes in a real ~2000-function codebase, exactly as Phase 3's design predicted.
+- **Reproducibility check: byte-identical across two independent full runs** — the project's core acceptance criterion, now confirmed on real code at real scale, not just a small synthetic fixture.
+- **Persistence + integrity check: all 2046 records saved and verified clean** via `InMemoryBehavioralRecordStore` + `verify_integrity`.
+
+**Report readability fix, also found by real data**: the first sampling strategy ("show the 5 records with the most direct callees") trivially surfaced `__init__` every time — the single most ambiguous name in any real OO codebase, since every class defines one. Changed to sample clean and ambiguous records separately, and truncate long citation lists for display (the underlying data is untruncated — this is a print-formatting fix, not a data change).
+
+**Scope note**: this script is standalone tooling, not wired into any production code path, same posture as Phases 2/5/6/8 themselves — it demonstrates the modules work correctly together against real input, it doesn't change how `CodeIntelligenceEngine`/`ContextPackager` behave. `_OfflineCostEstimator` (length/4 token estimate) is a script-local workaround for this sandbox's blocked tiktoken download, not a change to the real `CostEstimator`.
+
+**Outcome**: PR to be opened from `arcf-di/feature/real-repo-validation` into `arcf-di/base`. 1068/1068 existing tests unaffected (no `src/` changes, only a new script).
