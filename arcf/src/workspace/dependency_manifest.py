@@ -4,15 +4,24 @@ ProjectStructureAnalyzer's MANIFEST_FILENAMES.
 
 Deliberately narrow scope for this phase: npm (package.json), pip
 (pyproject.toml's [project.dependencies], [dependency-groups] (PEP 735),
-and Poetry's table, plus requirements.txt), and go (go.mod). Extending
-to another ecosystem (Java/Maven, C#/NuGet, Kotlin/
+Poetry's classic table and native [tool.poetry.group.*.dependencies]
+tables, setup.cfg's [options] install_requires/[options.extras_require],
+setup.py's literal install_requires/extras_require keyword arguments to
+setup(), and requirements.txt), and go (go.mod). Extending to another
+ecosystem (Java/Maven, C#/NuGet, Kotlin/
 Gradle, Rust/Cargo) means adding one more `_parse_*` method and a filename
 branch in `parse()` — nothing else in ARCF-DI's boundary classifier needs
 to change, since it only ever consumes the resulting DeclaredDependency
 list, never a manifest format directly. An import in a language this
 parser has no manifest support for is left for LibraryBoundaryClassifier
 to record as UNRESOLVED — never guessed at as EXTERNAL from an unparsed
-manifest.
+manifest. Same discipline applies within a supported format: setup.py's
+install_requires/extras_require are only read when they're literal
+list/tuple-of-string-constants in the source — a value built from a
+variable, a file read, or any other computed expression is skipped
+rather than guessed at, since evaluating arbitrary setup.py code is both
+unsafe and, for a value that isn't a literal, not actually evidence of
+anything until it's actually run.
 
 Deliberate, self-contained duplication of FrameworkDetector's own
 manifest-reading pattern (PermissionManager.safe_read_text, json/tomllib
@@ -25,6 +34,8 @@ use for. A future consolidation of the two shared read/parse helpers is a
 reasonable follow-up, not done here to keep this phase additive-only.
 """
 
+import ast
+import configparser
 import json
 import re
 import tomllib
@@ -64,6 +75,79 @@ def _npm_top_level(module_path: str) -> str:
     return parts[0]
 
 
+def _parse_poetry_dep_dict(
+    entries: dict[str, object], raw_text: str, relative_path: str, seen: set[str]
+) -> list[DeclaredDependency]:
+    """Shared dict-shaped parser for both [tool.poetry.dependencies] and
+    each [tool.poetry.group.<name>.dependencies] table -- same {name:
+    spec} shape either way, where spec is a bare version string or a
+    {version = "...", extras = [...]} table."""
+    results: list[DeclaredDependency] = []
+    for name, spec in entries.items():
+        lowered = name.lower()
+        if lowered in seen:
+            continue
+        seen.add(lowered)
+        version: str | None
+        if isinstance(spec, str):
+            version = spec
+        elif isinstance(spec, dict):
+            version = spec.get("version")
+        else:
+            version = None
+        results.append(
+            DeclaredDependency(
+                name=lowered,
+                ecosystem="pip",
+                version_spec=version,
+                manifest_location=_locate_toml_dict_key_line(raw_text, name, relative_path),
+            )
+        )
+    return results
+
+
+def _is_setup_call(node: ast.Call) -> bool:
+    func = node.func
+    if isinstance(func, ast.Name):
+        return func.id == "setup"
+    if isinstance(func, ast.Attribute):
+        return func.attr == "setup"
+    return False
+
+
+def _extract_setup_py_string_list(
+    node: ast.expr | None, relative_path: str, seen: set[str]
+) -> list[DeclaredDependency]:
+    """Reads a setup()/extras_require keyword's value only when it's a
+    literal list/tuple of string constants -- the only shape that's
+    actually evidence without executing the file. A value assembled from
+    a variable, a file read, string concatenation, or anything else
+    computed is skipped entirely rather than guessed at."""
+    if not isinstance(node, (ast.List, ast.Tuple)):
+        return []
+    results: list[DeclaredDependency] = []
+    for element in node.elts:
+        if not (isinstance(element, ast.Constant) and isinstance(element.value, str)):
+            continue
+        name, version = _pip_name(element.value)
+        if not name or name in seen:
+            continue
+        seen.add(name)
+        results.append(
+            DeclaredDependency(
+                name=name,
+                ecosystem="pip",
+                version_spec=version,
+                manifest_location=SourceLocation(
+                    file_path=relative_path,
+                    start_line=element.lineno,
+                    end_line=getattr(element, "end_lineno", None) or element.lineno,
+                ),
+            )
+        )
+    return results
+
+
 class DependencyManifestParser:
     def __init__(self, permissions: PermissionManager) -> None:
         self._permissions = permissions
@@ -78,6 +162,10 @@ class DependencyManifestParser:
                 dependencies += self._parse_pyproject_toml(file.relative_path)
             elif filename in ("requirements.txt", "requirements-dev.txt"):
                 dependencies += self._parse_requirements_txt(file.relative_path)
+            elif filename == "setup.cfg":
+                dependencies += self._parse_setup_cfg(file.relative_path)
+            elif filename == "setup.py":
+                dependencies += self._parse_setup_py(file.relative_path)
             elif filename == "go.mod":
                 dependencies += self._parse_go_mod(file.relative_path)
         # ecosystem then name: deterministic regardless of scan order, and
@@ -163,28 +251,29 @@ class DependencyManifestParser:
                     )
                 )
 
-        poetry_deps = data.get("tool", {}).get("poetry", {}).get("dependencies", {})
+        poetry_section = data.get("tool", {}).get("poetry", {})
+
+        poetry_deps = poetry_section.get("dependencies", {})
         if isinstance(poetry_deps, dict):
-            for name, spec in poetry_deps.items():
-                lowered = name.lower()
-                if lowered in seen:
+            results += _parse_poetry_dep_dict(poetry_deps, raw_text, relative_path, seen)
+
+        # Poetry's own native grouped-dependencies syntax --
+        # [tool.poetry.group.<name>.dependencies] -- is a second,
+        # distinct table shape from both [tool.poetry.dependencies]
+        # above and PEP 735's [dependency-groups]: each group is a
+        # dict-of-dicts (group name -> {"dependencies": {pkg: spec}}),
+        # not a list of requirement strings, so it needs the dict-shaped
+        # parser here rather than the list-shaped one used for
+        # dependency-groups.
+        poetry_groups = poetry_section.get("group", {})
+        if isinstance(poetry_groups, dict):
+            for group in poetry_groups.values():
+                if not isinstance(group, dict):
                     continue
-                seen.add(lowered)
-                poetry_version: str | None
-                if isinstance(spec, str):
-                    poetry_version = spec
-                elif isinstance(spec, dict):
-                    poetry_version = spec.get("version")
-                else:
-                    poetry_version = None
-                results.append(
-                    DeclaredDependency(
-                        name=lowered,
-                        ecosystem="pip",
-                        version_spec=poetry_version,
-                        manifest_location=_locate_key_line(raw_text, name, relative_path),
-                    )
-                )
+                group_deps = group.get("dependencies", {})
+                if isinstance(group_deps, dict):
+                    results += _parse_poetry_dep_dict(group_deps, raw_text, relative_path, seen)
+
         return results
 
     def _parse_requirements_txt(self, relative_path: str) -> list[DeclaredDependency]:
@@ -213,6 +302,61 @@ class DependencyManifestParser:
                     ),
                 )
             )
+        return results
+
+    def _parse_setup_cfg(self, relative_path: str) -> list[DeclaredDependency]:
+        try:
+            raw_text = self._permissions.safe_read_text(relative_path)
+            parser = configparser.ConfigParser()
+            parser.read_string(raw_text)
+        except (OSError, ValueError, WorkspacePathError, configparser.Error):
+            return []
+
+        entries: list[str] = []
+        if parser.has_option("options", "install_requires"):
+            entries += parser.get("options", "install_requires").splitlines()
+        if parser.has_section("options.extras_require"):
+            for _extra_name, value in parser.items("options.extras_require"):
+                entries += value.splitlines()
+
+        results: list[DeclaredDependency] = []
+        seen: set[str] = set()
+        for raw_entry in entries:
+            entry = raw_entry.strip()
+            if not entry or entry.startswith("#"):
+                continue
+            name, version = _pip_name(entry)
+            if not name or name in seen:
+                continue
+            seen.add(name)
+            results.append(
+                DeclaredDependency(
+                    name=name,
+                    ecosystem="pip",
+                    version_spec=version,
+                    manifest_location=_locate_bare_text_line(raw_text, entry, relative_path),
+                )
+            )
+        return results
+
+    def _parse_setup_py(self, relative_path: str) -> list[DeclaredDependency]:
+        try:
+            raw_text = self._permissions.safe_read_text(relative_path)
+            tree = ast.parse(raw_text)
+        except (OSError, ValueError, WorkspacePathError, SyntaxError):
+            return []
+
+        results: list[DeclaredDependency] = []
+        seen: set[str] = set()
+        for node in ast.walk(tree):
+            if not (isinstance(node, ast.Call) and _is_setup_call(node)):
+                continue
+            for keyword in node.keywords:
+                if keyword.arg == "install_requires":
+                    results += _extract_setup_py_string_list(keyword.value, relative_path, seen)
+                elif keyword.arg == "extras_require" and isinstance(keyword.value, ast.Dict):
+                    for value_node in keyword.value.values:
+                        results += _extract_setup_py_string_list(value_node, relative_path, seen)
         return results
 
     def _parse_go_mod(self, relative_path: str) -> list[DeclaredDependency]:
@@ -291,5 +435,30 @@ def _locate_list_entry_line(raw_text: str, entry: str, file_path: str) -> Source
     needle = f'"{entry}"'
     for line_number, line in enumerate(raw_text.splitlines(), start=1):
         if needle in line:
+            return SourceLocation(file_path=file_path, start_line=line_number, end_line=line_number)
+    return SourceLocation(file_path=file_path, start_line=1, end_line=1)
+
+
+def _locate_toml_dict_key_line(raw_text: str, key: str, file_path: str) -> SourceLocation:
+    """Line lookup for a TOML dict-table entry (`[tool.poetry.dependencies]`
+    / `[tool.poetry.group.*.dependencies]`), where the key is a bare,
+    unquoted identifier on its own line (`requests = "^2.28.0"`) --
+    unlike `_locate_key_line`'s quoted-substring search, which never
+    matches this shape at all and would silently fall back to line 1 for
+    every entry."""
+    pattern = re.compile(rf'^\s*"?{re.escape(key)}"?\s*=')
+    for line_number, line in enumerate(raw_text.splitlines(), start=1):
+        if pattern.match(line):
+            return SourceLocation(file_path=file_path, start_line=line_number, end_line=line_number)
+    return SourceLocation(file_path=file_path, start_line=1, end_line=1)
+
+
+def _locate_bare_text_line(raw_text: str, entry: str, file_path: str) -> SourceLocation:
+    """Line lookup for a setup.cfg list entry (`install_requires`/
+    `extras_require` values are plain, unquoted lines once configparser
+    strips the section's shared indentation) -- a direct substring
+    search, no quoting, since setup.cfg's INI format never quotes these."""
+    for line_number, line in enumerate(raw_text.splitlines(), start=1):
+        if entry in line:
             return SourceLocation(file_path=file_path, start_line=line_number, end_line=line_number)
     return SourceLocation(file_path=file_path, start_line=1, end_line=1)

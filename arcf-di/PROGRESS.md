@@ -1,6 +1,6 @@
 # ARCF-DI Progress Log
 
-**Last updated:** 2026-08-14 · **Branch:** `arcf-di/real-repo-validation-round2` (off `arcf-di/base`) · **Tests:** 1073/1073 passing (no `src/` changes this round) · **Status:** All 11 blueprint phases shipped; four-repo stability sweep confirms core determinism/reproducibility/integrity hold broadly, and surfaces two more manifest-format gaps (Poetry-native dependency groups, and no `pyproject.toml` at all) that remain open pending a fix decision.
+**Last updated:** 2026-08-14 · **Branch:** `arcf-di/feature/poetry-groups-and-setup-cfg` (off `arcf-di/base`) · **Tests:** 1085/1085 passing (1073 prior + 12 new) · **Status:** All 11 blueprint phases shipped; four-repo stability sweep confirmed core determinism/reproducibility/integrity, and both gaps it surfaced (Poetry-native dependency groups, setup.cfg/setup.py with no `pyproject.toml`) are now fixed and re-verified against the same real repos.
 
 Read this file top-to-bottom to pick up where things stand — the fast-start doc for a new session, same convention as the parent project's `arcf/PROGRESS.md`. Detailed design lives in `arcf-di/docs/BLUEPRINT.md`; this file is the curated *what/when* summary, updated after each phase lands.
 
@@ -283,4 +283,25 @@ Per the user's request to check broader stability before moving on to SLM contex
 
 **Scope note**: no `arcf/src` changes on this branch — this entry documents findings only, same "report first" posture used before the click fix was authorized. Existing 1073/1073 suite unaffected.
 
-**Outcome**: PR to be opened from `arcf-di/real-repo-validation-round2` into `arcf-di/base` (docs-only). Fix decision for the two new gaps above is pending user direction.
+**Outcome**: PR opened from `arcf-di/real-repo-validation-round2` into `arcf-di/base` (docs-only), merged as PR #14.
+
+### 2026-08-14 — Both round-2 gaps closed: Poetry-native groups + setup.cfg/setup.py support
+
+On `arcf-di/feature/poetry-groups-and-setup-cfg` (off `arcf-di/base`). Fixes the two gaps the stability sweep above surfaced, same "fix now" instruction as the PEP 735 gap.
+
+**`workspace/dependency_manifest.py` changes:**
+- `[tool.poetry.group.<name>.dependencies]` — Poetry's native grouped-dependencies syntax, a dict-of-dicts (`group name -> {"dependencies": {pkg: spec}}`), distinct from both the classic `[tool.poetry.dependencies]` table and PEP 735's `[dependency-groups]` (a list-of-strings shape). `_parse_pyproject_toml`'s dict-shaped parsing (previously inlined just for the classic table) was factored into a shared `_parse_poetry_dep_dict` helper, now called once for `[tool.poetry.dependencies]` and once per `[tool.poetry.group.*.dependencies]` table, deduping across all of them via the same `seen` set already threaded through the rest of the method.
+- **A latent, adjacent bug fixed while doing this**: the classic Poetry table's `manifest_location` was routed through `_locate_key_line`, which searches for a *quoted* substring (`"requests"`) — but Poetry's TOML dict keys are bare, unquoted identifiers (`requests = "^2.28.0"`), so that quoted needle never matched and every Poetry-table dependency's location silently fell back to line 1, same failure shape (and same unnoticed-because-untested status — no prior test checked `manifest_location` for the Poetry table) as the `[project.dependencies]` bug fixed last round. New `_locate_toml_dict_key_line` matches the bare-key-followed-by-`=` shape correctly instead, and now backs both the classic table and the new group tables.
+- `setup.cfg`'s `[options] install_requires` and `[options.extras_require]` — parsed via `configparser`, each value split into its newline-delimited entries (the standard setuptools declarative-config shape) and run through the same `_pip_name` helper as `requirements.txt`.
+- `setup.py`'s `install_requires=[...]` / `extras_require={...}` keyword arguments to a `setup(...)` call — parsed via `ast`, and **only when the value is a literal list/tuple of string constants**. A value built from a variable, a file read (httpie's own real pattern for other metadata), or any other computed expression is skipped outright rather than guessed at or evaluated — evaluating arbitrary `setup.py` code to resolve it would be both unsafe and, for a non-literal, not actually evidence of anything until it's actually run. Location for these uses the AST node's own `lineno`/`end_lineno` directly — more precise than every other format's raw-text line-search helpers, since Python's own parser already knows the exact line.
+
+**Verified against the same real clones the gaps were found in, not just new fixtures:**
+- `python-poetry/poetry`: `declared_dependencies` 181 → 208, `external` 572 → 747, `unresolved` 650 → 475.
+- `httpie/httpie`: `declared_dependencies` 0 → 27, `external` 0 → 118, `unresolved` 141 → 23.
+- Both re-runs: 0 parse errors, byte-identical across two independent runs, `verify_integrity` clean.
+
+**Verification**: 1085/1085 tests (1073 prior + 12 new), `ruff` clean, `mypy` clean on the changed file (two pre-existing, unrelated `mypy` errors in `code_intelligence/locality.py` and `code_intelligence/drp/taxonomy.py` predate this branch and aren't touched by it). New tests cover: Poetry group parsing, cross-group dedup, dedup against the classic table, the location fix; `setup.cfg` `install_requires`/`extras_require` parsing, its location fix, the no-`[options]`-section case; `setup.py` literal-list extraction (`install_requires` and `extras_require`), the non-literal-value skip (proving no guessing), the real httpie shape of an empty `setup()` call, and AST-line-number-based location.
+
+**Outcome**: PR to be opened from `arcf-di/feature/poetry-groups-and-setup-cfg` into `arcf-di/base`.
+
+**Where things stand overall**: three rounds of real-repo validation (self-hosting on `arcf/`, `pallets/click`, then `requests`/`typer`/`poetry`/`httpie`) have found and closed three real manifest-parsing gaps (PEP 735 groups, Poetry-native groups, setup.cfg/setup.py), on top of confirming the core determinism/reproducibility/integrity guarantees hold at real-world scale and complexity every time. No known open gaps as of this entry. `arcf-di/scripts/validate_against_real_repo.py` remains standalone tooling, not wired into any production path — same posture as Phases 2/5/6/8's own modules it exercises.
