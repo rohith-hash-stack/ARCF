@@ -1,6 +1,6 @@
 # ARCF-DI Progress Log
 
-**Last updated:** 2026-08-14 · **Branch:** `arcf-di/feature/dependency-groups-support` (off `arcf-di/base`) · **Tests:** 1073/1073 passing (1068 prior + 5 new) · **Status:** All 11 blueprint phases shipped; second real-repo validation run (`pallets/click`) surfaced and closed a real manifest-parsing gap (PEP 735 `dependency-groups`).
+**Last updated:** 2026-08-14 · **Branch:** `arcf-di/real-repo-validation-round2` (off `arcf-di/base`) · **Tests:** 1073/1073 passing (no `src/` changes this round) · **Status:** All 11 blueprint phases shipped; four-repo stability sweep confirms core determinism/reproducibility/integrity hold broadly, and surfaces two more manifest-format gaps (Poetry-native dependency groups, and no `pyproject.toml` at all) that remain open pending a fix decision.
 
 Read this file top-to-bottom to pick up where things stand — the fast-start doc for a new session, same convention as the parent project's `arcf/PROGRESS.md`. Detailed design lives in `arcf-di/docs/BLUEPRINT.md`; this file is the curated *what/when* summary, updated after each phase lands.
 
@@ -262,3 +262,25 @@ Cloned a genuinely unrelated open-source project (`pallets/click`, not touched b
 **Verification**: 1073/1073 tests (1068 prior + 5 new), `ruff`/`mypy` clean. New tests cover: basic `dependency-groups` parsing, `include-group` references correctly skipped rather than guessed at, combination with `[project.dependencies]` in the same file, same-name dedup across groups, and the `[project.dependencies]` line-location fix specifically.
 
 **Outcome**: PR to be opened from `arcf-di/feature/dependency-groups-support` into `arcf-di/base`.
+
+### 2026-08-14 — Stability sweep: four more real repos, no code changes, two new gaps surfaced honestly
+
+Per the user's request to check broader stability before moving on to SLM contexting, ran `validate_against_real_repo.py` against four fresh clones chosen deliberately for manifest-format diversity, none touched by any prior test:
+
+| Repo | Files | Symbols | Declared deps | repository / external / stdlib / unresolved | Reproducible | Integrity clean |
+|---|---|---|---|---|---|---|
+| `psf/requests` | 128 | 807 | 24 | 170 / 66 / 196 / 22 | Yes | Yes |
+| `tiangolo/typer` | 773 | 2430 | 28 | 827 / 143 / 1083 / 14 | Yes | Yes |
+| `python-poetry/poetry` | 1003 | 3631 | 181 | 1492 / 572 / 1223 / 650 | Yes | Yes |
+| `httpie/httpie` | 265 | 1242 | 0 | 379 / 0 / 518 / 141 | Yes | Yes |
+
+**Core guarantees held on every repo, zero exceptions**: 0 parse errors, byte-identical output across two independent runs, and a clean `verify_integrity` pass, on all four — including `poetry`, the largest and most structurally complex repo tested so far (1003 files, 181 declared dependencies). This is the stability signal the sweep was run to get: the determinism/reproducibility/integrity core is not fragile to real-world scale or structure.
+
+**Two more gaps found, same "test against real code, don't assume" discipline as the click finding — reported here, not silently fixed:**
+
+1. **`python-poetry/poetry`'s own `unresolved: 650` is inflated by a still-unsupported manifest dialect.** `poetry`'s `pyproject.toml` declares most of its dependencies via Poetry's *native* grouped syntax — `[tool.poetry.group.dev.dependencies]`, `[tool.poetry.group.test.dependencies]`, `[tool.poetry.group.typing.dependencies]`, `[tool.poetry.group.github-actions]` — which is a different table shape from both `[tool.poetry.dependencies]` (already supported) and PEP 735's `[dependency-groups]` (just added). `DependencyManifestParser` doesn't read `[tool.poetry.group.*]` at all, so every package declared only there is invisible to `LibraryBoundaryClassifier`, and real imports of those packages fall through to `UNRESOLVED` instead of `EXTERNAL` — the same failure shape as the click finding, different table.
+2. **`httpie/httpie` has no `pyproject.toml` at all** (confirmed: only `setup.py` and `setup.cfg` at the repo root) — `declared_dependencies: 0` is correct given the input, not a bug, but it means `DependencyManifestParser` has no ecosystem support for `setup.py`/`setup.cfg`-declared dependencies whatsoever, so every real external import in an unmodernized-but-still-very-real Python project like httpie is unclassifiable by manifest (`external: 0` despite httpie certainly having real runtime dependencies).
+
+**Scope note**: no `arcf/src` changes on this branch — this entry documents findings only, same "report first" posture used before the click fix was authorized. Existing 1073/1073 suite unaffected.
+
+**Outcome**: PR to be opened from `arcf-di/real-repo-validation-round2` into `arcf-di/base` (docs-only). Fix decision for the two new gaps above is pending user direction.
