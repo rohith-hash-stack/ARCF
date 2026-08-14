@@ -27,6 +27,28 @@ def test_falls_back_to_simple_name() -> None:
     assert resolver.resolve("authenticate") == [symbol]
 
 
+def test_resolve_tiered_reports_exact_qualified_match() -> None:
+    symbol = _symbol("authenticate", SymbolKind.METHOD, "AuthService.authenticate")
+    resolver = ReferenceResolver(SymbolIndex([symbol]))
+    tier = resolver.resolve_tiered("AuthService.authenticate")
+    assert tier.candidates == [symbol]
+    assert tier.used_simple_name_fallback is False
+
+
+def test_resolve_tiered_reports_simple_name_fallback() -> None:
+    symbol = _symbol("authenticate", SymbolKind.METHOD, "AuthService.authenticate")
+    resolver = ReferenceResolver(SymbolIndex([symbol]))
+    tier = resolver.resolve_tiered("authenticate")
+    assert tier.candidates == [symbol]
+    assert tier.used_simple_name_fallback is True
+
+
+def test_resolve_is_defined_in_terms_of_resolve_tiered() -> None:
+    symbol = _symbol("authenticate", SymbolKind.METHOD, "AuthService.authenticate")
+    resolver = ReferenceResolver(SymbolIndex([symbol]))
+    assert resolver.resolve("authenticate") == resolver.resolve_tiered("authenticate").candidates
+
+
 def test_returns_multiple_ambiguous_candidates() -> None:
     # Neither qualified_name equals the bare "helper" being resolved, so the
     # exact-match tier misses for both and the simple-name fallback finds both.

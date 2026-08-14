@@ -55,6 +55,15 @@ candidates from the phrase's own tokens, tried in that order until one
 resolves. Real example this fixes: SLM-1 extracting "New function"
 where `resolve("New function")` finds nothing, but `resolve("New")`
 (one of the generated candidates) finds the real symbol.
+
+ARCF-DI Phase 3: `resolve_tiered` is a new, additive method `resolve()`
+is now defined in terms of (identical behavior, identical signature —
+every existing caller of `resolve()` is unaffected) that also reports
+whether the simple-name fallback tier was used. It exists so CallGraph's
+opt-in `mandatory_disambiguation` mode (see call_graph.py) can tag each
+CallReference's resolution_confidence honestly — this module's own
+`resolve_with_disambiguation` is untouched, so ContextResolver's existing
+behavior is unaffected too.
 """
 
 import re
@@ -119,6 +128,20 @@ def _permutation_candidates(raw_name: str) -> list[str]:
 
 
 @dataclass(frozen=True)
+class ResolutionTier:
+    """ARCF-DI Phase 3: which of `resolve()`'s two internal attempts
+    actually produced `candidates` — exact-qualified-name match, or the
+    simple-name fallback. `resolve()` itself stays unchanged (still
+    returns just the candidate list, every existing caller untouched);
+    this is purely additive so CallGraph's mandatory-disambiguation path
+    can tag CallReference.resolution_confidence honestly instead of
+    guessing which tier matched from the outside."""
+
+    candidates: list[Symbol]
+    used_simple_name_fallback: bool
+
+
+@dataclass(frozen=True)
 class DisambiguationResult:
     resolved: list[Symbol]
     """Every candidate symbol matching the name (post kind-filter and
@@ -155,13 +178,25 @@ class ReferenceResolver:
         self._symbol_index = symbol_index
 
     def resolve(self, raw_name: str, kinds: tuple[SymbolKind, ...] | None = None) -> list[Symbol]:
+        return self.resolve_tiered(raw_name, kinds=kinds).candidates
+
+    def resolve_tiered(
+        self, raw_name: str, kinds: tuple[SymbolKind, ...] | None = None
+    ) -> ResolutionTier:
+        """Same resolution as `resolve()`, plus which tier produced the
+        result. `resolve()` is defined in terms of this method, not the
+        other way around, so there is exactly one place this logic lives."""
         candidates = self._symbol_index.find_by_qualified_name(raw_name)
+        used_simple_name_fallback = False
         if not candidates:
             simple_name = raw_name.rsplit(".", 1)[-1]
             candidates = self._symbol_index.find_by_name(simple_name)
+            used_simple_name_fallback = True
         if kinds is not None:
             candidates = [candidate for candidate in candidates if candidate.kind in kinds]
-        return candidates
+        return ResolutionTier(
+            candidates=candidates, used_simple_name_fallback=used_simple_name_fallback
+        )
 
     def resolve_with_disambiguation(
         self,
