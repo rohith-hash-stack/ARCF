@@ -1,6 +1,6 @@
 # ARCF-DI Progress Log
 
-**Last updated:** 2026-08-14 · **Branch:** `arcf-di/feature/phase3-mandatory-disambiguation` (off `arcf-di/base`) · **Tests:** 987/987 passing (977 prior + 10 new) · **Status:** Phase 3a (mandatory disambiguation, opt-in) shipped.
+**Last updated:** 2026-08-14 · **Branch:** `arcf-di/feature/phase4-behavioral-records` (off `arcf-di/base`) · **Tests:** 998/998 passing (987 prior + 11 new) · **Status:** Phase 4 (structured behavioral records) shipped. Phases 5-10 in progress, proceeding automatically per user instruction.
 
 Read this file top-to-bottom to pick up where things stand — the fast-start doc for a new session, same convention as the parent project's `arcf/PROGRESS.md`. Detailed design lives in `arcf-di/docs/BLUEPRINT.md`; this file is the curated *what/when* summary, updated after each phase lands.
 
@@ -80,3 +80,20 @@ On `arcf-di/feature/phase3-mandatory-disambiguation` (off `arcf-di/base`, both P
 **Outcome**: PR to be opened from `arcf-di/feature/phase3-mandatory-disambiguation` into `arcf-di/base`.
 
 **Next**: either Phase 3b (thread ambiguity through `ContextResolutionResult` and consumers) or Phase 4 (structured behavioral records, which only aggregates Phases 1–3's output — no new evidence extraction) per `docs/BLUEPRINT.md`'s build order.
+
+### 2026-08-14 — Shipped: Phase 4 (structured behavioral records)
+
+On `arcf-di/feature/phase4-behavioral-records` (off `arcf-di/base`, Phases 1-3a all merged). Pure aggregation, as `BLUEPRINT.md` scoped it — zero new evidence extraction, every field read from `SymbolIndex`/`CallGraph`/`FileAnalysis`.
+
+**What landed:**
+- `domain/behavioral_record.py` — `BehavioralRecord` and its component types (`TransitiveCallee`, `AmbiguousCall`, `RecordComplexity`, `DependencyDepth`), a new domain file rather than an addition to `domain/code_intelligence.py`, mirroring how `context_resolution.py`/`context_package.py` already sit alongside it as separate "built from the IR, not part of it" files.
+- `code_intelligence/behavioral_record.py` — `BehavioralRecordBuilder`, one per-symbol record for every repository-defined FUNCTION/METHOD. Takes explicit components (`SymbolIndex`, `CallGraph`, per-file `FileAnalysis`), not the whole `CodeIntelligenceIndex` — `index.py`'s own docstring restricts index references to itself and `context_resolver.py`; this keeps that boundary intact.
+- Two honest deviations from `BLUEPRINT.md`'s idealized schema, each documented on the field itself rather than silently smoothed over: `file_import_ids`/`external_libraries_used` are **file-scoped, not body-scoped** (no analyzer tracks which imports a specific function body actually references — that's real future work, not implemented here); `complexity` has **no cyclomatic-complexity field** (no branch/loop-counting analyzer exists in this codebase, and fabricating one would be exactly the kind of unevidenced number the core rule forbids) — only structural `line_count`/`direct_call_count`, both directly counted, not estimated.
+- `ambiguous_calls` surfaces Phase 3's audit trail directly on the record it concerns, plus a new `disambiguation_aware: bool` flag — added specifically because an empty `ambiguous_calls` list is ambiguous on its own (built from a `mandatory_disambiguation=True` graph and genuinely clean, vs. built from the default graph where disambiguation never ran at all). `disambiguation_aware` is derived automatically from whether any `resolved_call` in the given `CallGraph` actually carries a `resolution_confidence`, so it can't drift out of sync with which graph was actually passed in.
+- `dependency_depth` reuses `CallGraph.transitive_callee_symbols_of`'s existing cycle-safe, deterministic-tie-break traversal directly (`max_indirect_hops`, default 5) — no new traversal logic written, and `truncated=True` exactly when the deepest hop found equals the bound, so a caller can tell "no more callees" from "there might be more beyond here."
+
+**Verification**: 998/998 tests (987 prior + 11 new), `ruff`/`mypy` clean. Tests cover: non-callable symbols correctly excluded, structural complexity counts, direct/indirect callee and caller aggregation, depth bounding and truncation flagging, the `disambiguation_aware` distinction in both directions, file-scoped import/external-library aggregation (and its `"unknown"` language / empty-list fallback when no `FileAnalysis` exists for a file), deterministic `build_all` ordering, and a same-process reproducibility check (`test_build_all_deterministic_across_independent_builders`) matching the project's core acceptance test.
+
+**Outcome**: PR to be opened from `arcf-di/feature/phase4-behavioral-records` into `arcf-di/base`.
+
+**Next**: Phase 5 (evidence-constrained summarization) — the highest-risk phase, per `BLUEPRINT.md`. `BehavioralRecord` built here is exactly the input Phase 5's template-first renderer consumes.
