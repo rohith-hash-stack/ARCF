@@ -1,6 +1,6 @@
 # ARCF-DI Progress Log
 
-**Last updated:** 2026-08-14 · **Branch:** `arcf-di/feature/phase8-persistent-index` (off `arcf-di/base`) · **Tests:** 1059/1059 passing (1042 prior + 17 new) · **Status:** Phase 8 (persistence for BehavioralRecord) shipped, partial scope. Phases 9-10 in progress, proceeding automatically per user instruction.
+**Last updated:** 2026-08-14 · **Branch:** `arcf-di/feature/phase9-validation-suite` (off `arcf-di/base`) · **Tests:** 1066/1066 passing (1059 prior + 7 new) · **Status:** Phase 9 (validation framework) shipped. Phase 10 remaining, proceeding automatically per user instruction.
 
 Read this file top-to-bottom to pick up where things stand — the fast-start doc for a new session, same convention as the parent project's `arcf/PROGRESS.md`. Detailed design lives in `arcf-di/docs/BLUEPRINT.md`; this file is the curated *what/when* summary, updated after each phase lands.
 
@@ -171,3 +171,27 @@ On `arcf-di/feature/phase8-persistent-index` (off `arcf-di/base`, Phases 1-7 all
 **Outcome**: PR to be opened from `arcf-di/feature/phase8-persistent-index` into `arcf-di/base`.
 
 **Next**: Phase 9 (validation framework) — much of the reproducibility/determinism suite already exists piecemeal (one test per phase); Phase 9's job is consolidating that into an explicit, named benchmark suite per `BLUEPRINT.md`'s own test-class breakdown.
+
+### 2026-08-14 — Shipped: Phase 9 (validation framework)
+
+On `arcf-di/feature/phase9-validation-suite` (off `arcf-di/base`, Phases 1-8 all merged). Most of `BLUEPRINT.md` Phase 9's test classes already existed, one per phase that introduced the property being checked — this phase's real job was adding what only makes sense once multiple phases are combined (new tests in `tests/code_intelligence/test_determinism_suite.py`), and writing down the mapping so the coverage is traceable rather than scattered and implicit.
+
+**Traceability — `BLUEPRINT.md` Phase 9's test classes, mapped to what actually satisfies each one:**
+
+| Test class | Pre-existing coverage (per phase) | New in Phase 9 |
+|---|---|---|
+| Reproducibility across runs | Phase 1 (`id` reproducibility), Phase 2 (classification byte-identity), Phase 4/5/6/7/8 (each phase's own same-process reproducibility test) | `test_full_pipeline_byte_identical_across_independent_runs`, `test_full_pipeline_including_summaries_byte_identical` — the Phase 3→4→5 chain combined, not one phase in isolation |
+| Graph stability | Phase 3's same-process ablation (`test_ablation_mandatory_disambiguation_matches_default_topology_except_where_narrowed`), Phase 3/7 cycle-termination tests | — (existing coverage judged sufficient) |
+| Summary stability | Phase 5's `render_template`/`verify_and_extract`/SLM-path determinism tests | Covered transitively by the full-pipeline tests above |
+| Retrieval stability | Pre-ARCF-DI `test_ranking_is_deterministic` (already in `arcf/tests`), Phase 6's input-order-preservation and reproducibility tests | — (existing coverage judged sufficient) |
+| Ambiguity handling | Phase 1 (`candidates` preservation), Phase 3 (narrowing vs. fan-out-preservation), Phase 4 (`disambiguation_aware`), Phase 6 (`ambiguous_evidence_ids`) | `test_ambiguous_call_survives_from_resolution_through_summary` — traces a real name collision (the documented `New()`-collision shape) from `CallGraph` resolution through `BehavioralRecord.ambiguous_calls` into the final rendered summary, confirming it's never silently lost at any hop |
+| Library-boundary correctness | Phase 2's full `test_dependency_manifest.py`/`test_library_boundary.py` suites (per-ecosystem parsing, "never guesses external" test) | `test_classified_external_import_reaches_the_behavioral_record` — Phase 2's classification actually reaching Phase 4's `external_libraries_used`, a cross-phase check neither phase's own suite exercised |
+| Citation integrity | Phase 5's golden accept/reject example pairs (specific fixtures) | `test_every_template_citation_is_a_real_evidence_id_on_its_own_record` — the general invariant (every citation `render_template` ever produces is a member of that record's own `citable_evidence_ids`) checked across a range of records, not one hand-picked example |
+
+**Also new**: `test_persisted_records_pass_integrity_check_against_the_same_pipeline` — the first test exercising Phase 8's `verify_integrity` against records that actually came from a real (small) pipeline run, rather than hand-constructed fixtures built to already agree.
+
+**Verification**: 1066/1066 tests (1059 prior + 7 new — all 7 in the new consolidated suite, `ruff` clean). All 7 passed on first run, which is itself a meaningful confirmation: it means Phases 1-8, built and verified independently across separate PRs, actually compose correctly when run together as one pipeline — not something any single phase's own isolated tests could have shown.
+
+**Outcome**: PR to be opened from `arcf-di/feature/phase9-validation-suite` into `arcf-di/base`.
+
+**Next**: Phase 10 (migration boundary enforcement) — the last phase: classify every module (keep/modify/replace/isolate, largely already done implicitly by which files this project has and hasn't touched across Phases 1-9) and add the CI import-lint enforcing Phase 0's scope freeze.
