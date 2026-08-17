@@ -92,6 +92,54 @@ _CONSTRUCTOR_MATCHES_CLASS_NAME_LANGUAGES = frozenset({"java", "csharp"})
 # match.
 _MAX_CANDIDATES_TO_EXPAND = 5
 
+# Architecture closure (2026-08-17, G16 follow-up -- adversarial
+# re-verification found the original G16 fix only bounded
+# _expand_subclasses's candidate-FILE loop; a second loop, over
+# inheritance_graph.all_subclasses_of feeding impacted_symbols, had no
+# bound at all and is not token-budget-gated like candidate_files is
+# (impacted_symbols is metadata, not packaged content, so a token
+# budget doesn't apply to it). Under an unbounded traversal_depth
+# (RetrievalTaskType.LARGE_STRUCTURAL_CHANGE) with a wide/deep class
+# hierarchy, this could add an unbounded number of symbols -- which
+# does have a real downstream consumer (RelevanceRanker's
+# impacted_counts scoring signal), even though that signal's own
+# per-file contribution is separately capped (_IMPACT_BONUS_CAP).
+#
+# Second follow-up (2026-08-17, independent verification report
+# G-new-3): impacted_symbols is a SINGLE dict, passed by reference and
+# shared across every _expand_calls/_expand_subclasses invocation
+# within one resolve() call (one entry per resolved target name can
+# trigger either or both) -- so this cap is, and always was, a budget
+# for the whole resolve() call's impacted-symbol metadata, not a
+# per-mechanism one. _expand_calls's own caller/callee transitive-hop
+# loops (locality_filtered_transitive_callers/_callees, themselves
+# unbounded under traversal_depth=None) wrote into that same dict with
+# no cap of their own -- the identical unbounded-growth shape this
+# constant already exists to prevent, just reachable through a sibling
+# code path that never checked it. Renamed from
+# _MAX_IMPACTED_SUBCLASS_SYMBOLS (no longer subclass-specific) and now
+# consulted by both expansion mechanisms against the same shared dict,
+# so the total stays bounded regardless of which mechanism or how many
+# entry points contributed to it -- not two independent 200-symbol
+# budgets stacking to 400.
+_MAX_IMPACTED_SYMBOLS = 200
+
+# Companion bound for _expand_calls's call_edges list (a second,
+# separate piece of unbounded metadata found by the same review --
+# CallEdge entries are appended once per caller_hops/callee_hops entry,
+# unconditionally, before the per-FILE token-budget gate below even
+# runs). call_edges has no packaged-content weight to token-budget
+# against either (like impacted_symbols, it is metadata: currently
+# surfaced only via ContextResolutionResult.call_chain, not consumed
+# by any other production code path, but still held in memory for the
+# lifetime of the stored result and returned in the API response body
+# -- the same unbounded-payload risk class G16 exists to prevent).
+# Sized larger than _MAX_IMPACTED_SYMBOLS because each hop can
+# legitimately produce more edges than distinct symbols (a symbol can
+# be both someone's caller and someone else's callee in the same
+# traversal).
+_MAX_CALL_EDGES = 400
+
 # Checklist item #10: precedence for _add_file's origin_stage merge --
 # lower rank wins when a file is reachable via more than one mechanism.
 # Declaration order of OriginStage itself (most identity-confident first).
@@ -356,6 +404,7 @@ class ContextResolver:
                             symbol,
                             name,
                             traversal_depth,
+                            max_expansion_tokens,
                             candidate_files,
                             file_reasons,
                             file_chains,
@@ -564,6 +613,19 @@ class ContextResolver:
         for caller_id, (hop, parent_id) in sorted(
             caller_hops.items(), key=lambda item: (item[1][0], item[0])
         ):
+            # G-new-3 (2026-08-17 independent verification): caller_hops
+            # is unbounded under traversal_depth=None, and both writes
+            # below (call_edges.append, impacted_symbols[...]=...) were
+            # unconditional -- unlike candidate_files, neither is
+            # token-budget-gated, so this was the same unbounded-growth
+            # shape G16 already fixed for _expand_subclasses, reachable
+            # through this sibling method instead. caller_hops is
+            # already sorted by (hop, id) -- closest to the entry point
+            # first -- so stopping once either shared cap is hit keeps
+            # exactly the same "closest fits first" priority _TokenBudget
+            # already uses for files.
+            if len(impacted_symbols) >= _MAX_IMPACTED_SYMBOLS or len(call_edges) >= _MAX_CALL_EDGES:
+                break
             caller_symbol = self._index.symbol_index.get(caller_id)
             caller_file_path = (
                 caller_symbol.file_path if caller_symbol is not None else symbol.file_path
@@ -603,6 +665,11 @@ class ContextResolver:
         for callee_id, (hop, parent_id) in sorted(
             callee_hops.items(), key=lambda item: (item[1][0], item[0])
         ):
+            # Same shared-budget stop condition as the caller_hops loop
+            # above -- callee_hops is unbounded under the same
+            # traversal_depth=None condition.
+            if len(impacted_symbols) >= _MAX_IMPACTED_SYMBOLS or len(call_edges) >= _MAX_CALL_EDGES:
+                break
             callee_symbol = self._index.symbol_index.get(callee_id)
             parent_symbol = self._index.symbol_index.get(parent_id)
             caller_file_path = (
@@ -644,6 +711,7 @@ class ContextResolver:
         symbol: Symbol,
         name: str,
         traversal_depth: int | None,
+        max_expansion_tokens: int | None,
         candidate_files: set[str],
         file_reasons: dict[str, str],
         file_chains: dict[str, tuple[str, ...]],
@@ -658,7 +726,17 @@ class ContextResolver:
         # repo-wide-bypass shape as locality_filtered_callers_of_name
         # above, independent of which specific same-named CLASS `symbol`
         # was actually disambiguated to.
+        #
+        # Architecture closure (2026-08-16, G16): this loop previously had
+        # no token-budget gate at all, unlike _expand_calls -- under
+        # RetrievalTaskType.LARGE_STRUCTURAL_CHANGE (unbounded
+        # traversal_depth) with a wide/deep class hierarchy, every
+        # subclass file was added unconditionally. Now uses the same
+        # _TokenBudget _expand_calls already uses.
+        budget = _TokenBudget(self._index, candidate_files, max_expansion_tokens)
         for subclass_file in self._index.candidate_selector.subclasses_of(name, traversal_depth):
+            if not budget.allow(subclass_file):
+                continue
             self._add_file(
                 candidate_files,
                 file_reasons,
@@ -677,6 +755,8 @@ class ContextResolver:
         for subclass_id in self._index.inheritance_graph.all_subclasses_of(
             symbol.id, traversal_depth
         ):
+            if len(impacted_symbols) >= _MAX_IMPACTED_SYMBOLS:
+                break
             subclass_symbol = self._index.symbol_index.get(subclass_id)
             if subclass_symbol is not None:
                 impacted_symbols[subclass_id] = subclass_symbol
@@ -730,6 +810,18 @@ class ContextResolver:
         for call in analysis.calls:
             if call.callee_name != callee_name:
                 continue
+            # G-new-3 (2026-08-17 independent verification, found by this
+            # fix's own regression test, not the report itself): this
+            # loop is a THIRD unbounded-growth site in the same family as
+            # caller_hops/callee_hops above -- a single file with many
+            # module-level call sites to the same name (e.g. hundreds of
+            # small functions all calling one shared helper) synthesizes
+            # one impacted_symbols entry per call site, with no cap,
+            # reachable even when caller_hops/callee_hops are empty (this
+            # loop runs regardless of traversal_depth). Same shared budget
+            # as the rest of _expand_calls.
+            if len(impacted_symbols) >= _MAX_IMPACTED_SYMBOLS:
+                break
             synthetic_id = f"{file_path}::<call-site:{callee_name}>#{call.location.start_line}"
             impacted_symbols.setdefault(
                 synthetic_id,

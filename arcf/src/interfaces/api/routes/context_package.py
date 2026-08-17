@@ -112,8 +112,18 @@ async def create_context_package(
     )
     ranking_profile = RANKING_PROFILES[retrieval_task_type]
 
+    # Architecture closure (2026-08-16): retrieval_task_type was already
+    # computed on this line above for ranking_profile but never threaded
+    # into the budget manager's own task-type tier ceiling
+    # (_BUDGET_TIER_BY_TASK_TYPE, budget_manager.py) -- a real, calibrated
+    # capability that defaulted to task_type=None (uncapped by task type)
+    # on every request until now.
     package, llm_response = await packager.package(
-        result, raw_request, payload.max_tokens, ranking_profile=ranking_profile
+        result,
+        raw_request,
+        payload.max_tokens,
+        ranking_profile=ranking_profile,
+        task_type=retrieval_task_type,
     )
 
     if llm_response is not None:

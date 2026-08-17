@@ -175,3 +175,25 @@ def test_locality_filtered_transitive_callers_follows_import_connected_chain(
         login.id: (1, authenticate.id),
         handle_login.id: (2, login.id),
     }
+
+
+def test_locality_filtered_transitive_callers_caps_a_long_linear_chain(tmp_path: Path) -> None:
+    """Final closure pass (2026-08-17), Final Issue 2 / NEW-2: proves the
+    fix at the shared low-level primitive itself
+    (locality.py's _locality_filtered_bfs, via its _MAX_BFS_NODES cap),
+    not just at a higher-level caller's own separate cap -- a long linear
+    call chain (each function calling the previous one, all real hops,
+    max_depth=None) stays bounded well under its true length."""
+    lines = ["def step_0():\n    return True\n"]
+    for i in range(1, 700):
+        lines.append(f"def step_{i}():\n    return step_{i - 1}()\n")
+    (tmp_path / "chain.py").write_text("\n".join(lines))
+    index = _build_index(tmp_path)
+    step_0 = next(s for s in index.symbol_index.all() if s.name == "step_0")
+
+    result = locality_filtered_transitive_callers(
+        index, index.call_graph, step_0.id, "chain.py", max_depth=None
+    )
+
+    assert len(result) <= 500
+    assert len(result) < 699

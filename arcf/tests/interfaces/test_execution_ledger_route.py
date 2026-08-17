@@ -17,6 +17,7 @@ def _build_client(tmp_path: Path, **settings_overrides: object) -> TestClient:
         "rate_limit_capacity": 100,
         "rate_limit_refill_per_second": 100.0,
         "contract_store_path": str(tmp_path / "contracts.db"),
+        "context_resolution_store_path": str(tmp_path / "context_resolutions.db"),
         "execution_ledger_db_path": str(tmp_path / "ledger.db"),
     }
     defaults.update(settings_overrides)

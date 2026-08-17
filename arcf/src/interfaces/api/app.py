@@ -10,6 +10,7 @@ from pathlib import Path
 
 from fastapi import FastAPI
 
+from application.execute_use_case import ArcfExecutionOrchestrator
 from code_intelligence.engine import CodeIntelligenceEngine
 from code_intelligence.languages.cpp_analyzer import CppLanguageAnalyzer
 from code_intelligence.languages.csharp_analyzer import CSharpLanguageAnalyzer
@@ -29,10 +30,13 @@ from contracts.confidence import ConfidenceEngine
 from contracts.domain_classifier import DomainClassifier
 from contracts.intent_extraction import IntentExtractor
 from contracts.manager import ExecutionContractManager
+from contracts.repository_scope_classifier import RepositoryScopeClassifier
 from contracts.task_classifier import TaskClassifier
+from execution.context_goal_composer import ContextGoalComposer
+from execution.final_generation import FinalGenerationRunner
 from infrastructure.auth import Authenticator
 from infrastructure.comparison_store import SqliteComparisonStore
-from infrastructure.context_resolution_store import InMemoryContextResolutionStore
+from infrastructure.context_resolution_store import SqliteContextResolutionStore
 from infrastructure.contract_store import SqliteContractStore
 from infrastructure.cost import CostEstimator, CostGuardrail
 from infrastructure.execution_ledger_db import SqliteExecutionLedgerStore
@@ -47,6 +51,7 @@ from interfaces.api.routes.context_package import router as context_package_rout
 from interfaces.api.routes.contracts import router as contracts_router
 from interfaces.api.routes.execute import router as execute_router
 from interfaces.api.routes.execution_ledger import router as execution_ledger_router
+from interfaces.api.routes.grounded_execution import router as grounded_execution_router
 from interfaces.api.routes.workspace import router as workspace_router
 from shared.config import Settings, get_settings
 from telemetry.comparison_aggregator import ComparisonAggregator
@@ -119,7 +124,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         ),
         token_estimator=CostEstimator(),
     )
-    context_resolution_store = InMemoryContextResolutionStore()
+    context_resolution_store = SqliteContextResolutionStore(settings.context_resolution_store_path)
     app.state.code_intelligence_service = CodeIntelligenceContractService(
         engine=code_intelligence_engine,
         contract_store=contract_store,
@@ -139,6 +144,25 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         ),
     )
 
+    # Architecture closure (2026-08-16): Phase 8's generation step, built
+    # but never previously constructed by any production code path.
+    app.state.generation_runner = FinalGenerationRunner(
+        composer=ContextGoalComposer(),
+        llm_client=app.state.llm_client,
+        model=settings.default_model,
+    )
+    app.state.arcf_orchestrator = ArcfExecutionOrchestrator(
+        code_intelligence_service=app.state.code_intelligence_service,
+        context_packager=app.state.context_packager,
+        generation_runner=app.state.generation_runner,
+        execution_ledger_store=app.state.execution_ledger_store,
+        cost_estimator=CostEstimator(),
+        generation_model=settings.default_model,
+        max_recovery_attempts=settings.arcf_max_recovery_attempts,
+        repository_scope_classifier=RepositoryScopeClassifier(),
+        task_classifier=TaskClassifier(),
+    )
+
     tracer = configure_tracing(settings)
     app.add_middleware(TracingMiddleware, tracer=tracer)
     app.add_middleware(RequestSizeLimitMiddleware, max_bytes=settings.max_request_bytes)
@@ -150,6 +174,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(context_package_router)
     app.include_router(execution_ledger_router)
     app.include_router(comparison_router)
+    app.include_router(grounded_execution_router)
 
     return app
 

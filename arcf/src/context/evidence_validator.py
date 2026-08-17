@@ -24,7 +24,12 @@ from pathlib import Path
 
 from context.lexical_symbol_probe import shares_lexical_root
 from contracts.evidence_contract import EvidenceCategory, category_matches, match_evidence
-from domain.context_resolution import ContextResolutionResult, EvidenceTier, FileReference
+from domain.context_resolution import (
+    ContextResolutionResult,
+    EvidenceTier,
+    FileReference,
+    OriginStage,
+)
 from infrastructure.cost import CostEstimator
 from shared.errors import WorkspacePathError
 from workspace.permissions import PermissionManager
@@ -316,4 +321,12 @@ def _to_file_reference(
         # Same reasoning as evidence_fallback.py's own "evidence: " tier:
         # a completeness-guarantee addition, not primary evidence.
         evidence_tier=EvidenceTier.SUPPORTING,
+        # Architecture closure (2026-08-17, G15): this construction site
+        # previously left origin_stage at its None default, the one
+        # reachable-on-the-default-path gap in OriginStage's own
+        # docstring claim that a None here "would indicate a call site
+        # this audit missed." Same category/mechanism as
+        # evidence_fallback.py's own additions -- a glob-pattern-matched
+        # completeness fallback, not a symbol-resolved match.
+        origin_stage=OriginStage.EVIDENCE_FALLBACK_MATCH,
     )

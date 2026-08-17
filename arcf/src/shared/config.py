@@ -46,6 +46,12 @@ class Settings(BaseSettings):
     confidence_clarification_threshold: float = 0.6
     contract_store_path: str = "arcf_contracts.db"
 
+    # Context Resolution persistence (architecture closure, 2026-08-17,
+    # G-new-4). Contract.context_resolution_id is durable, so what it
+    # references must be too -- see infrastructure/context_resolution_store.py's
+    # own module docstring for the full lifecycle-contract reasoning.
+    context_resolution_store_path: str = "arcf_context_resolutions.db"
+
     # Execution Ledger (Phase 9)
     execution_ledger_db_path: str = "arcf_execution_ledger.db"
 
@@ -56,6 +62,12 @@ class Settings(BaseSettings):
     # Comma-separated absolute paths; empty = unrestricted (local-dev-tool default).
     workspace_allowlist_raw: str = ""
     workspace_max_files_scanned: int = 20_000
+
+    # Grounded Execution / bounded deterministic Recovery (architecture
+    # closure, 2026-08-16). Fixed, configured, deterministic -- not
+    # adaptive. See application/execute_use_case.py's own module
+    # docstring for the recovery design this bounds.
+    arcf_max_recovery_attempts: int = 1
 
     @cached_property
     def api_keys(self) -> dict[str, str]:

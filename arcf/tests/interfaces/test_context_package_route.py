@@ -58,6 +58,7 @@ def _build_client(tmp_path: Path, **settings_overrides: object) -> TestClient:
         "rate_limit_refill_per_second": 100.0,
         "cost_guardrail_max_usd": 10.0,
         "contract_store_path": str(tmp_path / "contracts.db"),
+        "context_resolution_store_path": str(tmp_path / "context_resolutions.db"),
     }
     defaults.update(settings_overrides)
     settings = Settings(**defaults)  # type: ignore[arg-type]
@@ -131,6 +132,44 @@ def test_context_package_without_code_intelligence_returns_400(
         headers={"X-API-Key": "testkey"},
     )
     assert response.status_code == 400
+
+
+def test_context_package_survives_a_process_restart(tmp_path: Path, patched_llm: None) -> None:
+    """G-new-4 (2026-08-17 independent verification report): before this
+    fix, ContextResolutionStore was in-memory only. Contract.context_resolution_id
+    IS durably stored (SqliteContractStore), so a caller resolving code
+    intelligence, then hitting this exact /context-package endpoint after
+    a real process restart (a brand new create_app() instance, sharing
+    nothing but the same on-disk db paths -- the same simulation
+    test_contract_store.py's own persistence test uses), would previously
+    get a dangling reference: the contract's own context_resolution_id
+    field would resolve fine, but the ContextResolutionResult it points
+    to would already be gone. Proves it no longer is."""
+    repo = _make_repo(tmp_path)
+    db_path = str(tmp_path / "contracts.db")
+    resolution_db_path = str(tmp_path / "context_resolutions.db")
+
+    first_process_client = _build_client(
+        tmp_path, contract_store_path=db_path, context_resolution_store_path=resolution_db_path
+    )
+    contract_id, resolution_id = _create_contract_with_code_intelligence(
+        first_process_client, repo
+    )
+
+    # A brand new create_app() call, sharing nothing with the first
+    # client but the on-disk db paths -- this is the "restart."
+    second_process_client = _build_client(
+        tmp_path, contract_store_path=db_path, context_resolution_store_path=resolution_db_path
+    )
+    response = second_process_client.post(
+        f"/api/v1/contracts/{contract_id}/context-package",
+        json={"max_tokens": 8000},
+        headers={"X-API-Key": "testkey"},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["package"]["context_resolution_id"] == resolution_id
 
 
 def test_context_package_full_flow(tmp_path: Path, patched_llm: None) -> None:

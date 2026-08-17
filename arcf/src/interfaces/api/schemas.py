@@ -21,6 +21,7 @@ from domain.context_resolution import ContextResolutionResult
 from domain.contract import Contract
 from domain.enums import ContractStatus
 from domain.execution_ledger import ExecutionLedgerEntry, VerificationResult
+from domain.execution_result import ArcfExecutionResult
 
 
 class ExecuteRequest(BaseModel):
@@ -80,7 +81,14 @@ class ContractResponse(BaseModel):
 
 
 class CreateCodeIntelligenceRequest(BaseModel):
-    target_names: list[str] = Field(min_length=1)
+    target_names: list[str] = Field(default_factory=list)
+    """Architecture closure (2026-08-16): may be omitted/empty -- when
+    empty, CodeIntelligenceContractService.attach_code_intelligence
+    defaults to the contract's own SLM-1-extracted
+    intent.entities, so a client is no longer required to duplicate
+    entity extraction by hand. Still accepted explicitly for debugging/
+    override use; every existing caller that supplies names keeps
+    identical behavior."""
     workspace_root: str | None = None
     """Falls back to the contract's already-attached workspace_root
     (Phase 4) if omitted; a 400 is returned if neither is available."""
@@ -108,6 +116,29 @@ class ContextPackageResponse(BaseModel):
     trace_id: str
     remaining_budget_usd: float
     package: ContextPackage
+
+
+class GroundedExecutionRequest(BaseModel):
+    """Architecture closure (2026-08-16): the canonical entry point.
+    Replaces the client-driven code-intelligence -> context-package ->
+    (nothing) chain with one server-side orchestrated call that reaches
+    Generation, Verification, and bounded Recovery. target_names is now
+    optional -- when omitted, retrieval defaults to the contract's own
+    SLM-1-extracted intent.entities (see
+    code_intelligence/service.py's attach_code_intelligence)."""
+
+    target_names: list[str] = Field(default_factory=list)
+    workspace_root: str | None = None
+    max_tokens: int = Field(default=8000, ge=1, le=1_000_000)
+
+
+class GroundedExecutionResponse(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    request_id: str
+    trace_id: str
+    remaining_budget_usd: float
+    result: ArcfExecutionResult
 
 
 class PatchExecutionLedgerRequest(BaseModel):

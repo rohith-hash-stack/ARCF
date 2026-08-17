@@ -13,6 +13,15 @@ from collections import defaultdict, deque
 from code_intelligence.reference_resolver import ReferenceResolver
 from domain.code_intelligence import Symbol, SymbolKind
 
+# Final closure pass (2026-08-17), Final Issue 2 / NEW-2: same shared-
+# primitive materialization risk as locality.py's _MAX_BFS_NODES --
+# all_subclasses_of's own `visited` set is unbounded when max_depth=None
+# (a real, reachable input), before context_resolver.py's own caller-side
+# _MAX_IMPACTED_SYMBOLS ever gets a chance to apply. See locality.py's
+# own comment for the full reasoning on why this is fixed here rather
+# than documented as output-only-bounded.
+_MAX_SUBCLASSES = 500
+
 
 class InheritanceGraph:
     def __init__(self, symbols: list[Symbol], resolver: ReferenceResolver) -> None:
@@ -48,8 +57,15 @@ class InheritanceGraph:
         visited: set[str] = set()
         frontier: set[str] = set(self._subclasses.get(class_id, set()))
         depth = 1
-        while frontier and (max_depth is None or depth <= max_depth):
+        while (
+            frontier
+            and (max_depth is None or depth <= max_depth)
+            and len(visited) < _MAX_SUBCLASSES
+        ):
             visited |= frontier
+            if len(visited) > _MAX_SUBCLASSES:
+                visited = set(list(visited)[:_MAX_SUBCLASSES])
+                break
             next_frontier: set[str] = set()
             for current in frontier:
                 next_frontier |= self._subclasses.get(current, set()) - visited

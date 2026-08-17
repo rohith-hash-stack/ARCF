@@ -10,6 +10,7 @@ from typing import Annotated
 
 from fastapi import Depends, Header, HTTPException, Request
 
+from application.execute_use_case import ArcfExecutionOrchestrator
 from code_intelligence.service import CodeIntelligenceContractService
 from context.packager import ContextPackager
 from contracts.manager import ExecutionContractManager
@@ -83,6 +84,10 @@ def get_comparison_store(request: Request) -> ComparisonStore:
 
 def get_comparison_aggregator(request: Request) -> ComparisonAggregator:
     return request.app.state.comparison_aggregator  # type: ignore[no-any-return]
+
+
+def get_arcf_orchestrator(request: Request) -> ArcfExecutionOrchestrator:
+    return request.app.state.arcf_orchestrator  # type: ignore[no-any-return]
 
 
 def get_current_principal(

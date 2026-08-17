@@ -32,8 +32,21 @@ from code_intelligence.languages.kotlin_analyzer import KotlinLanguageAnalyzer
 from code_intelligence.languages.python_analyzer import PythonLanguageAnalyzer
 from code_intelligence.languages.typescript_analyzer import TypeScriptLanguageAnalyzer
 from code_intelligence.registry import LanguageRegistry
+from domain.code_intelligence import SymbolKind
 from infrastructure.cost import CostEstimator
 from workspace.scanner import RepositoryScanner
+
+
+def _caller_files_of(index: CodeIntelligenceIndex, name: str) -> set[str]:
+    """Equivalent of the removed CandidateFileSelector.callers_of --
+    superseded in production by locality.py's locality_filtered_
+    callers_of_name (architecture closure, 2026-08-16)."""
+    files: set[str] = set()
+    for symbol in index.symbol_index.find_by_name(name):
+        if symbol.kind in (SymbolKind.FUNCTION, SymbolKind.METHOD):
+            files.add(symbol.file_path)
+            files |= index.call_graph.caller_files_of(symbol.id)
+    return files
 
 
 def _full_registry_engine() -> CodeIntelligenceEngine:
@@ -74,7 +87,7 @@ def test_python_repository_indexing_and_context_resolution(tmp_path: Path) -> No
 
     assert any(s.name == "authenticate" for s in index.symbol_index.functions())
     assert index.import_graph.imports_of("login.py") == {"auth.py"}
-    assert index.candidate_selector.callers_of("authenticate") == {"auth.py", "login.py"}
+    assert _caller_files_of(index,"authenticate") == {"auth.py", "login.py"}
 
     result = ContextResolver(index).resolve("ws", "c1", str(tmp_path), ["authenticate"])
     assert result.language == "python"
@@ -98,7 +111,7 @@ def test_typescript_repository_indexing_and_context_resolution(tmp_path: Path) -
 
     assert any(s.name == "authenticate" for s in index.symbol_index.functions())
     assert index.import_graph.imports_of("login.ts") == {"auth.ts"}
-    assert index.candidate_selector.callers_of("authenticate") == {"auth.ts", "login.ts"}
+    assert _caller_files_of(index,"authenticate") == {"auth.ts", "login.ts"}
 
     result = ContextResolver(index).resolve("ws", "c1", str(tmp_path), ["authenticate"])
     assert result.language == "typescript"
@@ -133,7 +146,7 @@ def test_java_repository_indexing_and_context_resolution(tmp_path: Path) -> None
     login_file = "com/example/login/Login.java"
     assert any(s.name == "authenticate" for s in index.symbol_index.methods())
     assert index.import_graph.imports_of(login_file) == {auth_file}
-    assert index.candidate_selector.callers_of("authenticate") == {auth_file, login_file}
+    assert _caller_files_of(index,"authenticate") == {auth_file, login_file}
 
     result = ContextResolver(index).resolve("ws", "c1", str(tmp_path), ["authenticate"])
     assert result.language == "java"
@@ -167,7 +180,7 @@ def test_csharp_repository_indexing_and_context_resolution(tmp_path: Path) -> No
     login_file = "MyApp/Login/LoginService.cs"
     assert any(s.name == "Authenticate" for s in index.symbol_index.methods())
     assert index.import_graph.imports_of(login_file) == {auth_file}
-    assert index.candidate_selector.callers_of("Authenticate") == {auth_file, login_file}
+    assert _caller_files_of(index,"Authenticate") == {auth_file, login_file}
 
     result = ContextResolver(index).resolve("ws", "c1", str(tmp_path), ["Authenticate"])
     assert result.language == "csharp"
@@ -193,7 +206,7 @@ def test_go_repository_indexing_and_context_resolution(tmp_path: Path) -> None:
     login_file = "myapp/login/login.go"
     assert any(s.name == "Authenticate" for s in index.symbol_index.functions())
     assert index.import_graph.imports_of(login_file) == {auth_file}
-    assert index.candidate_selector.callers_of("Authenticate") == {auth_file, login_file}
+    assert _caller_files_of(index,"Authenticate") == {auth_file, login_file}
 
     result = ContextResolver(index).resolve("ws", "c1", str(tmp_path), ["Authenticate"])
     assert result.language == "go"
@@ -222,7 +235,7 @@ def test_kotlin_repository_indexing_and_context_resolution(tmp_path: Path) -> No
     login_file = "com/example/login/Login.kt"
     assert any(s.name == "authenticate" for s in index.symbol_index.methods())
     assert index.import_graph.imports_of(login_file) == {auth_file}
-    assert index.candidate_selector.callers_of("authenticate") == {auth_file, login_file}
+    assert _caller_files_of(index,"authenticate") == {auth_file, login_file}
 
     result = ContextResolver(index).resolve("ws", "c1", str(tmp_path), ["authenticate"])
     assert result.language == "kotlin"

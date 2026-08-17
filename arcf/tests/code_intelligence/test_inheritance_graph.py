@@ -48,6 +48,26 @@ def test_all_subclasses_of_respects_max_depth() -> None:
     assert graph.all_subclasses_of(a.id, max_depth=2) == {b.id, c.id}
 
 
+def test_all_subclasses_of_caps_unbounded_traversal_on_a_wide_hierarchy() -> None:
+    """Final closure pass (2026-08-17), Final Issue 2 / NEW-2: with
+    max_depth=None (a real, reachable input via
+    RetrievalTaskType.LARGE_STRUCTURAL_CHANGE), this materializes the
+    full `visited` set before any caller-side cap gets a chance to
+    apply -- the same unbounded-growth risk class already fixed
+    elsewhere in this closure. Proves the fix: 800 direct subclasses of
+    one base stay bounded well under 800."""
+    base = _class("Base")
+    subclasses = [_class(f"Sub{i}", bases=["Base"], file_path=f"sub{i}.py") for i in range(800)]
+    symbols = [base, *subclasses]
+    resolver = ReferenceResolver(SymbolIndex(symbols))
+    graph = InheritanceGraph(symbols, resolver)
+
+    result = graph.all_subclasses_of(base.id, max_depth=None)
+
+    assert len(result) <= 500
+    assert len(result) < 800
+
+
 def test_external_base_class_recorded_as_unresolved() -> None:
     contract = _class("Contract", bases=["BaseModel"])
     resolver = ReferenceResolver(SymbolIndex([contract]))

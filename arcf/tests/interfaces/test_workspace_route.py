@@ -43,6 +43,7 @@ def _build_client(tmp_path: Path, **settings_overrides: object) -> TestClient:
         "rate_limit_refill_per_second": 100.0,
         "cost_guardrail_max_usd": 10.0,
         "contract_store_path": str(tmp_path / "contracts.db"),
+        "context_resolution_store_path": str(tmp_path / "context_resolutions.db"),
     }
     defaults.update(settings_overrides)
     settings = Settings(**defaults)  # type: ignore[arg-type]

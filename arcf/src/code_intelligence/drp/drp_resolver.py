@@ -25,6 +25,7 @@ from domain.context_resolution import (
     ContextResolutionResult,
     EvidenceTier,
     FileReference,
+    OriginStage,
     SymbolReference,
     TokenEstimate,
 )
@@ -33,6 +34,17 @@ from domain.context_resolution import (
 # matches the Evaluation Framework's "top 20 files" instrumentation
 # requirement.
 _DIAGNOSTICS_TOP_FILES = 20
+
+# G16 second pass (2026-08-17, independent verification report item 18):
+# query_router.py's _expand_within_subsystem now caps its own file-level
+# fan-out (_MAX_EXPANSION_FILES), but this resolver still appends EVERY
+# symbol from EVERY expanded file into impacted_symbols/entry_points with
+# no cap of its own -- a file-count cap doesn't bound per-file symbol
+# count, and a single large file can hold hundreds of symbols. Same
+# order-of-magnitude shared budget as the classic resolver's
+# _MAX_IMPACTED_SYMBOLS, for the same reason: bounding the same kind of
+# metadata this closure has already had to bound twice elsewhere.
+_MAX_IMPACTED_SYMBOLS = 200
 
 
 def _to_symbol_reference(symbol: Symbol) -> SymbolReference:
@@ -127,9 +139,12 @@ class DrpResolver:
                     language=analysis.language,
                     token_count=self._index.token_counts.get(file_path, 0),
                     evidence_tier=EvidenceTier.PRIMARY,
+                    origin_stage=OriginStage.DRP_SUBSYSTEM_ROUTING,
                 )
             )
             for symbol in analysis.symbols:
+                if len(impacted_symbols) >= _MAX_IMPACTED_SYMBOLS:
+                    break
                 ref = _to_symbol_reference(symbol)
                 impacted_symbols.append(ref)
                 entry_points.append(ref)
@@ -147,9 +162,12 @@ class DrpResolver:
                     token_count=self._index.token_counts.get(file_path, 0),
                     evidence_tier=EvidenceTier.SUPPORTING,
                     justification_chain=(f"drp entry (hop {hop})",),
+                    origin_stage=OriginStage.DRP_SUBSYSTEM_ROUTING,
                 )
             )
             for symbol in analysis.symbols:
+                if len(impacted_symbols) >= _MAX_IMPACTED_SYMBOLS:
+                    break
                 impacted_symbols.append(_to_symbol_reference(symbol))
 
         # A subsystem that came within a hair of winning (see
@@ -175,9 +193,12 @@ class DrpResolver:
                         language=analysis.language,
                         token_count=self._index.token_counts.get(file_path, 0),
                         evidence_tier=EvidenceTier.SUPPORTING,
+                        origin_stage=OriginStage.DRP_SUBSYSTEM_ROUTING,
                     )
                 )
                 for symbol in analysis.symbols:
+                    if len(impacted_symbols) >= _MAX_IMPACTED_SYMBOLS:
+                        break
                     impacted_symbols.append(_to_symbol_reference(symbol))
 
         raw_tokens = sum(self._index.token_counts.values())

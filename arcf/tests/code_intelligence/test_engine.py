@@ -1,11 +1,27 @@
 from pathlib import Path
 
 from code_intelligence.engine import CodeIntelligenceEngine
+from code_intelligence.index import CodeIntelligenceIndex
 from code_intelligence.languages.python_analyzer import PythonLanguageAnalyzer
 from code_intelligence.languages.typescript_analyzer import TypeScriptLanguageAnalyzer
 from code_intelligence.registry import LanguageRegistry
+from domain.code_intelligence import SymbolKind
 from infrastructure.cost import CostEstimator
 from workspace.scanner import RepositoryScanner
+
+
+def _caller_files_of(index: CodeIntelligenceIndex, name: str) -> set[str]:
+    """Equivalent of the removed CandidateFileSelector.callers_of --
+    superseded in production by locality.py's locality_filtered_
+    callers_of_name (architecture closure, 2026-08-16), but this direct
+    symbol_index+call_graph check is still the right shape for a unit
+    test verifying call-graph construction itself."""
+    files: set[str] = set()
+    for symbol in index.symbol_index.find_by_name(name):
+        if symbol.kind in (SymbolKind.FUNCTION, SymbolKind.METHOD):
+            files.add(symbol.file_path)
+            files |= index.call_graph.caller_files_of(symbol.id)
+    return files
 
 
 def _engine(max_workers: int = 8) -> CodeIntelligenceEngine:
@@ -28,7 +44,7 @@ def test_build_index_from_real_files(tmp_path: Path) -> None:
     index = _engine().build_index(tmp_path, scan.files)
 
     assert len(index.symbol_index) == 2
-    assert index.candidate_selector.callers_of("authenticate") == {"auth.py", "login.py"}
+    assert _caller_files_of(index, "authenticate") == {"auth.py", "login.py"}
 
 
 def test_non_source_files_are_skipped(tmp_path: Path) -> None:

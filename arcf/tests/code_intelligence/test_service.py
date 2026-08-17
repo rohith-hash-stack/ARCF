@@ -790,6 +790,44 @@ async def test_resolver_strategy_drp_routes_through_the_isolated_drp_resolver(
     )
 
 
+async def test_resolver_strategy_drp_populates_evidence_categories_missing(
+    tmp_path: Path,
+) -> None:
+    """Final closure pass (2026-08-17), Final Issue 1 -- the evidence-state
+    contract: DrpResolver.resolve() itself never sets
+    evidence_categories_missing, and this method previously returned the
+    DRP branch's result without ever calling validate_sufficiency (unlike
+    the classic branch, which always does) -- meaning a DRP-produced
+    ContextResolutionResult always looked evidence-satisfied to both
+    consumers of this field (the orchestrator's own Case-B check and
+    verify_grounding()'s post-generation check), regardless of whether
+    DRP's real retrieval actually covered what the task needed. Fixed:
+    the DRP branch now runs the same deterministic, resolver-agnostic
+    validate_sufficiency() classic already uses. This is a REAL
+    production execution reaching genuine Case-B evidence-insufficiency
+    through DRP -- the same tiny fixture repo (auth.py + login.py only,
+    genuinely lacking credential-source/session-persistence/configuration
+    files) the classic-resolver Case-B test uses, proving the architecture
+    naturally, not via a mock/double."""
+    _write(tmp_path, "auth.py", "def authenticate(user):\n    return True\n")
+    _write(
+        tmp_path,
+        "login.py",
+        "from .auth import authenticate\n\ndef login(user):\n    return authenticate(user)\n",
+    )
+    service, contract_store = _service()
+    living = _seed_contract(contract_store, "Please review the authentication flow")
+
+    _, resolution = await service.attach_code_intelligence(
+        living.contract_id,
+        target_names=["authenticate"],
+        workspace_root=str(tmp_path),
+        resolver_strategy="drp",
+    )
+
+    assert resolution.evidence_categories_missing != ()
+
+
 async def test_index_is_cached_automatically_across_calls_no_caller_opt_in_needed(
     tmp_path: Path,
 ) -> None:

@@ -121,12 +121,29 @@ class OriginStage(StrEnum):
     folded into it. Confirmed `expand_with_evidence` runs unconditionally
     on the default classic path (`service.py`'s own comment: "not just
     when classification.repository_scope"), so this is a real, reachable
-    origin on an ordinary query, not a rare edge case."""
+    origin on an ordinary query, not a rare edge case.
+
+    DRP_SUBSYSTEM_ROUTING: reached via `code_intelligence/drp/drp_resolver.py`
+    -- DRP's independent TF-IDF/subsystem-taxonomy routing (`route_query`),
+    not a symbol-name lookup, graph traversal, or filename/glob match at
+    all, so none of the four values above honestly describes it (added
+    2026-08-17, independent verification report G10, closing the second
+    half of a gap the evidence-validator fallback fix already closed the
+    first half of -- DRP's 3 FileReference construction sites had left
+    origin_stage unset since that first fix, not because DRP's mechanism
+    lacks a real provenance identity, but because none of the existing
+    values fit it and forcing one of them on would have been dishonest,
+    not a fix). Covers all of DRP's own file-selection mechanisms
+    uniformly (direct subsystem entry, within-subsystem import expansion,
+    near-tied-subsystem corroboration) at the same granularity
+    RAW_STRING_FALLBACK already covers two distinct classic call sites
+    under one value."""
 
     AST_DIRECT = "ast_direct"
     SCOPED_GRAPH_EXPANSION = "scoped_graph_expansion"
     RAW_STRING_FALLBACK = "raw_string_fallback"
     EVIDENCE_FALLBACK_MATCH = "evidence_fallback_match"
+    DRP_SUBSYSTEM_ROUTING = "drp_subsystem_routing"
 
 
 class FileReference(BaseModel):
@@ -278,6 +295,29 @@ class ContextResolutionResult(BaseModel):
     call_chain: list[CallEdge] = Field(default_factory=list)
     entry_points: list[SymbolReference] = Field(default_factory=list)
 
+    # G9 (2026-08-17, independent verification report): this single field
+    # is produced by two structurally different formulas depending on
+    # which resolver ran, and nothing on the field itself has ever said
+    # so -- classic (code_intelligence/context_resolver.py's resolve()):
+    # resolved_count / total_targets, a symbol-resolution HIT RATE. DRP
+    # (code_intelligence/drp/drp_resolver.py's resolve()):
+    # routing.winning_confidence, a SUBSYSTEM-ROUTING MARGIN (how
+    # decisively the winning subsystem beat its closest competitor) --
+    # see query_router.py's own _margin_confidence. Both happen to be
+    # floats in [0, 1] and both are genuinely called "confidence," but
+    # they answer different questions and are NOT comparable across
+    # resolvers -- a classic result of 0.6 and a DRP result of 0.6 do not
+    # mean the same thing. Fixing the underlying conflation (a single
+    # formula, or two separately-named fields) would be a breaking
+    # contract change to every existing consumer and was explicitly
+    # deferred, not overlooked -- see domain/execution_result.py's own
+    # docstring for why ArcfExecutionResult.resolution_confidence_source
+    # exists specifically so a DOWNSTREAM consumer is never forced to
+    # treat this field as interchangeable across resolvers, even though
+    # this field itself still can't tell you on its own. See
+    # tests/domain/test_context_resolution_confidence_semantics.py for a
+    # concrete proof the two formulas really do diverge, not just an
+    # assertion that they're "different in theory."
     confidence: float = Field(ge=0.0, le=1.0)
     token_estimate: TokenEstimate
     resolution_reason: str

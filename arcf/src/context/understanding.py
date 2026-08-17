@@ -45,12 +45,21 @@ class ContextUnderstandingNote(BaseModel):
     key_relationships: list[str] = Field(default_factory=list)
 
 
+# Named module-level constant (2026-08-17, G-new-1 / independent
+# verification) so callers that need to reason about worst-case LLM call
+# volume -- currently only the grounded-execution cost guardrail's
+# pre-flight estimate -- have one real source of truth instead of a
+# duplicated magic number that could silently drift from this class's
+# own default.
+DEFAULT_MAX_PARSE_RETRIES = 2
+
+
 class ContextUnderstandingAnalyzer:
     def __init__(
         self,
         llm_client: LiteLLMClient,
         model: str,
-        max_parse_retries: int = 2,
+        max_parse_retries: int = DEFAULT_MAX_PARSE_RETRIES,
         max_tokens: int = 300,
     ) -> None:
         self._llm_client = llm_client

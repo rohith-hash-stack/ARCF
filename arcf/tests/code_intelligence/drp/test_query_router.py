@@ -184,6 +184,37 @@ def _near_tie_fixture(tmp_path: Path) -> None:
     )
 
 
+def test_expansion_within_a_giant_subsystem_is_capped(tmp_path: Path) -> None:
+    """G16 second pass (2026-08-17, independent verification report item
+    18): _expand_within_subsystem previously had no file-count cap of its
+    own -- only traversal_depth and subsystem membership bounded it,
+    which this module's own docstring already acknowledges can be
+    "giant"/"monster"-sized in a real repository. Proves the fix with a
+    300-file linear import chain inside one subsystem: a large
+    traversal_depth (250, well beyond the count cap) confirms it's the
+    COUNT cap that stops growth, not the depth limit."""
+    _write(tmp_path, "pkg/entry.py", '"""entry point"""\nfrom .step_0 import step_0\n')
+    for i in range(300):
+        next_import = f"from .step_{i + 1} import step_{i + 1}\n" if i < 299 else ""
+        _write(tmp_path, f"pkg/step_{i}.py", f"{next_import}def step_{i}():\n    return {i}\n")
+
+    index = _build_index(tmp_path)
+    drp_index = DrpIndexBuilder.build(index, tmp_path, max_files_per_subsystem=1000)
+
+    routing = route_query(
+        "entry point",
+        drp_index.taxonomy,
+        drp_index.file_tfidf,
+        drp_index.file_to_units,
+        drp_index.subsystem_graph,
+        index,
+        traversal_depth=250,
+    )
+
+    assert len(routing.expansion) <= 200
+    assert len(routing.expansion) < 300
+
+
 def test_near_tied_runner_up_gets_its_own_entry_files(tmp_path: Path) -> None:
     _near_tie_fixture(tmp_path)
     index = _build_index(tmp_path)

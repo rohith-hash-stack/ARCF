@@ -438,6 +438,115 @@ def test_unbounded_traversal_respects_max_expansion_tokens(tmp_path: Path) -> No
     assert "controller.py" not in {f.file_path for f in result.candidate_files}
 
 
+def test_unbounded_subclass_expansion_respects_max_expansion_tokens(tmp_path: Path) -> None:
+    """Architecture closure (2026-08-16, G16): _expand_subclasses previously
+    had no token-budget gate at all, unlike _expand_calls -- a deep/wide
+    class hierarchy under an unbounded traversal_depth (e.g.
+    RetrievalTaskType.LARGE_STRUCTURAL_CHANGE) could add every subclass
+    file unconditionally. This proves the fix: a tiny budget bounds a
+    5-file inheritance chain the same way it already bounds a call chain
+    above."""
+    (tmp_path / "base.py").write_text("class BasePage:\n    " + "pass  # padding\n    " * 40)
+    (tmp_path / "login.py").write_text(
+        "from .base import BasePage\n\nclass LoginPage(BasePage):\n    "
+        + "pass  # padding\n    " * 40
+    )
+    (tmp_path / "admin.py").write_text(
+        "from .login import LoginPage\n\nclass AdminPage(LoginPage):\n    "
+        + "pass  # padding\n    " * 40
+    )
+    (tmp_path / "super_admin.py").write_text(
+        "from .admin import AdminPage\n\nclass SuperAdminPage(AdminPage):\n    "
+        + "pass  # padding\n    " * 40
+    )
+    (tmp_path / "root_admin.py").write_text(
+        "from .super_admin import SuperAdminPage\n\nclass RootAdminPage(SuperAdminPage):\n    "
+        + "pass  # padding\n    " * 40
+    )
+    index = _build_index(tmp_path)
+    all_files = ["base.py", "login.py", "admin.py", "super_admin.py", "root_admin.py"]
+    tiny_budget = index.token_counts["base.py"] + index.token_counts["login.py"]
+
+    unbounded = ContextResolver(index).resolve(
+        "ws1", "contract1", str(tmp_path), ["BasePage"], traversal_depth=None
+    )
+    bounded = ContextResolver(index).resolve(
+        "ws1",
+        "contract1",
+        str(tmp_path),
+        ["BasePage"],
+        traversal_depth=None,
+        max_expansion_tokens=tiny_budget,
+    )
+
+    assert {f.file_path for f in unbounded.candidate_files} == set(all_files)
+    assert len({f.file_path for f in bounded.candidate_files}) < len(all_files)
+
+
+def test_wide_subclass_hierarchy_caps_impacted_symbols_count(tmp_path: Path) -> None:
+    """Architecture closure (2026-08-17, G16 follow-up): _expand_subclasses's
+    SECOND loop (over inheritance_graph.all_subclasses_of, feeding
+    impacted_symbols) was still fully unbounded even after the first
+    loop's token-budget fix -- impacted_symbols carries no token cost, so
+    a wide/flat class hierarchy (many direct subclasses of one base, a
+    common plugin/handler pattern) could add an unbounded number of
+    symbols. Proves the count cap: 300 direct subclasses of one base
+    class stay bounded well under 300 in the result."""
+    subclasses = "\n".join(f"class Sub{i}(Base):\n    pass\n" for i in range(300))
+    (tmp_path / "hierarchy.py").write_text("class Base:\n    pass\n\n" + subclasses)
+
+    index = _build_index(tmp_path)
+    result = ContextResolver(index).resolve(
+        "ws1", "contract1", str(tmp_path), ["Base"], traversal_depth=None
+    )
+
+    assert len(result.impacted_symbols) <= 200
+    assert len(result.impacted_symbols) < 300
+
+
+def test_dense_caller_graph_caps_impacted_symbols_and_call_edges(tmp_path: Path) -> None:
+    """Independent verification report (2026-08-17, G-new-3): _expand_calls's
+    caller_hops/callee_hops loops (locality_filtered_transitive_callers/
+    _callees, themselves unbounded under traversal_depth=None) wrote into
+    impacted_symbols and call_edges unconditionally, before the per-file
+    token-budget gate even ran -- the identical unbounded-growth shape
+    G16 already fixed for _expand_subclasses, reachable through this
+    sibling method instead. Proves the fix: 500 distinct callers of one
+    hub function stay bounded well under 500 in both impacted_symbols
+    and call_chain."""
+    callers = "\n".join(f"def caller_{i}():\n    return target()\n" for i in range(500))
+    (tmp_path / "hub.py").write_text("def target():\n    return 1\n\n" + callers)
+
+    index = _build_index(tmp_path)
+    result = ContextResolver(index).resolve(
+        "ws1", "contract1", str(tmp_path), ["target"], traversal_depth=None
+    )
+
+    assert len(result.impacted_symbols) <= 200
+    assert len(result.call_chain) <= 400
+    assert len(result.impacted_symbols) < 500
+    assert len(result.call_chain) < 500
+
+
+def test_dense_callee_graph_caps_impacted_symbols_and_call_edges(tmp_path: Path) -> None:
+    """Same shared-budget guard, exercised via the callee_hops loop
+    instead of caller_hops -- one function transitively calling 500
+    distinct callees."""
+    callees = "\n".join(f"def callee_{i}():\n    return {i}\n" for i in range(500))
+    calls = "\n    ".join(f"callee_{i}()" for i in range(500))
+    (tmp_path / "hub.py").write_text(f"def hub():\n    {calls}\n\n" + callees)
+
+    index = _build_index(tmp_path)
+    result = ContextResolver(index).resolve(
+        "ws1", "contract1", str(tmp_path), ["hub"], traversal_depth=None
+    )
+
+    assert len(result.impacted_symbols) <= 200
+    assert len(result.call_chain) <= 400
+    assert len(result.impacted_symbols) < 500
+    assert len(result.call_chain) < 500
+
+
 def test_ambiguous_target_name_flagged_without_locality_context(tmp_path: Path) -> None:
     (tmp_path / "a.py").write_text("def helper():\n    return 1\n")
     (tmp_path / "b.py").write_text("def helper():\n    return 2\n")

@@ -76,6 +76,28 @@ def has_locality(index: CodeIntelligenceIndex, file_a: str, file_b: str) -> bool
     )
 
 
+# Final closure pass (2026-08-17), Final Issue 2 / NEW-2: ARCF's
+# established architectural promise (context_resolver.py's own
+# _MAX_IMPACTED_SYMBOLS/_MAX_CALL_EDGES, query_router.py's
+# _MAX_EXPANSION_FILES, drp_resolver.py's own _MAX_IMPACTED_SYMBOLS) is
+# BOUNDED FINAL OUTPUT -- what gets added to candidate_files/
+# impacted_symbols/call_edges -- not bounded intermediate computation.
+# That's a legitimate, deliberate architectural boundary (many systems
+# separate "what is scanned" from "what is kept"), EXCEPT where the
+# intermediate structure itself is the thing that can exhaust memory
+# before any caller-side cap gets a chance to apply -- which is exactly
+# this function's own risk: max_depth=None is a real, reachable input
+# (RetrievalTaskType.LARGE_STRUCTURAL_CHANGE), and this same class of
+# unbounded BFS materialization is what caused a real, measured
+# MemoryError in this codebase's own history (see
+# context_resolver.py's _MAX_CANDIDATES_TO_EXPAND docstring: "a
+# hyper-common identifier recurring 79 times... caused a MemoryError").
+# Capped here, once, in the shared primitive every locality_filtered_*
+# caller depends on -- not left to each caller to separately remember to
+# bound consumption of an already-unbounded result.
+_MAX_BFS_NODES = 500
+
+
 def _locality_filtered_bfs(
     index: CodeIntelligenceIndex,
     start_symbol_id: str,
@@ -114,8 +136,14 @@ def _locality_filtered_bfs(
     }
     parents: dict[str, str] = dict.fromkeys(frontier, start_symbol_id)
     depth = 1
-    while frontier and (max_depth is None or depth <= max_depth):
+    while (
+        frontier
+        and (max_depth is None or depth <= max_depth)
+        and len(result) < _MAX_BFS_NODES
+    ):
         for node in frontier:
+            if len(result) >= _MAX_BFS_NODES:
+                break
             result[node] = (depth, parents[node])
         candidates: dict[str, set[str]] = defaultdict(set)
         for node in frontier:

@@ -66,6 +66,13 @@ _TOP_K_FILES_FOR_AGGREGATE_SCORE = 3
 # every file in a large subsystem.
 _MAX_ENTRY_FILES = 5
 
+# G16 second pass (2026-08-17, independent verification report): caps
+# _expand_within_subsystem's own fan-out -- see that function's docstring
+# comment for the full reasoning. Same order of magnitude as the classic
+# resolver's _MAX_IMPACTED_SYMBOLS, chosen for consistency across the two
+# parallel resolvers, not a value specific to DRP's own internals.
+_MAX_EXPANSION_FILES = 200
+
 # A subsystem scoring within this fraction of the winner's combined_score
 # is treated as a genuine near-tie, not a loss — winner-take-all with no
 # margin was found, against two real repositories, to completely exclude
@@ -279,12 +286,28 @@ def _expand_within_subsystem(
     import_graph: ImportGraph,
     traversal_depth: int,
 ) -> dict[str, tuple[int, str]]:
+    # G16 second pass (2026-08-17, independent verification report item
+    # 18 -- "do not stop after fixing _expand_calls"): this is the same
+    # unbounded-growth shape as the classic resolver's own
+    # _expand_calls/_expand_subclasses (already capped via
+    # context_resolver.py's _MAX_IMPACTED_SYMBOLS/_MAX_CALL_EDGES), found
+    # in DRP's sibling expansion mechanism during the broader audit that
+    # item asked for. entry_files is bounded (_MAX_ENTRY_FILES=5 above),
+    # but this BFS's own fan-out is bounded only by traversal_depth and
+    # subsystem membership -- this module's own docstring already
+    # documents that a real subsystem can be "giant"/"monster"-sized, so
+    # an unbounded import-graph BFS within one is a real, reachable risk,
+    # not theoretical. Same order-of-magnitude cap as the classic
+    # resolver's, for consistency, not copied blindly: both bound the
+    # same kind of thing (files/symbols accumulated by one resolution
+    # call), so the same order of magnitude is the right choice, not an
+    # arbitrary different number.
     result: dict[str, tuple[int, str]] = {}
     visited: set[str] = set(entry_files)
     frontier: set[str] = set(entry_files)
     depth = 1
 
-    while frontier and depth <= traversal_depth:
+    while frontier and depth <= traversal_depth and len(result) < _MAX_EXPANSION_FILES:
         candidates: dict[str, set[str]] = defaultdict(set)
         for node in sorted(frontier):
             all_neighbors = import_graph.imports_of(node) | import_graph.importers_of(node)
@@ -294,7 +317,9 @@ def _expand_within_subsystem(
                     candidates[neighbor].add(node)
         if not candidates:
             break
-        for neighbor, parents in candidates.items():
+        for neighbor, parents in sorted(candidates.items()):
+            if len(result) >= _MAX_EXPANSION_FILES:
+                break
             result[neighbor] = (depth, min(parents))
             visited.add(neighbor)
         frontier = set(candidates.keys())

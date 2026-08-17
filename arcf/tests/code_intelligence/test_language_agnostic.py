@@ -14,12 +14,26 @@ with no per-language branching anywhere.
 from pathlib import Path
 
 from code_intelligence.engine import CodeIntelligenceEngine
+from code_intelligence.index import CodeIntelligenceIndex
 from code_intelligence.languages.python_analyzer import PythonLanguageAnalyzer
 from code_intelligence.registry import LanguageRegistry
+from domain.code_intelligence import SymbolKind
 from infrastructure.cost import CostEstimator
 from workspace.scanner import RepositoryScanner
 
 from .toy_language_analyzer import ToyLanguageAnalyzer
+
+
+def _caller_files_of(index: CodeIntelligenceIndex, name: str) -> set[str]:
+    """Equivalent of the removed CandidateFileSelector.callers_of --
+    superseded in production by locality.py's locality_filtered_
+    callers_of_name (architecture closure, 2026-08-16)."""
+    files: set[str] = set()
+    for symbol in index.symbol_index.find_by_name(name):
+        if symbol.kind in (SymbolKind.FUNCTION, SymbolKind.METHOD):
+            files.add(symbol.file_path)
+            files |= index.call_graph.caller_files_of(symbol.id)
+    return files
 
 
 def _toy_engine() -> CodeIntelligenceEngine:
@@ -54,7 +68,7 @@ def test_toy_language_call_graph_answers_example_query(tmp_path: Path) -> None:
     scan = RepositoryScanner().scan(tmp_path)
     index = _toy_engine().build_index(tmp_path, scan.files)
 
-    assert index.candidate_selector.callers_of("authenticate") == {"auth.toy"}
+    assert _caller_files_of(index, "authenticate") == {"auth.toy"}
 
 
 def test_toy_language_import_and_dependency_graph(tmp_path: Path) -> None:
@@ -89,5 +103,5 @@ def test_python_and_toy_symbols_coexist_and_cross_resolve(tmp_path: Path) -> Non
     # A call written in the toy language resolves against a symbol defined
     # in Python — only possible if CallGraph/ReferenceResolver/SymbolIndex
     # never branch on language, only on the shared IR.
-    assert index.candidate_selector.callers_of("authenticate") == {"auth.py", "pages.toy"}
+    assert _caller_files_of(index, "authenticate") == {"auth.py", "pages.toy"}
     assert {"python", "toy"} <= {a.language for a in index.file_analyses.values()}

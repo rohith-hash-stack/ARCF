@@ -6,7 +6,7 @@ from code_intelligence.engine import CodeIntelligenceEngine
 from code_intelligence.index import CodeIntelligenceIndex
 from code_intelligence.languages.python_analyzer import PythonLanguageAnalyzer
 from code_intelligence.registry import LanguageRegistry
-from domain.context_resolution import EvidenceTier
+from domain.context_resolution import EvidenceTier, OriginStage
 from infrastructure.cost import CostEstimator
 from workspace.scanner import RepositoryScanner
 
@@ -85,6 +85,25 @@ def test_entry_file_gets_primary_tier_expansion_gets_supporting(tmp_path: Path) 
 
     tiers = {f.file_path: f.evidence_tier for f in result.candidate_files}
     assert EvidenceTier.PRIMARY in tiers.values()
+
+
+def test_candidate_files_are_tagged_with_drp_origin_stage(tmp_path: Path) -> None:
+    """G10 (2026-08-17, independent verification report): DRP's own
+    FileReference construction sites previously left origin_stage unset
+    entirely -- none of the classic resolver's 4 existing OriginStage
+    values honestly described DRP's TF-IDF/subsystem-routing mechanism,
+    so a new DRP_SUBSYSTEM_ROUTING value was added rather than forcing
+    an inaccurate one on to satisfy this test."""
+    _write(
+        tmp_path,
+        "pkg/server/watcher.py",
+        '"""configuration watcher"""\ndef watch_configuration():\n    return reload_config()\n',
+    )
+    result, _ = _resolve(tmp_path, "configuration watcher")
+
+    assert result.candidate_files
+    for file_ref in result.candidate_files:
+        assert file_ref.origin_stage is OriginStage.DRP_SUBSYSTEM_ROUTING
 
 
 def test_token_estimate_and_confidence_are_populated(tmp_path: Path) -> None:

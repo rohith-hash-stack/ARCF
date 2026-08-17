@@ -7,6 +7,7 @@ from domain.context_resolution import (
     DependencyEdge,
     EvidenceTier,
     FileReference,
+    OriginStage,
     TokenEstimate,
 )
 from workspace.scanner import RepositoryScanner
@@ -146,6 +147,33 @@ def test_expands_deterministically_for_missing_categories(tmp_path: Path) -> Non
     assert "login implementation" in report.satisfied
     assert "session persistence" in report.missing
     assert "authentication middleware" in report.missing
+
+
+def test_expanded_candidates_carry_origin_stage(tmp_path: Path) -> None:
+    """Architecture closure (2026-08-17, G15): expansion-added
+    FileReferences previously left origin_stage at its None default --
+    the one reachable-on-the-default-path gap in OriginStage's own
+    docstring claim. Now tagged EVIDENCE_FALLBACK_MATCH, same as
+    evidence_fallback.py's own equivalent additions."""
+    _write(tmp_path, "handler.py", "def handle():\n    pass\n")
+    _write(tmp_path, "auth/login.py", "def login():\n    pass\n")
+    scan = RepositoryScanner().scan(tmp_path)
+
+    result = _result(
+        str(tmp_path),
+        [
+            FileReference(
+                file_path="handler.py", reason="defines handle", language="python", token_count=5
+            )
+        ],
+    )
+
+    updated, _report = validate_sufficiency(
+        result, AUTHENTICATION_EVIDENCE_CONTRACT, scan.files, tmp_path
+    )
+
+    added = next(f for f in updated.candidate_files if f.file_path == "auth/login.py")
+    assert added.origin_stage == OriginStage.EVIDENCE_FALLBACK_MATCH
 
 
 def test_sensitive_credential_files_are_never_read_to_satisfy_a_category(tmp_path: Path) -> None:

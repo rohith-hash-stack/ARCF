@@ -322,11 +322,20 @@ class CodeIntelligenceContractService:
                 "No workspace_root available; attach a workspace first or provide one"
             )
 
+        # Architecture closure (2026-08-16): SLM-1's own extracted entities
+        # were computed at contract-creation time and then never reached
+        # retrieval -- every caller had to separately, manually supply
+        # target_names. Default to the already-extracted entities only
+        # when the caller passes none; any caller that does supply
+        # target_names (every existing test, every existing route call)
+        # is byte-identical unaffected.
+        effective_target_names = target_names or list(latest.contract.intent.entities)
+
         result = await asyncio.to_thread(
             self._resolve,
             Path(root),
             str(latest.contract_id),
-            target_names,
+            effective_target_names,
             latest.contract.intent.raw_request,
             enable_subsystem_localization,
             enable_ranked_seed_selection,
@@ -806,6 +815,36 @@ class CodeIntelligenceContractService:
             raw_request,
             target_names=target_names,
         )
+
+        # Evidence-state contract (2026-08-17, final closure pass, Final
+        # Issue 1): DrpResolver.resolve() never populates
+        # evidence_categories_missing, and this branch previously
+        # returned straight past this point without ever calling
+        # validate_sufficiency -- meaning a DRP-produced
+        # ContextResolutionResult always looked evidence-satisfied to
+        # BOTH consumers that read this field: the orchestrator's own
+        # pre-generation Case-B check, AND verify_grounding()'s
+        # post-generation evidence check, which examines whichever
+        # resolution actually produced the artifact -- DRP, on every
+        # recovery retry, since it's the one alternate strategy. That
+        # made Case-B's post-generation half of the grounding safety net
+        # silently inert specifically on the recovery path, regardless of
+        # whether DRP's real retrieval actually covered what the task
+        # needed. Fixed by giving DRP the same evidence-state CONTRACT
+        # classic has -- not classic's whole pipeline (lexical probing,
+        # anchor classification, multi-axis decomposition stay
+        # classic-only, preserving DRP's deliberate isolation from those
+        # mechanisms) -- using only the keyword-based
+        # detect_task_type_for_evidence(raw_request), which needs no
+        # RepositoryScopeClassifier call (DRP intentionally never
+        # classifies scope): the same deterministic, resolver-agnostic
+        # validate_sufficiency() classic already uses, since it operates
+        # purely on the already-resolved candidate_files/result, not on
+        # anything classic-specific.
+        evidence_task_type = detect_task_type_for_evidence(raw_request)
+        contract = build_evidence_contract(evidence_task_type) if evidence_task_type else ()
+        if contract:
+            result, _ = validate_sufficiency(result, contract, scan.files, root_path)
         return result
 
     def _resolve_via_anchor_classification(

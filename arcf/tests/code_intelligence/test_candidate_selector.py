@@ -42,8 +42,10 @@ def _function(name: str, file_path: str, kind: SymbolKind = SymbolKind.FUNCTION)
 
 
 def test_playbook_example_query() -> None:
-    """"Find every caller of authenticate() and every class extending
-    BasePage" — answered with zero LLM involvement."""
+    """"Find every class extending BasePage" — answered with zero LLM
+    involvement. (The sibling "every caller of authenticate()" half of
+    this example used callers_of, removed in the architecture closure —
+    see candidate_selector.py's own module docstring.)"""
     base_page = _class("BasePage", "pages/base.py")
     login_page = _class("LoginPage", "pages/login.py", bases=["BasePage"])
     authenticate = _function("authenticate", "auth.py", kind=SymbolKind.METHOD)
@@ -64,7 +66,6 @@ def test_playbook_example_query() -> None:
     dependency_graph = DependencyGraph(ImportGraph([]))
     selector = CandidateFileSelector(symbol_index, call_graph, inheritance_graph, dependency_graph)
 
-    assert selector.callers_of("authenticate") == {"auth.py", "tests/test_login.py"}
     assert selector.subclasses_of("BasePage") == {"pages/base.py", "pages/login.py"}
 
 
@@ -86,47 +87,3 @@ def test_impacted_files_includes_the_file_itself() -> None:
     assert selector.impacted_files("utils.py") == {"utils.py", "app.py"}
 
 
-def test_callers_of_unknown_function_returns_empty_set() -> None:
-    selector = CandidateFileSelector(
-        SymbolIndex([]),
-        CallGraph([], ReferenceResolver(SymbolIndex([]))),
-        InheritanceGraph([], ReferenceResolver(SymbolIndex([]))),
-        DependencyGraph(ImportGraph([])),
-    )
-    assert selector.callers_of("nonexistent") == set()
-
-
-def test_transitive_callers_of_reaches_multi_hop_chain() -> None:
-    # controller.py calls service.py calls repository.py::authenticate
-    authenticate = _function("authenticate", "repository.py", kind=SymbolKind.METHOD)
-    login = _function("login", "service.py", kind=SymbolKind.METHOD)
-    handle_login = _function("handle_login", "controller.py", kind=SymbolKind.METHOD)
-    symbols = [authenticate, login, handle_login]
-    resolver = ReferenceResolver(SymbolIndex(symbols))
-    calls = [
-        CallReference(
-            caller_id=login.id,
-            callee_name="authenticate",
-            file_path="service.py",
-            location=_loc("service.py"),
-        ),
-        CallReference(
-            caller_id=handle_login.id,
-            callee_name="login",
-            file_path="controller.py",
-            location=_loc("controller.py"),
-        ),
-    ]
-    call_graph = CallGraph(calls, resolver)
-    selector = CandidateFileSelector(
-        SymbolIndex(symbols),
-        call_graph,
-        InheritanceGraph(symbols, resolver),
-        DependencyGraph(ImportGraph([])),
-    )
-
-    depth_one = selector.transitive_callers_of("authenticate", max_depth=1)
-    assert depth_one == {"service.py": 1}
-
-    unbounded = selector.transitive_callers_of("authenticate")
-    assert unbounded == {"service.py": 1, "controller.py": 2}

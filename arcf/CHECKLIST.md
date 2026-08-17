@@ -33,9 +33,27 @@ first if you're picking up mid-item, `PROGRESS.md` for what's already landed.
 Update this block at the end of every session so a new session (or a continuation after a context
 limit) can resume without re-deriving anything.
 
-- **Last updated:** 2026-08-13 (this session — resuming gap #3 with a decided direction, see "3c"
-  under "Production Readiness Gap Resolution" below)
-- **Active branch:** `feature/local-inference-server`, off `Base`. Historical unmerged branches
+- **Last updated:** 2026-08-17 — **ARCF Architecture Closure is CODE-COMPLETE and adversarially
+  re-verified, not yet committed/merged.** Read `docs/ARCF_ARCHITECTURE_CLOSURE_CHECKLIST_2026-08-16.md`
+  FIRST if resuming — it has the full record: 23/24 Final Architecture Acceptance criteria PASS (1
+  explicitly deferred, FA-14), all 6 closure sweeps PASS, **1022/1022 tests passing** on
+  `feature/architecture-closure` (off `Base` `5b7fa5c`). Real end-to-end proof: `POST /contracts/{id}
+  /grounded-execution` now takes a bare `contract_id` through retrieval → evidence check → ranking →
+  context → generation → deterministic grounding verification → bounded (`MAX_RECOVERY_ATTEMPTS=1`,
+  `resolver_strategy="drp"`) recovery → a real persisted `ExecutionLedgerEntry`, closing the
+  "Generation is a disconnected bypass" gap that was this whole effort's central finding.
+  **Two independent re-verification rounds found and fixed real issues after the first "done"
+  claim** — see the closure checklist's §41.1 for the full account: a financial-audit bug (real LLM
+  spend silently unrecorded if an exception hit mid-recovery-retry), several verification-regex
+  false positives/negatives, an unbounded second expansion loop the original G16 fix missed, and two
+  of the discovery report's 19 numbered gaps (G15, G18) that had silently fallen out of tracking
+  entirely. All fixed and tested. **Not yet committed to git or merged to `Base`** — awaiting
+  explicit go-ahead (this session does not commit without being
+  asked). `feature/local-inference-server` (gap #3) remains PAUSED, untouched, its one commit
+  (`16ddfed`) unmerged, waiting to resume after this closure lands.
+- **Prior entry (2026-08-13, frozen):** resuming gap #3 with a decided direction, see "3c"
+  under "Production Readiness Gap Resolution" below.
+- **Active branch (gap #3, paused):** `feature/local-inference-server`, off `Base`. Historical unmerged branches
   unchanged: `experiment/locality-utility-suppression` (same treatment as `exp/enhanced-path-
   locality`, `exp/semantic-reranker`, `exp/type-graph-indexing`, all left as historical record).
   `feature/symbol-identity-audit-trail`, `feature/observability-telemetry`, `feature/operational-
