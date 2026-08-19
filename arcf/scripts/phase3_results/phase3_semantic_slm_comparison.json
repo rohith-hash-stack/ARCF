@@ -1,0 +1,1465 @@
+{
+  "local_model": "ollama_chat/qwen2.5:1.5b-instruct",
+  "k": 5,
+  "repos": {
+    "django": {
+      "files_scanned": 7012,
+      "index_seconds": 24.75339680002071,
+      "arms": {
+        "current_arcf": {
+          "summary": {
+            "tasks_run": 10,
+            "tasks_errored": 0,
+            "positive_tasks": 9,
+            "negative_tasks": 1,
+            "mean_recall_at_1": 0.2962962962962963,
+            "mean_recall_at_5": 0.3333333333333333,
+            "mean_mrr": 0.5594011032308904,
+            "mean_candidate_count": 81.88888888888889,
+            "false_positive_rate": 0.0,
+            "mean_slm_latency_ms": 2130.7346000045072,
+            "mean_slm_prompt_tokens": 579.3,
+            "mean_slm_completion_tokens": 73.6,
+            "malformed_output_rate": 0.0,
+            "failure_class_counts": {
+              "C": 1,
+              "D": 1,
+              "A": 2
+            }
+          },
+          "tasks": [
+            {
+              "task_id": "django_task1_modelbase_metaclass_inheritance",
+              "category": "J",
+              "negative": false,
+              "retrieval_terms": [
+                "User",
+                "AbstractUser",
+                "AbstractBaseUser",
+                "PermissionsMixin",
+                "Model"
+              ],
+              "slm_intent": "Understand Django User model",
+              "slm_concepts": [],
+              "slm_confidence": "high",
+              "slm_is_ambiguous": false,
+              "candidate_count": 514,
+              "slm_prompt_tokens": 595,
+              "slm_completion_tokens": 93,
+              "slm_latency_ms": 5600.913600006606,
+              "slm_malformed_attempts": 0,
+              "resolve_latency_ms": 3674.635000003036,
+              "ground_truth_files": [
+                "django/db/models/base.py",
+                "django/contrib/auth/base_user.py",
+                "django/contrib/auth/models.py"
+              ],
+              "top10_candidates": [
+                "django/contrib/auth/base_user.py",
+                "django/db/models/base.py",
+                "django/forms/widgets.py",
+                "django/template/defaulttags.py",
+                "django/templatetags/i18n.py",
+                "tests/admin_changelist/models.py",
+                "tests/admin_checks/models.py",
+                "tests/admin_filters/models.py",
+                "tests/admin_inlines/models.py",
+                "tests/admin_registration/models.py"
+              ],
+              "rank": 1,
+              "recall_at_1": 0.3333333333333333,
+              "recall_at_5": 0.6666666666666666,
+              "mrr": 1.0,
+              "failure_class": null,
+              "false_positive": null
+            },
+            {
+              "task_id": "django_task2_modelform_metaclass_hierarchy",
+              "category": "J",
+              "negative": false,
+              "retrieval_terms": [
+                "ModelForm"
+              ],
+              "slm_intent": "Understand Django ModelForm",
+              "slm_concepts": [],
+              "slm_confidence": "high",
+              "slm_is_ambiguous": false,
+              "candidate_count": 39,
+              "slm_prompt_tokens": 585,
+              "slm_completion_tokens": 70,
+              "slm_latency_ms": 1833.8212000089698,
+              "slm_malformed_attempts": 0,
+              "resolve_latency_ms": 5.721699999412522,
+              "ground_truth_files": [
+                "django/forms/widgets.py",
+                "django/forms/forms.py",
+                "django/forms/models.py"
+              ],
+              "top10_candidates": [
+                "django/forms/models.py",
+                "django/contrib/auth/forms.py",
+                "tests/admin_inlines/admin.py",
+                "tests/admin_views/admin.py",
+                "tests/auth_tests/test_forms.py",
+                "tests/forms_tests/tests/test_validators.py",
+                "tests/forms_tests/tests/tests.py",
+                "tests/gis_tests/test_geoforms.py",
+                "tests/model_forms/test_modelchoicefield.py",
+                "tests/model_forms/tests.py"
+              ],
+              "rank": 1,
+              "recall_at_1": 0.3333333333333333,
+              "recall_at_5": 0.3333333333333333,
+              "mrr": 1.0,
+              "failure_class": null,
+              "false_positive": null
+            },
+            {
+              "task_id": "django_task3_manager_from_queryset_dynamic_class",
+              "category": "I",
+              "negative": false,
+              "retrieval_terms": [
+                "Manager",
+                "QuerySet"
+              ],
+              "slm_intent": "Understand Django Manager class",
+              "slm_concepts": [],
+              "slm_confidence": "high",
+              "slm_is_ambiguous": false,
+              "candidate_count": 50,
+              "slm_prompt_tokens": 579,
+              "slm_completion_tokens": 73,
+              "slm_latency_ms": 1750.3089000238106,
+              "slm_malformed_attempts": 0,
+              "resolve_latency_ms": 3.65659999079071,
+              "ground_truth_files": [
+                "django/db/models/manager.py"
+              ],
+              "top10_candidates": [
+                "django/db/models/query.py",
+                "tests/custom_managers/models.py",
+                "tests/serializers/models/natural.py",
+                "tests/fixtures/models.py",
+                "tests/managers_regress/tests.py",
+                "django/contrib/auth/models.py",
+                "tests/fixtures_regress/models.py",
+                "tests/managers_regress/models.py",
+                "tests/migrations/models.py",
+                "tests/auth_tests/models/custom_user.py"
+              ],
+              "rank": 47,
+              "recall_at_1": 0.0,
+              "recall_at_5": 0.0,
+              "mrr": 0.02127659574468085,
+              "failure_class": "C",
+              "false_positive": null
+            },
+            {
+              "task_id": "django_task4_model_save_exact",
+              "category": "A",
+              "negative": false,
+              "retrieval_terms": [
+                "Model.save"
+              ],
+              "slm_intent": "Understand Model.save in Django",
+              "slm_concepts": [],
+              "slm_confidence": "high",
+              "slm_is_ambiguous": false,
+              "candidate_count": 11,
+              "slm_prompt_tokens": 570,
+              "slm_completion_tokens": 71,
+              "slm_latency_ms": 1367.4400000018068,
+              "slm_malformed_attempts": 0,
+              "resolve_latency_ms": 106.01909999968484,
+              "ground_truth_files": [
+                "django/db/models/base.py"
+              ],
+              "top10_candidates": [
+                "django/db/models/base.py",
+                "django/contrib/contenttypes/fields.py",
+                "django/db/models/fields/related_descriptors.py",
+                "django/db/models/query.py",
+                "django/db/models/query_utils.py",
+                "tests/basic/tests.py",
+                "tests/model_forms/tests.py",
+                "tests/prefetch_related/tests.py",
+                "tests/raw_query/tests.py",
+                "django/db/models/deletion.py"
+              ],
+              "rank": 1,
+              "recall_at_1": 1.0,
+              "recall_at_5": 1.0,
+              "mrr": 1.0,
+              "failure_class": null,
+              "false_positive": null
+            },
+            {
+              "task_id": "django_task5_ambiguous_save",
+              "category": "B",
+              "negative": false,
+              "retrieval_terms": [
+                "save"
+              ],
+              "slm_intent": "Understand save method functionality",
+              "slm_concepts": [],
+              "slm_confidence": "high",
+              "slm_is_ambiguous": false,
+              "candidate_count": 85,
+              "slm_prompt_tokens": 567,
+              "slm_completion_tokens": 69,
+              "slm_latency_ms": 1657.3866000107955,
+              "slm_malformed_attempts": 0,
+              "resolve_latency_ms": 466.5198999864515,
+              "ground_truth_files": [
+                "django/db/models/base.py"
+              ],
+              "top10_candidates": [
+                "django/contrib/admin/options.py",
+                "django/contrib/auth/hashers.py",
+                "django/contrib/auth/tokens.py",
+                "django/contrib/auth/views.py",
+                "django/core/mail/message.py",
+                "django/forms/fields.py",
+                "django/views/generic/edit.py",
+                "tests/admin_docs/test_middleware.py",
+                "tests/admin_filters/tests.py",
+                "tests/admin_inlines/tests.py"
+              ],
+              "rank": 75,
+              "recall_at_1": 0.0,
+              "recall_at_5": 0.0,
+              "mrr": 0.013333333333333334,
+              "failure_class": "D",
+              "false_positive": null
+            },
+            {
+              "task_id": "django_task6_signal_dispatch_subsystem",
+              "category": "D",
+              "negative": false,
+              "retrieval_terms": [],
+              "slm_intent": "Understand Django signal dispatch",
+              "slm_concepts": [],
+              "slm_confidence": "high",
+              "slm_is_ambiguous": false,
+              "candidate_count": 0,
+              "slm_prompt_tokens": 576,
+              "slm_completion_tokens": 67,
+              "slm_latency_ms": 2843.066200002795,
+              "slm_malformed_attempts": 0,
+              "resolve_latency_ms": 0.48069999320432544,
+              "ground_truth_files": [
+                "django/dispatch/dispatcher.py"
+              ],
+              "top10_candidates": [],
+              "rank": null,
+              "recall_at_1": 0.0,
+              "recall_at_5": 0.0,
+              "mrr": 0.0,
+              "failure_class": "A",
+              "false_positive": null
+            },
+            {
+              "task_id": "django_task7_request_response_call_chain",
+              "category": "F",
+              "negative": false,
+              "retrieval_terms": [
+                "BaseHandler.get_response"
+              ],
+              "slm_intent": "trace request handling calls",
+              "slm_concepts": [],
+              "slm_confidence": "high",
+              "slm_is_ambiguous": false,
+              "candidate_count": 7,
+              "slm_prompt_tokens": 580,
+              "slm_completion_tokens": 76,
+              "slm_latency_ms": 1529.4974999851547,
+              "slm_malformed_attempts": 0,
+              "resolve_latency_ms": 54.65530001674779,
+              "ground_truth_files": [
+                "django/core/handlers/base.py",
+                "django/urls/resolvers.py"
+              ],
+              "top10_candidates": [
+                "django/core/handlers/base.py",
+                "django/contrib/staticfiles/handlers.py",
+                "django/test/testcases.py",
+                "django/core/handlers/wsgi.py",
+                "django/test/client.py",
+                "django/core/handlers/exception.py",
+                "django/utils/log.py"
+              ],
+              "rank": 1,
+              "recall_at_1": 0.5,
+              "recall_at_5": 0.5,
+              "mrr": 1.0,
+              "failure_class": null,
+              "false_positive": null
+            },
+            {
+              "task_id": "django_task8_middleware_config_driven",
+              "category": "H",
+              "negative": false,
+              "retrieval_terms": [],
+              "slm_intent": "Understand Django middleware order",
+              "slm_concepts": [],
+              "slm_confidence": "high",
+              "slm_is_ambiguous": false,
+              "candidate_count": 0,
+              "slm_prompt_tokens": 580,
+              "slm_completion_tokens": 67,
+              "slm_latency_ms": 1398.0897000001278,
+              "slm_malformed_attempts": 0,
+              "resolve_latency_ms": 0.26580001576803625,
+              "ground_truth_files": [
+                "django/core/handlers/base.py"
+              ],
+              "top10_candidates": [],
+              "rank": null,
+              "recall_at_1": 0.0,
+              "recall_at_5": 0.0,
+              "mrr": 0.0,
+              "failure_class": "A",
+              "false_positive": null
+            },
+            {
+              "task_id": "django_task9_admin_uses_forms_metaclass",
+              "category": "E",
+              "negative": false,
+              "retrieval_terms": [
+                "ModelAdmin",
+                "BaseModelAdmin"
+              ],
+              "slm_intent": "Understand Django class relationships",
+              "slm_concepts": [],
+              "slm_confidence": "high",
+              "slm_is_ambiguous": false,
+              "candidate_count": 31,
+              "slm_prompt_tokens": 583,
+              "slm_completion_tokens": 80,
+              "slm_latency_ms": 1834.3242999981157,
+              "slm_malformed_attempts": 0,
+              "resolve_latency_ms": 5.972200015094131,
+              "ground_truth_files": [
+                "django/contrib/admin/options.py",
+                "django/forms/widgets.py"
+              ],
+              "top10_candidates": [
+                "django/contrib/admin/options.py",
+                "tests/admin_changelist/admin.py",
+                "tests/admin_changelist/tests.py",
+                "tests/admin_checks/tests.py",
+                "tests/admin_filters/tests.py",
+                "tests/admin_inlines/admin.py",
+                "tests/admin_ordering/tests.py",
+                "tests/admin_views/admin.py",
+                "tests/admin_views/test_autocomplete_view.py",
+                "tests/admin_widgets/tests.py"
+              ],
+              "rank": 1,
+              "recall_at_1": 0.5,
+              "recall_at_5": 0.5,
+              "mrr": 1.0,
+              "failure_class": null,
+              "false_positive": null
+            },
+            {
+              "task_id": "django_task10_negative_graphql_websocket",
+              "category": "L",
+              "negative": true,
+              "retrieval_terms": [],
+              "slm_intent": "Understand Django GraphQL and WebSocket",
+              "slm_concepts": [],
+              "slm_confidence": "high",
+              "slm_is_ambiguous": false,
+              "candidate_count": 0,
+              "slm_prompt_tokens": 578,
+              "slm_completion_tokens": 70,
+              "slm_latency_ms": 1492.49800000689,
+              "slm_malformed_attempts": 0,
+              "resolve_latency_ms": 0.47989998711273074,
+              "false_positive": false,
+              "recall_at_1": null,
+              "recall_at_5": null,
+              "mrr": null,
+              "rank": null,
+              "failure_class": null
+            }
+          ]
+        },
+        "generic_local_slm": {
+          "summary": {
+            "tasks_run": 10,
+            "tasks_errored": 0,
+            "positive_tasks": 9,
+            "negative_tasks": 1,
+            "mean_recall_at_1": 0.1111111111111111,
+            "mean_recall_at_5": 0.1111111111111111,
+            "mean_mrr": 0.11347517730496454,
+            "mean_candidate_count": 69.11111111111111,
+            "false_positive_rate": 0.0,
+            "mean_slm_latency_ms": 8656.818309996743,
+            "mean_slm_prompt_tokens": 468.1,
+            "mean_slm_completion_tokens": 105.8,
+            "malformed_output_rate": 0.0,
+            "failure_class_counts": {
+              "A": 6,
+              "C": 1,
+              "D": 1
+            }
+          },
+          "tasks": [
+            {
+              "task_id": "django_task1_modelbase_metaclass_inheritance",
+              "category": "J",
+              "negative": false,
+              "retrieval_terms": [],
+              "slm_intent": "understand_behavior",
+              "slm_concepts": [
+                "Django",
+                "User model",
+                "AbstractUser/AbstractBaseUser/PermissionsMixin class hierarchy",
+                "metaclass"
+              ],
+              "slm_confidence": "medium",
+              "slm_is_ambiguous": false,
+              "candidate_count": 0,
+              "slm_prompt_tokens": 484,
+              "slm_completion_tokens": 127,
+              "slm_latency_ms": 22454.71349998843,
+              "slm_malformed_attempts": 0,
+              "resolve_latency_ms": 0.7222999993246049,
+              "ground_truth_files": [
+                "django/db/models/base.py",
+                "django/contrib/auth/base_user.py",
+                "django/contrib/auth/models.py"
+              ],
+              "top10_candidates": [],
+              "rank": null,
+              "recall_at_1": 0.0,
+              "recall_at_5": 0.0,
+              "mrr": 0.0,
+              "failure_class": "A",
+              "false_positive": null
+            },
+            {
+              "task_id": "django_task2_modelform_metaclass_hierarchy",
+              "category": "J",
+              "negative": false,
+              "retrieval_terms": [],
+              "slm_intent": "explain_absence",
+              "slm_concepts": [
+                "Django",
+                "ModelForm",
+                "Form field declaration",
+                "model-derived fields"
+              ],
+              "slm_confidence": "medium",
+              "slm_is_ambiguous": false,
+              "candidate_count": 0,
+              "slm_prompt_tokens": 474,
+              "slm_completion_tokens": 117,
+              "slm_latency_ms": 8043.208199989749,
+              "slm_malformed_attempts": 0,
+              "resolve_latency_ms": 0.3157000173814595,
+              "ground_truth_files": [
+                "django/forms/widgets.py",
+                "django/forms/forms.py",
+                "django/forms/models.py"
+              ],
+              "top10_candidates": [],
+              "rank": null,
+              "recall_at_1": 0.0,
+              "recall_at_5": 0.0,
+              "mrr": 0.0,
+              "failure_class": "A",
+              "false_positive": null
+            },
+            {
+              "task_id": "django_task3_manager_from_queryset_dynamic_class",
+              "category": "I",
+              "negative": false,
+              "retrieval_terms": [
+                "Django",
+                "Manager",
+                "QuerySet",
+                "from_queryset"
+              ],
+              "slm_intent": "understand_behavior",
+              "slm_concepts": [],
+              "slm_confidence": "medium",
+              "slm_is_ambiguous": false,
+              "candidate_count": 50,
+              "slm_prompt_tokens": 468,
+              "slm_completion_tokens": 95,
+              "slm_latency_ms": 7097.621799999615,
+              "slm_malformed_attempts": 0,
+              "resolve_latency_ms": 70.02509999438189,
+              "ground_truth_files": [
+                "django/db/models/manager.py"
+              ],
+              "top10_candidates": [
+                "django/db/models/query.py",
+                "tests/custom_managers/models.py",
+                "tests/serializers/models/natural.py",
+                "tests/fixtures/models.py",
+                "tests/managers_regress/tests.py",
+                "django/contrib/auth/models.py",
+                "tests/fixtures_regress/models.py",
+                "tests/managers_regress/models.py",
+                "tests/migrations/models.py",
+                "tests/auth_tests/models/custom_user.py"
+              ],
+              "rank": 47,
+              "recall_at_1": 0.0,
+              "recall_at_5": 0.0,
+              "mrr": 0.02127659574468085,
+              "failure_class": "C",
+              "false_positive": null
+            },
+            {
+              "task_id": "django_task4_model_save_exact",
+              "category": "A",
+              "negative": false,
+              "retrieval_terms": [
+                "Model",
+                "save"
+              ],
+              "slm_intent": "understand_behavior",
+              "slm_concepts": [],
+              "slm_confidence": "medium",
+              "slm_is_ambiguous": false,
+              "candidate_count": 572,
+              "slm_prompt_tokens": 459,
+              "slm_completion_tokens": 91,
+              "slm_latency_ms": 5020.02419999917,
+              "slm_malformed_attempts": 0,
+              "resolve_latency_ms": 4112.714699993376,
+              "ground_truth_files": [
+                "django/db/models/base.py"
+              ],
+              "top10_candidates": [
+                "django/db/models/base.py",
+                "django/contrib/admin/options.py",
+                "django/contrib/auth/hashers.py",
+                "django/contrib/auth/tokens.py",
+                "django/contrib/auth/views.py",
+                "django/core/mail/message.py",
+                "django/forms/fields.py",
+                "django/views/generic/edit.py",
+                "tests/admin_docs/test_middleware.py",
+                "tests/admin_filters/tests.py"
+              ],
+              "rank": 1,
+              "recall_at_1": 1.0,
+              "recall_at_5": 1.0,
+              "mrr": 1.0,
+              "failure_class": null,
+              "false_positive": null
+            },
+            {
+              "task_id": "django_task5_ambiguous_save",
+              "category": "B",
+              "negative": false,
+              "retrieval_terms": [],
+              "slm_intent": "understand_behavior",
+              "slm_concepts": [
+                "method",
+                "save"
+              ],
+              "slm_confidence": "medium",
+              "slm_is_ambiguous": false,
+              "candidate_count": 0,
+              "slm_prompt_tokens": 456,
+              "slm_completion_tokens": 81,
+              "slm_latency_ms": 6221.972600003937,
+              "slm_malformed_attempts": 0,
+              "resolve_latency_ms": 0.41810001130215824,
+              "ground_truth_files": [
+                "django/db/models/base.py"
+              ],
+              "top10_candidates": [],
+              "rank": null,
+              "recall_at_1": 0.0,
+              "recall_at_5": 0.0,
+              "mrr": 0.0,
+              "failure_class": "D",
+              "false_positive": null
+            },
+            {
+              "task_id": "django_task6_signal_dispatch_subsystem",
+              "category": "D",
+              "negative": false,
+              "retrieval_terms": [],
+              "slm_intent": "understand_behavior",
+              "slm_concepts": [
+                "django",
+                "signal",
+                "dispatch",
+                "receiver"
+              ],
+              "slm_confidence": "medium",
+              "slm_is_ambiguous": false,
+              "candidate_count": 0,
+              "slm_prompt_tokens": 465,
+              "slm_completion_tokens": 110,
+              "slm_latency_ms": 5983.563699992374,
+              "slm_malformed_attempts": 0,
+              "resolve_latency_ms": 0.35879999632015824,
+              "ground_truth_files": [
+                "django/dispatch/dispatcher.py"
+              ],
+              "top10_candidates": [],
+              "rank": null,
+              "recall_at_1": 0.0,
+              "recall_at_5": 0.0,
+              "mrr": 0.0,
+              "failure_class": "A",
+              "false_positive": null
+            },
+            {
+              "task_id": "django_task7_request_response_call_chain",
+              "category": "F",
+              "negative": false,
+              "retrieval_terms": [],
+              "slm_intent": "trace_call_chain",
+              "slm_concepts": [
+                "call_chain",
+                "BaseHandler",
+                "get_response",
+                "request",
+                "view"
+              ],
+              "slm_confidence": "medium",
+              "slm_is_ambiguous": false,
+              "candidate_count": 0,
+              "slm_prompt_tokens": 469,
+              "slm_completion_tokens": 96,
+              "slm_latency_ms": 7249.528099986492,
+              "slm_malformed_attempts": 0,
+              "resolve_latency_ms": 0.3874999820254743,
+              "ground_truth_files": [
+                "django/core/handlers/base.py",
+                "django/urls/resolvers.py"
+              ],
+              "top10_candidates": [],
+              "rank": null,
+              "recall_at_1": 0.0,
+              "recall_at_5": 0.0,
+              "mrr": 0.0,
+              "failure_class": "A",
+              "false_positive": null
+            },
+            {
+              "task_id": "django_task8_middleware_config_driven",
+              "category": "H",
+              "negative": false,
+              "retrieval_terms": [],
+              "slm_intent": "understand_behavior",
+              "slm_concepts": [
+                "Django",
+                "middleware classes",
+                "request processing"
+              ],
+              "slm_confidence": "medium",
+              "slm_is_ambiguous": true,
+              "candidate_count": 0,
+              "slm_prompt_tokens": 469,
+              "slm_completion_tokens": 108,
+              "slm_latency_ms": 7979.057199991075,
+              "slm_malformed_attempts": 0,
+              "resolve_latency_ms": 0.3513999981805682,
+              "ground_truth_files": [
+                "django/core/handlers/base.py"
+              ],
+              "top10_candidates": [],
+              "rank": null,
+              "recall_at_1": 0.0,
+              "recall_at_5": 0.0,
+              "mrr": 0.0,
+              "failure_class": "A",
+              "false_positive": null
+            },
+            {
+              "task_id": "django_task9_admin_uses_forms_metaclass",
+              "category": "E",
+              "negative": false,
+              "retrieval_terms": [],
+              "slm_intent": "understand_behavior",
+              "slm_concepts": [
+                "Django",
+                "admin",
+                "ModelAdmin",
+                "BaseModelAdmin",
+                "forms",
+                "media-handling"
+              ],
+              "slm_confidence": "medium",
+              "slm_is_ambiguous": true,
+              "candidate_count": 0,
+              "slm_prompt_tokens": 472,
+              "slm_completion_tokens": 126,
+              "slm_latency_ms": 8801.408400002401,
+              "slm_malformed_attempts": 0,
+              "resolve_latency_ms": 0.3980000037699938,
+              "ground_truth_files": [
+                "django/contrib/admin/options.py",
+                "django/forms/widgets.py"
+              ],
+              "top10_candidates": [],
+              "rank": null,
+              "recall_at_1": 0.0,
+              "recall_at_5": 0.0,
+              "mrr": 0.0,
+              "failure_class": "A",
+              "false_positive": null
+            },
+            {
+              "task_id": "django_task10_negative_graphql_websocket",
+              "category": "L",
+              "negative": true,
+              "retrieval_terms": [],
+              "slm_intent": "understand_behavior",
+              "slm_concepts": [
+                "Django",
+                "GraphQL",
+                "WebSocket"
+              ],
+              "slm_confidence": "medium",
+              "slm_is_ambiguous": true,
+              "candidate_count": 0,
+              "slm_prompt_tokens": 465,
+              "slm_completion_tokens": 107,
+              "slm_latency_ms": 7717.085400014184,
+              "slm_malformed_attempts": 0,
+              "resolve_latency_ms": 0.3491000097710639,
+              "false_positive": false,
+              "recall_at_1": null,
+              "recall_at_5": null,
+              "mrr": null,
+              "rank": null,
+              "failure_class": null
+            }
+          ]
+        }
+      }
+    },
+    "sqlalchemy": {
+      "files_scanned": 702,
+      "index_seconds": 27.77911969998968,
+      "arms": {
+        "current_arcf": {
+          "summary": {
+            "tasks_run": 10,
+            "tasks_errored": 0,
+            "positive_tasks": 9,
+            "negative_tasks": 1,
+            "mean_recall_at_1": 0.2037037037037037,
+            "mean_recall_at_5": 0.2037037037037037,
+            "mean_mrr": 0.3426239799121155,
+            "mean_candidate_count": 14.777777777777779,
+            "false_positive_rate": 0.0,
+            "mean_slm_latency_ms": 1387.1667799976422,
+            "mean_slm_prompt_tokens": 582.3,
+            "mean_slm_completion_tokens": 72.4,
+            "malformed_output_rate": 0.0,
+            "failure_class_counts": {
+              "B": 2,
+              "A": 1,
+              "C": 1,
+              "E": 1,
+              "D": 1
+            }
+          },
+          "tasks": [
+            {
+              "task_id": "sqla_task1_engine_connect",
+              "category": "A",
+              "negative": false,
+              "retrieval_terms": [
+                "Engine.connect"
+              ],
+              "slm_intent": "Understand Engine.connect functionality",
+              "slm_concepts": [],
+              "slm_confidence": "high",
+              "slm_is_ambiguous": false,
+              "candidate_count": 13,
+              "slm_prompt_tokens": 572,
+              "slm_completion_tokens": 74,
+              "slm_latency_ms": 1512.4327999947127,
+              "slm_malformed_attempts": 0,
+              "resolve_latency_ms": 85.69760000682436,
+              "ground_truth_files": [
+                "lib/sqlalchemy/engine/base.py"
+              ],
+              "top10_candidates": [
+                "lib/sqlalchemy/engine/base.py",
+                "lib/sqlalchemy/dialects/postgresql/base.py",
+                "lib/sqlalchemy/engine/reflection.py",
+                "lib/sqlalchemy/orm/session.py",
+                "lib/sqlalchemy/ext/asyncio/engine.py",
+                "lib/sqlalchemy/engine/default.py",
+                "lib/sqlalchemy/ext/asyncio/scoping.py",
+                "lib/sqlalchemy/ext/asyncio/session.py",
+                "lib/sqlalchemy/ext/horizontal_shard.py",
+                "lib/sqlalchemy/dialects/mysql/_mariadb_shim.py"
+              ],
+              "rank": 1,
+              "recall_at_1": 1.0,
+              "recall_at_5": 1.0,
+              "mrr": 1.0,
+              "failure_class": null,
+              "false_positive": null
+            },
+            {
+              "task_id": "sqla_task2_declarative_metaclass",
+              "category": "I",
+              "negative": false,
+              "retrieval_terms": [
+                "SQLAlchemy"
+              ],
+              "slm_intent": "Understand SQLAlchemy metaclass usage",
+              "slm_concepts": [],
+              "slm_confidence": "high",
+              "slm_is_ambiguous": false,
+              "candidate_count": 0,
+              "slm_prompt_tokens": 589,
+              "slm_completion_tokens": 72,
+              "slm_latency_ms": 1309.0154000092298,
+              "slm_malformed_attempts": 0,
+              "resolve_latency_ms": 0.34240001696161926,
+              "ground_truth_files": [
+                "lib/sqlalchemy/orm/decl_api.py",
+                "lib/sqlalchemy/orm/decl_base.py"
+              ],
+              "top10_candidates": [],
+              "rank": null,
+              "recall_at_1": 0.0,
+              "recall_at_5": 0.0,
+              "mrr": 0.0,
+              "failure_class": "B",
+              "false_positive": null
+            },
+            {
+              "task_id": "sqla_task3_instrumented_attribute_descriptor",
+              "category": "I",
+              "negative": false,
+              "retrieval_terms": [],
+              "slm_intent": "Understand SQLAlchemy attribute interception",
+              "slm_concepts": [],
+              "slm_confidence": "high",
+              "slm_is_ambiguous": false,
+              "candidate_count": 0,
+              "slm_prompt_tokens": 578,
+              "slm_completion_tokens": 68,
+              "slm_latency_ms": 1249.7545999940485,
+              "slm_malformed_attempts": 0,
+              "resolve_latency_ms": 0.33870001789182425,
+              "ground_truth_files": [
+                "lib/sqlalchemy/orm/attributes.py"
+              ],
+              "top10_candidates": [],
+              "rank": null,
+              "recall_at_1": 0.0,
+              "recall_at_5": 0.0,
+              "mrr": 0.0,
+              "failure_class": "A",
+              "false_positive": null
+            },
+            {
+              "task_id": "sqla_task4_table_new_dynamic_dispatch",
+              "category": "I",
+              "negative": false,
+              "retrieval_terms": [
+                "Table"
+              ],
+              "slm_intent": "Understand SQLAlchemy Table construction",
+              "slm_concepts": [],
+              "slm_confidence": "high",
+              "slm_is_ambiguous": false,
+              "candidate_count": 16,
+              "slm_prompt_tokens": 593,
+              "slm_completion_tokens": 70,
+              "slm_latency_ms": 1315.8735999895725,
+              "slm_malformed_attempts": 0,
+              "resolve_latency_ms": 85.00560000538826,
+              "ground_truth_files": [
+                "lib/sqlalchemy/sql/schema.py"
+              ],
+              "top10_candidates": [
+                "lib/sqlalchemy/testing/suite/test_ddl.py",
+                "lib/sqlalchemy/testing/suite/test_dialect.py",
+                "lib/sqlalchemy/testing/suite/test_insert.py",
+                "lib/sqlalchemy/testing/suite/test_reflection.py",
+                "lib/sqlalchemy/testing/suite/test_results.py",
+                "lib/sqlalchemy/testing/suite/test_select.py",
+                "lib/sqlalchemy/testing/suite/test_sequence.py",
+                "lib/sqlalchemy/testing/suite/test_types.py",
+                "lib/sqlalchemy/testing/util.py",
+                "lib/sqlalchemy/testing/config.py"
+              ],
+              "rank": 15,
+              "recall_at_1": 0.0,
+              "recall_at_5": 0.0,
+              "mrr": 0.06666666666666667,
+              "failure_class": "C",
+              "false_positive": null
+            },
+            {
+              "task_id": "sqla_task5_dialect_plugin_loading",
+              "category": "H",
+              "negative": false,
+              "retrieval_terms": [
+                "SQLAlchemy"
+              ],
+              "slm_intent": "Understand SQLAlchemy dialect selection",
+              "slm_concepts": [],
+              "slm_confidence": "high",
+              "slm_is_ambiguous": false,
+              "candidate_count": 0,
+              "slm_prompt_tokens": 598,
+              "slm_completion_tokens": 71,
+              "slm_latency_ms": 1305.29089999618,
+              "slm_malformed_attempts": 0,
+              "resolve_latency_ms": 0.2106000029016286,
+              "ground_truth_files": [
+                "lib/sqlalchemy/engine/url.py",
+                "lib/sqlalchemy/util/langhelpers.py"
+              ],
+              "top10_candidates": [],
+              "rank": null,
+              "recall_at_1": 0.0,
+              "recall_at_5": 0.0,
+              "mrr": 0.0,
+              "failure_class": "E",
+              "false_positive": null
+            },
+            {
+              "task_id": "sqla_task6_unit_of_work_subsystem",
+              "category": "D",
+              "negative": false,
+              "retrieval_terms": [
+                "UnitOfWork"
+              ],
+              "slm_intent": "Understand ORM Unit of Work",
+              "slm_concepts": [],
+              "slm_confidence": "high",
+              "slm_is_ambiguous": false,
+              "candidate_count": 0,
+              "slm_prompt_tokens": 583,
+              "slm_completion_tokens": 72,
+              "slm_latency_ms": 1263.405400008196,
+              "slm_malformed_attempts": 0,
+              "resolve_latency_ms": 0.28410000959411263,
+              "ground_truth_files": [
+                "lib/sqlalchemy/orm/unitofwork.py",
+                "lib/sqlalchemy/orm/session.py"
+              ],
+              "top10_candidates": [],
+              "rank": null,
+              "recall_at_1": 0.0,
+              "recall_at_5": 0.0,
+              "mrr": 0.0,
+              "failure_class": "B",
+              "false_positive": null
+            },
+            {
+              "task_id": "sqla_task7_session_commit_call_chain",
+              "category": "F",
+              "negative": false,
+              "retrieval_terms": [
+                "Session.commit"
+              ],
+              "slm_intent": "Understand Session.commit() internals",
+              "slm_concepts": [],
+              "slm_confidence": "high",
+              "slm_is_ambiguous": false,
+              "candidate_count": 18,
+              "slm_prompt_tokens": 581,
+              "slm_completion_tokens": 76,
+              "slm_latency_ms": 1536.9034999748692,
+              "slm_malformed_attempts": 0,
+              "resolve_latency_ms": 72.1995999920182,
+              "ground_truth_files": [
+                "lib/sqlalchemy/orm/session.py",
+                "lib/sqlalchemy/orm/unitofwork.py",
+                "lib/sqlalchemy/orm/persistence.py"
+              ],
+              "top10_candidates": [
+                "lib/sqlalchemy/orm/session.py",
+                "lib/sqlalchemy/engine/base.py",
+                "lib/sqlalchemy/engine/interfaces.py",
+                "lib/sqlalchemy/engine/result.py",
+                "lib/sqlalchemy/ext/asyncio/engine.py",
+                "lib/sqlalchemy/ext/asyncio/session.py",
+                "lib/sqlalchemy/orm/attributes.py",
+                "lib/sqlalchemy/engine/util.py",
+                "lib/sqlalchemy/ext/asyncio/scoping.py",
+                "lib/sqlalchemy/orm/events.py"
+              ],
+              "rank": 1,
+              "recall_at_1": 0.3333333333333333,
+              "recall_at_5": 0.3333333333333333,
+              "mrr": 1.0,
+              "failure_class": null,
+              "false_positive": null
+            },
+            {
+              "task_id": "sqla_task8_ambiguous_process",
+              "category": "B",
+              "negative": false,
+              "retrieval_terms": [
+                "process"
+              ],
+              "slm_intent": "Understand SQLAlchemy process function",
+              "slm_concepts": [],
+              "slm_confidence": "high",
+              "slm_is_ambiguous": false,
+              "candidate_count": 67,
+              "slm_prompt_tokens": 570,
+              "slm_completion_tokens": 70,
+              "slm_latency_ms": 1367.2691000101622,
+              "slm_malformed_attempts": 0,
+              "resolve_latency_ms": 687.3020999773871,
+              "ground_truth_files": [
+                "lib/sqlalchemy/sql/sqltypes.py",
+                "lib/sqlalchemy/engine/processors.py"
+              ],
+              "top10_candidates": [
+                "lib/sqlalchemy/dialects/mysql/_mariadb_shim.py",
+                "lib/sqlalchemy/dialects/mysql/base.py",
+                "lib/sqlalchemy/dialects/oracle/base.py",
+                "lib/sqlalchemy/dialects/postgresql/base.py",
+                "lib/sqlalchemy/engine/default.py",
+                "lib/sqlalchemy/exc.py",
+                "lib/sqlalchemy/ext/associationproxy.py",
+                "lib/sqlalchemy/ext/mutable.py",
+                "lib/sqlalchemy/orm/collections.py",
+                "lib/sqlalchemy/orm/context.py"
+              ],
+              "rank": 59,
+              "recall_at_1": 0.0,
+              "recall_at_5": 0.0,
+              "mrr": 0.01694915254237288,
+              "failure_class": "D",
+              "false_positive": null
+            },
+            {
+              "task_id": "sqla_task9_mapped_column_wraps_column",
+              "category": "E",
+              "negative": false,
+              "retrieval_terms": [
+                "mapped_column",
+                "MappedColumn",
+                "Column"
+              ],
+              "slm_intent": "Understand ORM column relationship",
+              "slm_concepts": [],
+              "slm_confidence": "high",
+              "slm_is_ambiguous": false,
+              "candidate_count": 19,
+              "slm_prompt_tokens": 586,
+              "slm_completion_tokens": 83,
+              "slm_latency_ms": 1476.7300999956205,
+              "slm_malformed_attempts": 0,
+              "resolve_latency_ms": 183.24819998815656,
+              "ground_truth_files": [
+                "lib/sqlalchemy/orm/properties.py",
+                "lib/sqlalchemy/sql/schema.py"
+              ],
+              "top10_candidates": [
+                "lib/sqlalchemy/orm/properties.py",
+                "lib/sqlalchemy/testing/suite/test_cte.py",
+                "lib/sqlalchemy/testing/suite/test_ddl.py",
+                "lib/sqlalchemy/testing/suite/test_dialect.py",
+                "lib/sqlalchemy/testing/suite/test_insert.py",
+                "lib/sqlalchemy/testing/suite/test_reflection.py",
+                "lib/sqlalchemy/testing/suite/test_results.py",
+                "lib/sqlalchemy/testing/suite/test_select.py",
+                "lib/sqlalchemy/testing/suite/test_sequence.py",
+                "lib/sqlalchemy/testing/suite/test_types.py"
+              ],
+              "rank": 1,
+              "recall_at_1": 0.5,
+              "recall_at_5": 0.5,
+              "mrr": 1.0,
+              "failure_class": null,
+              "false_positive": null
+            },
+            {
+              "task_id": "sqla_task10_negative_graphql",
+              "category": "L",
+              "negative": true,
+              "retrieval_terms": [],
+              "slm_intent": "Understand SQLAlchemy GraphQL",
+              "slm_concepts": [],
+              "slm_confidence": "high",
+              "slm_is_ambiguous": false,
+              "candidate_count": 0,
+              "slm_prompt_tokens": 573,
+              "slm_completion_tokens": 68,
+              "slm_latency_ms": 1534.99240000383,
+              "slm_malformed_attempts": 0,
+              "resolve_latency_ms": 0.29409999842755497,
+              "false_positive": false,
+              "recall_at_1": null,
+              "recall_at_5": null,
+              "mrr": null,
+              "rank": null,
+              "failure_class": null
+            }
+          ]
+        },
+        "generic_local_slm": {
+          "summary": {
+            "tasks_run": 10,
+            "tasks_errored": 0,
+            "positive_tasks": 9,
+            "negative_tasks": 1,
+            "mean_recall_at_1": 0.1111111111111111,
+            "mean_recall_at_5": 0.1111111111111111,
+            "mean_mrr": 0.11299435028248588,
+            "mean_candidate_count": 9.11111111111111,
+            "false_positive_rate": 0.0,
+            "mean_slm_latency_ms": 8637.672260007821,
+            "mean_slm_prompt_tokens": 470.4,
+            "mean_slm_completion_tokens": 104.9,
+            "malformed_output_rate": 0.1,
+            "failure_class_counts": {
+              "A": 7,
+              "D": 1
+            }
+          },
+          "tasks": [
+            {
+              "task_id": "sqla_task1_engine_connect",
+              "category": "A",
+              "negative": false,
+              "retrieval_terms": [
+                "Engine",
+                "connect"
+              ],
+              "slm_intent": "understand_behavior",
+              "slm_concepts": [],
+              "slm_confidence": "medium",
+              "slm_is_ambiguous": false,
+              "candidate_count": 15,
+              "slm_prompt_tokens": 461,
+              "slm_completion_tokens": 88,
+              "slm_latency_ms": 6761.961200012593,
+              "slm_malformed_attempts": 0,
+              "resolve_latency_ms": 63.728899986017495,
+              "ground_truth_files": [
+                "lib/sqlalchemy/engine/base.py"
+              ],
+              "top10_candidates": [
+                "lib/sqlalchemy/engine/base.py",
+                "lib/sqlalchemy/dialects/postgresql/base.py",
+                "lib/sqlalchemy/engine/reflection.py",
+                "lib/sqlalchemy/ext/asyncio/engine.py",
+                "lib/sqlalchemy/orm/session.py",
+                "lib/sqlalchemy/engine/default.py",
+                "lib/sqlalchemy/ext/horizontal_shard.py",
+                "lib/sqlalchemy/dialects/mysql/_mariadb_shim.py",
+                "lib/sqlalchemy/engine/create.py",
+                "lib/sqlalchemy/engine/mock.py"
+              ],
+              "rank": 1,
+              "recall_at_1": 1.0,
+              "recall_at_5": 1.0,
+              "mrr": 1.0,
+              "failure_class": null,
+              "false_positive": null
+            },
+            {
+              "task_id": "sqla_task2_declarative_metaclass",
+              "category": "I",
+              "negative": false,
+              "retrieval_terms": [],
+              "slm_intent": "understand_behavior",
+              "slm_concepts": [
+                "SQLAlchemy",
+                "declarative_base",
+                "metaclass",
+                "ORM mappings"
+              ],
+              "slm_confidence": "medium",
+              "slm_is_ambiguous": false,
+              "candidate_count": 0,
+              "slm_prompt_tokens": 477,
+              "slm_completion_tokens": 112,
+              "slm_latency_ms": 5974.955800018506,
+              "slm_malformed_attempts": 0,
+              "resolve_latency_ms": 0.1897999900393188,
+              "ground_truth_files": [
+                "lib/sqlalchemy/orm/decl_api.py",
+                "lib/sqlalchemy/orm/decl_base.py"
+              ],
+              "top10_candidates": [],
+              "rank": null,
+              "recall_at_1": 0.0,
+              "recall_at_5": 0.0,
+              "mrr": 0.0,
+              "failure_class": "A",
+              "false_positive": null
+            },
+            {
+              "task_id": "sqla_task3_instrumented_attribute_descriptor",
+              "category": "I",
+              "negative": false,
+              "retrieval_terms": [],
+              "slm_intent": "understand_behavior",
+              "slm_concepts": [
+                "SQLAlchemy",
+                "attribute_get_set_interception",
+                "mapped_columns",
+                "Python's descriptor protocol"
+              ],
+              "slm_confidence": "medium",
+              "slm_is_ambiguous": false,
+              "candidate_count": 0,
+              "slm_prompt_tokens": 466,
+              "slm_completion_tokens": 125,
+              "slm_latency_ms": 8394.895600009477,
+              "slm_malformed_attempts": 0,
+              "resolve_latency_ms": 0.2620000159367919,
+              "ground_truth_files": [
+                "lib/sqlalchemy/orm/attributes.py"
+              ],
+              "top10_candidates": [],
+              "rank": null,
+              "recall_at_1": 0.0,
+              "recall_at_5": 0.0,
+              "mrr": 0.0,
+              "failure_class": "A",
+              "false_positive": null
+            },
+            {
+              "task_id": "sqla_task4_table_new_dynamic_dispatch",
+              "category": "I",
+              "negative": false,
+              "retrieval_terms": [],
+              "slm_intent": "explain_absence",
+              "slm_concepts": [
+                "SQLAlchemy",
+                "Table class",
+                "__new__ method"
+              ],
+              "slm_confidence": "medium",
+              "slm_is_ambiguous": false,
+              "candidate_count": 0,
+              "slm_prompt_tokens": 482,
+              "slm_completion_tokens": 111,
+              "slm_latency_ms": 17801.695400004974,
+              "slm_malformed_attempts": 1,
+              "resolve_latency_ms": 0.22560000070370734,
+              "ground_truth_files": [
+                "lib/sqlalchemy/sql/schema.py"
+              ],
+              "top10_candidates": [],
+              "rank": null,
+              "recall_at_1": 0.0,
+              "recall_at_5": 0.0,
+              "mrr": 0.0,
+              "failure_class": "A",
+              "false_positive": null
+            },
+            {
+              "task_id": "sqla_task5_dialect_plugin_loading",
+              "category": "H",
+              "negative": false,
+              "retrieval_terms": [],
+              "slm_intent": "understand_behavior",
+              "slm_concepts": [
+                "SQLAlchemy",
+                "database connection URL",
+                "dialect implementation class"
+              ],
+              "slm_confidence": "medium",
+              "slm_is_ambiguous": false,
+              "candidate_count": 0,
+              "slm_prompt_tokens": 483,
+              "slm_completion_tokens": 104,
+              "slm_latency_ms": 7851.576299988665,
+              "slm_malformed_attempts": 0,
+              "resolve_latency_ms": 0.1404999929945916,
+              "ground_truth_files": [
+                "lib/sqlalchemy/engine/url.py",
+                "lib/sqlalchemy/util/langhelpers.py"
+              ],
+              "top10_candidates": [],
+              "rank": null,
+              "recall_at_1": 0.0,
+              "recall_at_5": 0.0,
+              "mrr": 0.0,
+              "failure_class": "A",
+              "false_positive": null
+            },
+            {
+              "task_id": "sqla_task6_unit_of_work_subsystem",
+              "category": "D",
+              "negative": false,
+              "retrieval_terms": [],
+              "slm_intent": "understand_behavior",
+              "slm_concepts": [
+                "unit_of_work",
+                "database_transaction",
+                "entity_manipulation_object"
+              ],
+              "slm_confidence": "medium",
+              "slm_is_ambiguous": false,
+              "candidate_count": 0,
+              "slm_prompt_tokens": 472,
+              "slm_completion_tokens": 109,
+              "slm_latency_ms": 8781.11280000303,
+              "slm_malformed_attempts": 0,
+              "resolve_latency_ms": 0.2800000074785203,
+              "ground_truth_files": [
+                "lib/sqlalchemy/orm/unitofwork.py",
+                "lib/sqlalchemy/orm/session.py"
+              ],
+              "top10_candidates": [],
+              "rank": null,
+              "recall_at_1": 0.0,
+              "recall_at_5": 0.0,
+              "mrr": 0.0,
+              "failure_class": "A",
+              "false_positive": null
+            },
+            {
+              "task_id": "sqla_task7_session_commit_call_chain",
+              "category": "F",
+              "negative": false,
+              "retrieval_terms": [],
+              "slm_intent": "trace_call_chain",
+              "slm_concepts": [
+                "session",
+                "commit",
+                "database persistence"
+              ],
+              "slm_confidence": "medium",
+              "slm_is_ambiguous": false,
+              "candidate_count": 0,
+              "slm_prompt_tokens": 470,
+              "slm_completion_tokens": 90,
+              "slm_latency_ms": 7354.323200008366,
+              "slm_malformed_attempts": 0,
+              "resolve_latency_ms": 0.3097000007983297,
+              "ground_truth_files": [
+                "lib/sqlalchemy/orm/session.py",
+                "lib/sqlalchemy/orm/unitofwork.py",
+                "lib/sqlalchemy/orm/persistence.py"
+              ],
+              "top10_candidates": [],
+              "rank": null,
+              "recall_at_1": 0.0,
+              "recall_at_5": 0.0,
+              "mrr": 0.0,
+              "failure_class": "A",
+              "false_positive": null
+            },
+            {
+              "task_id": "sqla_task8_ambiguous_process",
+              "category": "B",
+              "negative": false,
+              "retrieval_terms": [
+                "process",
+                "SQLAlchemy"
+              ],
+              "slm_intent": "understand_behavior",
+              "slm_concepts": [],
+              "slm_confidence": "medium",
+              "slm_is_ambiguous": false,
+              "candidate_count": 67,
+              "slm_prompt_tokens": 458,
+              "slm_completion_tokens": 87,
+              "slm_latency_ms": 6905.824800021946,
+              "slm_malformed_attempts": 0,
+              "resolve_latency_ms": 456.3986000139266,
+              "ground_truth_files": [
+                "lib/sqlalchemy/sql/sqltypes.py",
+                "lib/sqlalchemy/engine/processors.py"
+              ],
+              "top10_candidates": [
+                "lib/sqlalchemy/dialects/mysql/_mariadb_shim.py",
+                "lib/sqlalchemy/dialects/mysql/base.py",
+                "lib/sqlalchemy/dialects/oracle/base.py",
+                "lib/sqlalchemy/dialects/postgresql/base.py",
+                "lib/sqlalchemy/engine/default.py",
+                "lib/sqlalchemy/exc.py",
+                "lib/sqlalchemy/ext/associationproxy.py",
+                "lib/sqlalchemy/ext/mutable.py",
+                "lib/sqlalchemy/orm/collections.py",
+                "lib/sqlalchemy/orm/context.py"
+              ],
+              "rank": 59,
+              "recall_at_1": 0.0,
+              "recall_at_5": 0.0,
+              "mrr": 0.01694915254237288,
+              "failure_class": "D",
+              "false_positive": null
+            },
+            {
+              "task_id": "sqla_task9_mapped_column_wraps_column",
+              "category": "E",
+              "negative": false,
+              "retrieval_terms": [],
+              "slm_intent": "understand_behavior",
+              "slm_concepts": [
+                "ORM",
+                "mapped_column",
+                "MappedColumn",
+                "Core Column"
+              ],
+              "slm_confidence": "medium",
+              "slm_is_ambiguous": true,
+              "candidate_count": 0,
+              "slm_prompt_tokens": 475,
+              "slm_completion_tokens": 111,
+              "slm_latency_ms": 8669.450999994297,
+              "slm_malformed_attempts": 0,
+              "resolve_latency_ms": 0.1939999929163605,
+              "ground_truth_files": [
+                "lib/sqlalchemy/orm/properties.py",
+                "lib/sqlalchemy/sql/schema.py"
+              ],
+              "top10_candidates": [],
+              "rank": null,
+              "recall_at_1": 0.0,
+              "recall_at_5": 0.0,
+              "mrr": 0.0,
+              "failure_class": "A",
+              "false_positive": null
+            },
+            {
+              "task_id": "sqla_task10_negative_graphql",
+              "category": "L",
+              "negative": true,
+              "retrieval_terms": [],
+              "slm_intent": "understand_behavior",
+              "slm_concepts": [
+                "SQLAlchemy",
+                "GraphQL",
+                "query resolution",
+                "schema stitching"
+              ],
+              "slm_confidence": "medium",
+              "slm_is_ambiguous": true,
+              "candidate_count": 0,
+              "slm_prompt_tokens": 460,
+              "slm_completion_tokens": 112,
+              "slm_latency_ms": 7880.926500016358,
+              "slm_malformed_attempts": 0,
+              "resolve_latency_ms": 0.18760000239126384,
+              "false_positive": false,
+              "recall_at_1": null,
+              "recall_at_5": null,
+              "mrr": null,
+              "rank": null,
+              "failure_class": null
+            }
+          ]
+        }
+      }
+    }
+  }
+}

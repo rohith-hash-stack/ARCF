@@ -1,0 +1,50 @@
+[django/current_arcf] django_task1_modelbase_metaclass_inheritance: rank=1 r@1=0.3333333333333333 fp=None
+[django/current_arcf] django_task2_modelform_metaclass_hierarchy: rank=1 r@1=0.3333333333333333 fp=None
+[django/current_arcf] django_task3_manager_from_queryset_dynamic_class: rank=47 r@1=0.0 fp=None
+[django/current_arcf] django_task4_model_save_exact: rank=1 r@1=1.0 fp=None
+[django/current_arcf] django_task5_ambiguous_save: rank=75 r@1=0.0 fp=None
+[django/current_arcf] django_task6_signal_dispatch_subsystem: rank=None r@1=0.0 fp=None
+[django/current_arcf] django_task7_request_response_call_chain: rank=1 r@1=0.5 fp=None
+[django/current_arcf] django_task8_middleware_config_driven: rank=None r@1=0.0 fp=None
+[django/current_arcf] django_task9_admin_uses_forms_metaclass: rank=1 r@1=0.5 fp=None
+[django/current_arcf] django_task10_negative_graphql_websocket: rank=None r@1=None fp=False
+[django/generic_local_slm] django_task1_modelbase_metaclass_inheritance: rank=None r@1=0.0 fp=None
+[django/generic_local_slm] django_task2_modelform_metaclass_hierarchy: rank=None r@1=0.0 fp=None
+[django/generic_local_slm] django_task3_manager_from_queryset_dynamic_class: rank=47 r@1=0.0 fp=None
+[django/generic_local_slm] django_task4_model_save_exact: rank=1 r@1=1.0 fp=None
+[django/generic_local_slm] django_task5_ambiguous_save: rank=None r@1=0.0 fp=None
+[django/generic_local_slm] django_task6_signal_dispatch_subsystem: rank=None r@1=0.0 fp=None
+[django/generic_local_slm] django_task7_request_response_call_chain: rank=None r@1=0.0 fp=None
+[django/generic_local_slm] django_task8_middleware_config_driven: rank=None r@1=0.0 fp=None
+[django/generic_local_slm] django_task9_admin_uses_forms_metaclass: rank=None r@1=0.0 fp=None
+[django/generic_local_slm] django_task10_negative_graphql_websocket: rank=None r@1=None fp=False
+[sqlalchemy/current_arcf] sqla_task1_engine_connect: rank=1 r@1=1.0 fp=None
+[sqlalchemy/current_arcf] sqla_task2_declarative_metaclass: rank=None r@1=0.0 fp=None
+[sqlalchemy/current_arcf] sqla_task3_instrumented_attribute_descriptor: rank=None r@1=0.0 fp=None
+[sqlalchemy/current_arcf] sqla_task4_table_new_dynamic_dispatch: rank=15 r@1=0.0 fp=None
+[sqlalchemy/current_arcf] sqla_task5_dialect_plugin_loading: rank=None r@1=0.0 fp=None
+[sqlalchemy/current_arcf] sqla_task6_unit_of_work_subsystem: rank=None r@1=0.0 fp=None
+[sqlalchemy/current_arcf] sqla_task7_session_commit_call_chain: rank=1 r@1=0.3333333333333333 fp=None
+[sqlalchemy/current_arcf] sqla_task8_ambiguous_process: rank=59 r@1=0.0 fp=None
+[sqlalchemy/current_arcf] sqla_task9_mapped_column_wraps_column: rank=1 r@1=0.5 fp=None
+[sqlalchemy/current_arcf] sqla_task10_negative_graphql: rank=None r@1=None fp=False
+[sqlalchemy/generic_local_slm] sqla_task1_engine_connect: rank=1 r@1=1.0 fp=None
+[sqlalchemy/generic_local_slm] sqla_task2_declarative_metaclass: rank=None r@1=0.0 fp=None
+[sqlalchemy/generic_local_slm] sqla_task3_instrumented_attribute_descriptor: rank=None r@1=0.0 fp=None
+[sqlalchemy/generic_local_slm] sqla_task4_table_new_dynamic_dispatch: rank=None r@1=0.0 fp=None
+[sqlalchemy/generic_local_slm] sqla_task5_dialect_plugin_loading: rank=None r@1=0.0 fp=None
+[sqlalchemy/generic_local_slm] sqla_task6_unit_of_work_subsystem: rank=None r@1=0.0 fp=None
+[sqlalchemy/generic_local_slm] sqla_task7_session_commit_call_chain: rank=None r@1=0.0 fp=None
+[sqlalchemy/generic_local_slm] sqla_task8_ambiguous_process: rank=59 r@1=0.0 fp=None
+[sqlalchemy/generic_local_slm] sqla_task9_mapped_column_wraps_column: rank=None r@1=0.0 fp=None
+[sqlalchemy/generic_local_slm] sqla_task10_negative_graphql: rank=None r@1=None fp=False
+
+Wrote C:\Users\VasiganiRohitBabu\Desktop\Claude\arcf\scripts\phase3_results\phase3_semantic_slm_comparison.json
+
+django:
+  current_arcf: R@1=0.2962962962962963 R@5=0.3333333333333333 MRR=0.5594011032308904 FPR=0.0 errors=0
+  generic_local_slm: R@1=0.1111111111111111 R@5=0.1111111111111111 MRR=0.11347517730496454 FPR=0.0 errors=0
+
+sqlalchemy:
+  current_arcf: R@1=0.2037037037037037 R@5=0.2037037037037037 MRR=0.3426239799121155 FPR=0.0 errors=0
+  generic_local_slm: R@1=0.1111111111111111 R@5=0.1111111111111111 MRR=0.11299435028248588 FPR=0.0 errors=0

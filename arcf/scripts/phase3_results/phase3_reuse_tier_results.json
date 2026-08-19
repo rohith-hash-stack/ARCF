@@ -1,0 +1,475 @@
+{
+  "regression_check": [
+    {
+      "tier": "Python",
+      "repo": "flask",
+      "files_scanned": 236,
+      "files_analyzed": 83,
+      "symbols_indexed": 1622,
+      "per_target": [
+        {
+          "target": "Flask",
+          "candidates": 7,
+          "packaged": 6,
+          "excluded": 1
+        }
+      ],
+      "run_summary": {
+        "event_count": 1,
+        "resolve_latency_ms": {
+          "mean": 0.899,
+          "p50": 0.899,
+          "p95": 0.899,
+          "max": 0.899
+        },
+        "package_latency_ms": {
+          "mean": 17.819,
+          "p50": 17.819,
+          "p95": 17.819,
+          "max": 17.819
+        },
+        "origin_breakdown_totals": {
+          "ast_direct": 1,
+          "scoped_graph_expansion": 0,
+          "raw_string_fallback": 6,
+          "evidence_fallback_match": 0,
+          "untagged": 0
+        },
+        "overall_fallback_ratio": 0.8571,
+        "mean_utilization_ratio": 0.1049,
+        "quality_data_available": false,
+        "mean_precision": null,
+        "mean_recall": null,
+        "min_recall": null
+      },
+      "gate_decision": "RELEASE_REJECTED",
+      "gate_results": [
+        {
+          "gate": "fallback",
+          "passed": false,
+          "skipped": false,
+          "detail": "fallback ratio 0.8571 EXCEEDS max 0.0"
+        },
+        {
+          "gate": "latency",
+          "passed": true,
+          "skipped": true,
+          "detail": "no baseline supplied -- cannot compute relative overhead"
+        },
+        {
+          "gate": "token_budget",
+          "passed": true,
+          "skipped": false,
+          "detail": "mean utilization 0.1049 within max 0.95"
+        },
+        {
+          "gate": "quality",
+          "passed": true,
+          "skipped": true,
+          "detail": "no ground-truth precision/recall supplied for this run"
+        }
+      ],
+      "failure_taxonomy": {
+        "total": 1,
+        "by_category": {
+          "oversized_file_excluded": 1
+        }
+      },
+      "status": "OK",
+      "regression_check": {
+        "prior_fallback_ratio": 0.857,
+        "fresh_fallback_ratio": 0.8571,
+        "drift": 0.0001,
+        "reproduced": true
+      },
+      "index_seconds": 0.86
+    },
+    {
+      "tier": "Java",
+      "repo": "spring-petclinic",
+      "files_scanned": 131,
+      "files_analyzed": 49,
+      "symbols_indexed": 230,
+      "per_target": [
+        {
+          "target": "Owner",
+          "candidates": 1,
+          "packaged": 1,
+          "excluded": 0
+        },
+        {
+          "target": "Person",
+          "candidates": 3,
+          "packaged": 3,
+          "excluded": 0
+        }
+      ],
+      "run_summary": {
+        "event_count": 2,
+        "resolve_latency_ms": {
+          "mean": 0.214,
+          "p50": 0.239,
+          "p95": 0.239,
+          "max": 0.239
+        },
+        "package_latency_ms": {
+          "mean": 3.334,
+          "p50": 4.407,
+          "p95": 4.407,
+          "max": 4.407
+        },
+        "origin_breakdown_totals": {
+          "ast_direct": 2,
+          "scoped_graph_expansion": 0,
+          "raw_string_fallback": 2,
+          "evidence_fallback_match": 0,
+          "untagged": 0
+        },
+        "overall_fallback_ratio": 0.5,
+        "mean_utilization_ratio": 0.1067,
+        "quality_data_available": false,
+        "mean_precision": null,
+        "mean_recall": null,
+        "min_recall": null
+      },
+      "gate_decision": "RELEASE_REJECTED",
+      "gate_results": [
+        {
+          "gate": "fallback",
+          "passed": false,
+          "skipped": false,
+          "detail": "fallback ratio 0.5 EXCEEDS max 0.0"
+        },
+        {
+          "gate": "latency",
+          "passed": true,
+          "skipped": true,
+          "detail": "no baseline supplied -- cannot compute relative overhead"
+        },
+        {
+          "gate": "token_budget",
+          "passed": true,
+          "skipped": false,
+          "detail": "mean utilization 0.1067 within max 0.95"
+        },
+        {
+          "gate": "quality",
+          "passed": true,
+          "skipped": true,
+          "detail": "no ground-truth precision/recall supplied for this run"
+        }
+      ],
+      "failure_taxonomy": {
+        "total": 0,
+        "by_category": {}
+      },
+      "status": "OK",
+      "regression_check": {
+        "prior_fallback_ratio": 0.5,
+        "fresh_fallback_ratio": 0.5,
+        "drift": 0.0,
+        "reproduced": true
+      },
+      "index_seconds": 0.25
+    },
+    {
+      "tier": "Mixed (Python+Rust)",
+      "repo": "vllm",
+      "files_scanned": 6599,
+      "files_analyzed": 4540,
+      "symbols_indexed": 61302,
+      "per_target": [
+        {
+          "target": "LLM",
+          "candidates": 2,
+          "packaged": 1,
+          "excluded": 1
+        },
+        {
+          "target": "CompletionChunk",
+          "candidates": 1,
+          "packaged": 1,
+          "excluded": 0
+        }
+      ],
+      "run_summary": {
+        "event_count": 2,
+        "resolve_latency_ms": {
+          "mean": 3.937,
+          "p50": 7.197,
+          "p95": 7.197,
+          "max": 7.197
+        },
+        "package_latency_ms": {
+          "mean": 6.008,
+          "p50": 9.536,
+          "p95": 9.536,
+          "max": 9.536
+        },
+        "origin_breakdown_totals": {
+          "ast_direct": 2,
+          "scoped_graph_expansion": 0,
+          "raw_string_fallback": 1,
+          "evidence_fallback_match": 0,
+          "untagged": 0
+        },
+        "overall_fallback_ratio": 0.3333,
+        "mean_utilization_ratio": 0.0998,
+        "quality_data_available": false,
+        "mean_precision": null,
+        "mean_recall": null,
+        "min_recall": null
+      },
+      "gate_decision": "RELEASE_REJECTED",
+      "gate_results": [
+        {
+          "gate": "fallback",
+          "passed": false,
+          "skipped": false,
+          "detail": "fallback ratio 0.3333 EXCEEDS max 0.0"
+        },
+        {
+          "gate": "latency",
+          "passed": true,
+          "skipped": true,
+          "detail": "no baseline supplied -- cannot compute relative overhead"
+        },
+        {
+          "gate": "token_budget",
+          "passed": true,
+          "skipped": false,
+          "detail": "mean utilization 0.0998 within max 0.95"
+        },
+        {
+          "gate": "quality",
+          "passed": true,
+          "skipped": true,
+          "detail": "no ground-truth precision/recall supplied for this run"
+        }
+      ],
+      "failure_taxonomy": {
+        "total": 1,
+        "by_category": {
+          "oversized_file_excluded": 1
+        }
+      },
+      "status": "OK",
+      "regression_check": {
+        "prior_fallback_ratio": 0.667,
+        "fresh_fallback_ratio": 0.3333,
+        "drift": -0.3337,
+        "reproduced": false
+      },
+      "index_seconds": 72.19
+    }
+  ],
+  "new_tasks": [
+    {
+      "id": "flask_route_registration",
+      "repo": "flask",
+      "category": "E",
+      "query": "How does Flask's @app.route decorator register a view function with the app's URL map?",
+      "candidate_count": 3,
+      "unresolved": false,
+      "negative": false,
+      "recall_at_1": 0.5,
+      "recall_at_5": 1.0,
+      "recall_at_10": 1.0,
+      "mrr": 1.0,
+      "precision_at_packaged_k": 0.5,
+      "packaged_k": 2,
+      "task_type_classified": "unknown",
+      "evidence_contract_categories": [],
+      "evidence_completeness": null,
+      "case_b_triggered": false,
+      "confidence_by_source_classic": {
+        "ambiguity_confidence": 1.0,
+        "path_mask_confidence": null
+      },
+      "ambiguous_targets": [],
+      "resolve_latency_ms": 1.652,
+      "package_latency_ms": 10.771,
+      "total_latency_ms": 12.423
+    },
+    {
+      "id": "flask_graphql_negative",
+      "repo": "flask",
+      "category": "L",
+      "query": "How does Flask implement built-in GraphQL subscription resolvers?",
+      "candidate_count": 0,
+      "unresolved": true,
+      "negative": true,
+      "false_positive": false,
+      "task_type_classified": "unknown",
+      "evidence_contract_categories": [],
+      "evidence_completeness": null,
+      "case_b_triggered": false,
+      "confidence_by_source_classic": {
+        "ambiguity_confidence": null,
+        "path_mask_confidence": null
+      },
+      "ambiguous_targets": [],
+      "resolve_latency_ms": 0.093,
+      "package_latency_ms": 1.027,
+      "total_latency_ms": 1.12
+    },
+    {
+      "id": "petclinic_visit_booking_chain",
+      "repo": "spring-petclinic",
+      "category": "F",
+      "query": "What happens when a new visit is booked for a pet -- what does VisitController.processNewVisitForm call to persist it?",
+      "candidate_count": 4,
+      "unresolved": false,
+      "negative": false,
+      "recall_at_1": 0.3333,
+      "recall_at_5": 1.0,
+      "recall_at_10": 1.0,
+      "mrr": 1.0,
+      "precision_at_packaged_k": 0.75,
+      "packaged_k": 4,
+      "task_type_classified": "unknown",
+      "evidence_contract_categories": [],
+      "evidence_completeness": null,
+      "case_b_triggered": false,
+      "confidence_by_source_classic": {
+        "ambiguity_confidence": 0.754,
+        "path_mask_confidence": null
+      },
+      "ambiguous_targets": [
+        "addVisit"
+      ],
+      "resolve_latency_ms": 0.658,
+      "package_latency_ms": 3.768,
+      "total_latency_ms": 4.426
+    },
+    {
+      "id": "petclinic_database_config",
+      "repo": "spring-petclinic",
+      "category": "H",
+      "query": "Which database does spring-petclinic use by default, and how is that determined?",
+      "candidate_count": 0,
+      "unresolved": true,
+      "negative": false,
+      "recall_at_1": 0.0,
+      "recall_at_5": 0.0,
+      "recall_at_10": 0.0,
+      "mrr": 0.0,
+      "precision_at_packaged_k": null,
+      "packaged_k": 0,
+      "task_type_classified": "unknown",
+      "evidence_contract_categories": [],
+      "evidence_completeness": null,
+      "case_b_triggered": false,
+      "confidence_by_source_classic": {
+        "ambiguity_confidence": null,
+        "path_mask_confidence": null
+      },
+      "ambiguous_targets": [],
+      "resolve_latency_ms": 0.055,
+      "package_latency_ms": 0.482,
+      "total_latency_ms": 0.537
+    },
+    {
+      "id": "vllm_generate_ambiguous",
+      "repo": "vllm",
+      "category": "B",
+      "query": "What does the generate method do?",
+      "candidate_count": 15,
+      "unresolved": false,
+      "negative": false,
+      "recall_at_1": 0.0,
+      "recall_at_5": 0.0,
+      "recall_at_10": 0.0,
+      "mrr": 0.0,
+      "precision_at_packaged_k": 0.0,
+      "packaged_k": 5,
+      "task_type_classified": "unknown",
+      "evidence_contract_categories": [],
+      "evidence_completeness": null,
+      "case_b_triggered": false,
+      "confidence_by_source_classic": {
+        "ambiguity_confidence": 0.3562,
+        "path_mask_confidence": null
+      },
+      "ambiguous_targets": [
+        "generate"
+      ],
+      "resolve_latency_ms": 338.174,
+      "package_latency_ms": 24.579,
+      "total_latency_ms": 362.753
+    },
+    {
+      "id": "vllm_federated_learning_negative",
+      "repo": "vllm",
+      "category": "L",
+      "query": "How does vLLM implement built-in support for federated learning across multiple data centers?",
+      "candidate_count": 0,
+      "unresolved": true,
+      "negative": true,
+      "false_positive": false,
+      "task_type_classified": "unknown",
+      "evidence_contract_categories": [],
+      "evidence_completeness": null,
+      "case_b_triggered": false,
+      "confidence_by_source_classic": {
+        "ambiguity_confidence": null,
+        "path_mask_confidence": null
+      },
+      "ambiguous_targets": [],
+      "resolve_latency_ms": 0.239,
+      "package_latency_ms": 1.582,
+      "total_latency_ms": 1.822
+    }
+  ],
+  "determinism_check": [
+    {
+      "target_names": [
+        "route",
+        "add_url_rule"
+      ],
+      "run1_candidate_count": 3,
+      "run2_candidate_count": 3,
+      "byte_identical": true,
+      "repo": "flask"
+    },
+    {
+      "target_names": [
+        "VisitController",
+        "processNewVisitForm",
+        "addVisit"
+      ],
+      "run1_candidate_count": 4,
+      "run2_candidate_count": 4,
+      "byte_identical": true,
+      "repo": "spring-petclinic"
+    },
+    {
+      "target_names": [
+        "generate"
+      ],
+      "run1_candidate_count": 15,
+      "run2_candidate_count": 15,
+      "byte_identical": true,
+      "repo": "vllm"
+    }
+  ],
+  "aggregate": {
+    "n_new_tasks": 6,
+    "n_positive_tasks": 4,
+    "n_negative_tasks": 2,
+    "mean_recall_at_1": 0.2083,
+    "mean_recall_at_5": 0.5,
+    "mean_recall_at_10": 0.5,
+    "mean_mrr": 0.5,
+    "unresolved_query_rate": 0.5,
+    "false_positive_rate_negative_tasks": 0.0,
+    "case_b_trigger_rate": 0.0,
+    "latency_ms": {
+      "p50": 1.822,
+      "p95": 362.753,
+      "p99": 362.753,
+      "n": 6
+    },
+    "n_run_label": "n=1 per task (single-run) -- NOT a multi-run statistical result; see plan \u00a711."
+  }
+}

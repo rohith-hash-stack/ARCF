@@ -1,0 +1,674 @@
+{
+  "repo": "sqlalchemy",
+  "index_seconds": 25.74,
+  "files_scanned": 702,
+  "files_analyzed": 667,
+  "symbols_indexed": 40104,
+  "scanner_truncated": false,
+  "default_max_files_cap": 20000,
+  "approaching_max_files_cap": false,
+  "task_results": [
+    {
+      "task_id": "sqla_task1_engine_connect",
+      "category": "A",
+      "negative": false,
+      "query": "What does Engine.connect do and what object does it return?",
+      "target_names": [
+        "engine/connect"
+      ],
+      "resolve_latency_ms": 1.923,
+      "package_latency_ms": 63.438,
+      "candidate_file_count": 27,
+      "ranked_files": [
+        "lib/sqlalchemy/connectors/aioodbc.py",
+        "lib/sqlalchemy/dialects/mysql/aiomysql.py",
+        "lib/sqlalchemy/dialects/mysql/asyncmy.py",
+        "lib/sqlalchemy/dialects/oracle/oracledb.py",
+        "lib/sqlalchemy/dialects/postgresql/asyncpg.py",
+        "lib/sqlalchemy/dialects/postgresql/psycopg.py",
+        "lib/sqlalchemy/dialects/sqlite/aiosqlite.py",
+        "lib/sqlalchemy/dialects/sqlite/provision.py",
+        "lib/sqlalchemy/dialects/sqlite/pysqlite.py",
+        "lib/sqlalchemy/engine/base.py",
+        "lib/sqlalchemy/engine/create.py",
+        "lib/sqlalchemy/engine/default.py",
+        "lib/sqlalchemy/engine/interfaces.py",
+        "lib/sqlalchemy/engine/mock.py",
+        "lib/sqlalchemy/ext/asyncio/engine.py",
+        "lib/sqlalchemy/pool/base.py",
+        "lib/sqlalchemy/pool/events.py",
+        "lib/sqlalchemy/pool/impl.py",
+        "lib/sqlalchemy/testing/engines.py",
+        "test/dialect/mysql/test_dialect.py",
+        "test/dialect/postgresql/test_dialect.py",
+        "test/dialect/postgresql/test_query.py",
+        "test/engine/test_deprecations.py",
+        "test/engine/test_execute.py",
+        "test/engine/test_parseconnect.py",
+        "test/engine/test_pool.py",
+        "test/engine/test_reconnect.py"
+      ],
+      "packaged_files": [
+        "lib/sqlalchemy/connectors/aioodbc.py",
+        "lib/sqlalchemy/dialects/mysql/aiomysql.py",
+        "lib/sqlalchemy/dialects/mysql/asyncmy.py",
+        "lib/sqlalchemy/dialects/oracle/oracledb.py",
+        "lib/sqlalchemy/dialects/postgresql/psycopg.py",
+        "lib/sqlalchemy/dialects/sqlite/aiosqlite.py",
+        "lib/sqlalchemy/dialects/sqlite/provision.py",
+        "lib/sqlalchemy/dialects/sqlite/pysqlite.py",
+        "test/engine/test_execute.py"
+      ],
+      "confidence": 1.0,
+      "confidence_source": "classic",
+      "ambiguous_targets": [
+        "engine/connect"
+      ],
+      "unresolved_symbols": [],
+      "evidence_task_type": null,
+      "evidence_categories_satisfied": [],
+      "evidence_categories_missing": [],
+      "evidence_completeness": null,
+      "case_b_triggered": false,
+      "unresolved_query": false,
+      "unresolved_ground_truth_files": [],
+      "packaging_failures": [
+        {
+          "file": "lib/sqlalchemy/engine/base.py",
+          "category": "oversized_file_excluded"
+        }
+      ],
+      "false_positive": null,
+      "recall_at_1": 0.0,
+      "recall_at_5": 0.0,
+      "recall_at_10": 1.0,
+      "mrr": 0.1,
+      "precision_at_k": 0.0
+    },
+    {
+      "task_id": "sqla_task2_declarative_metaclass",
+      "category": "I",
+      "negative": false,
+      "query": "How does SQLAlchemy's declarative base class use a metaclass to intercept class creation and configure ORM mappings when a user defines a model class?",
+      "target_names": [
+        "DeclarativeMeta"
+      ],
+      "resolve_latency_ms": 0.199,
+      "package_latency_ms": 4.576,
+      "candidate_file_count": 1,
+      "ranked_files": [
+        "lib/sqlalchemy/orm/decl_api.py"
+      ],
+      "packaged_files": [
+        "lib/sqlalchemy/orm/decl_api.py"
+      ],
+      "confidence": 1.0,
+      "confidence_source": "classic",
+      "ambiguous_targets": [],
+      "unresolved_symbols": [],
+      "evidence_task_type": null,
+      "evidence_categories_satisfied": [],
+      "evidence_categories_missing": [],
+      "evidence_completeness": null,
+      "case_b_triggered": false,
+      "unresolved_query": false,
+      "unresolved_ground_truth_files": [
+        "lib/sqlalchemy/orm/decl_base.py"
+      ],
+      "packaging_failures": [],
+      "false_positive": null,
+      "recall_at_1": 0.5,
+      "recall_at_5": 0.5,
+      "recall_at_10": 0.5,
+      "mrr": 1.0,
+      "precision_at_k": 1.0
+    },
+    {
+      "task_id": "sqla_task3_instrumented_attribute_descriptor",
+      "category": "I",
+      "negative": false,
+      "query": "How does SQLAlchemy implement attribute get/set interception for mapped columns using Python's descriptor protocol?",
+      "target_names": [
+        "InstrumentedAttribute"
+      ],
+      "resolve_latency_ms": 0.219,
+      "package_latency_ms": 6.422,
+      "candidate_file_count": 1,
+      "ranked_files": [
+        "lib/sqlalchemy/orm/attributes.py"
+      ],
+      "packaged_files": [
+        "lib/sqlalchemy/orm/attributes.py"
+      ],
+      "confidence": 1.0,
+      "confidence_source": "classic",
+      "ambiguous_targets": [],
+      "unresolved_symbols": [],
+      "evidence_task_type": null,
+      "evidence_categories_satisfied": [],
+      "evidence_categories_missing": [],
+      "evidence_completeness": null,
+      "case_b_triggered": false,
+      "unresolved_query": false,
+      "unresolved_ground_truth_files": [],
+      "packaging_failures": [],
+      "false_positive": null,
+      "recall_at_1": 1.0,
+      "recall_at_5": 1.0,
+      "recall_at_10": 1.0,
+      "mrr": 1.0,
+      "precision_at_k": 1.0
+    },
+    {
+      "task_id": "sqla_task4_table_new_dynamic_dispatch",
+      "category": "I",
+      "negative": false,
+      "query": "How does SQLAlchemy's Table class use __new__ to redirect construction so that repeated Table() calls with the same name and metadata don't always create a new object?",
+      "target_names": [
+        "Table"
+      ],
+      "resolve_latency_ms": 48.265,
+      "package_latency_ms": 44.439,
+      "candidate_file_count": 14,
+      "ranked_files": [
+        "lib/sqlalchemy/testing/suite/test_ddl.py",
+        "lib/sqlalchemy/testing/suite/test_dialect.py",
+        "lib/sqlalchemy/testing/suite/test_insert.py",
+        "lib/sqlalchemy/testing/suite/test_reflection.py",
+        "lib/sqlalchemy/testing/suite/test_results.py",
+        "lib/sqlalchemy/testing/suite/test_select.py",
+        "lib/sqlalchemy/testing/suite/test_sequence.py",
+        "lib/sqlalchemy/testing/suite/test_types.py",
+        "lib/sqlalchemy/testing/suite/test_cte.py",
+        "lib/sqlalchemy/testing/provision.py",
+        "lib/sqlalchemy/testing/util.py",
+        "lib/sqlalchemy/testing/suite/test_update_delete.py",
+        "lib/sqlalchemy/sql/schema.py",
+        "lib/sqlalchemy/testing/schema.py"
+      ],
+      "packaged_files": [
+        "lib/sqlalchemy/testing/suite/test_ddl.py",
+        "lib/sqlalchemy/testing/suite/test_dialect.py",
+        "lib/sqlalchemy/testing/suite/test_insert.py",
+        "lib/sqlalchemy/testing/suite/test_update_delete.py"
+      ],
+      "confidence": 1.0,
+      "confidence_source": "classic",
+      "ambiguous_targets": [
+        "Table"
+      ],
+      "unresolved_symbols": [],
+      "evidence_task_type": null,
+      "evidence_categories_satisfied": [],
+      "evidence_categories_missing": [],
+      "evidence_completeness": null,
+      "case_b_triggered": false,
+      "unresolved_query": false,
+      "unresolved_ground_truth_files": [],
+      "packaging_failures": [
+        {
+          "file": "lib/sqlalchemy/sql/schema.py",
+          "category": "oversized_file_excluded"
+        }
+      ],
+      "false_positive": null,
+      "recall_at_1": 0.0,
+      "recall_at_5": 0.0,
+      "recall_at_10": 0.0,
+      "mrr": 0.07692307692307693,
+      "precision_at_k": 0.0
+    },
+    {
+      "task_id": "sqla_task5_dialect_plugin_loading",
+      "category": "H",
+      "negative": false,
+      "query": "How does SQLAlchemy pick which dialect implementation class to use based on the driver name in a database connection URL string, e.g. 'postgresql+psycopg2://...'?",
+      "target_names": [
+        "PluginLoader",
+        "get_dialect"
+      ],
+      "resolve_latency_ms": 220.519,
+      "package_latency_ms": 20.748,
+      "candidate_file_count": 14,
+      "ranked_files": [
+        "lib/sqlalchemy/util/langhelpers.py",
+        "lib/sqlalchemy/testing/assertsql.py",
+        "lib/sqlalchemy/testing/provision.py",
+        "lib/sqlalchemy/testing/suite/test_select.py",
+        "test/engine/test_parseconnect.py",
+        "lib/sqlalchemy/engine/interfaces.py",
+        "lib/sqlalchemy/engine/mock.py",
+        "lib/sqlalchemy/testing/suite/test_sequence.py",
+        "lib/sqlalchemy/testing/util.py",
+        "lib/sqlalchemy/engine/create.py",
+        "lib/sqlalchemy/engine/url.py",
+        "lib/sqlalchemy/testing/assertions.py",
+        "test/engine/test_reconnect.py",
+        "test/sql/test_identity_column.py"
+      ],
+      "packaged_files": [
+        "lib/sqlalchemy/util/langhelpers.py",
+        "lib/sqlalchemy/testing/assertsql.py",
+        "lib/sqlalchemy/testing/provision.py",
+        "lib/sqlalchemy/testing/suite/test_select.py",
+        "test/engine/test_parseconnect.py",
+        "lib/sqlalchemy/engine/interfaces.py"
+      ],
+      "confidence": 1.0,
+      "confidence_source": "classic",
+      "ambiguous_targets": [
+        "get_dialect"
+      ],
+      "unresolved_symbols": [],
+      "evidence_task_type": null,
+      "evidence_categories_satisfied": [],
+      "evidence_categories_missing": [],
+      "evidence_completeness": null,
+      "case_b_triggered": false,
+      "unresolved_query": false,
+      "unresolved_ground_truth_files": [],
+      "packaging_failures": [
+        {
+          "file": "lib/sqlalchemy/engine/url.py",
+          "category": "ambiguity_decay_dropped"
+        }
+      ],
+      "false_positive": null,
+      "recall_at_1": 0.5,
+      "recall_at_5": 0.5,
+      "recall_at_10": 0.5,
+      "mrr": 1.0,
+      "precision_at_k": 0.16666666666666666
+    },
+    {
+      "task_id": "sqla_task6_unit_of_work_subsystem",
+      "category": "D",
+      "negative": false,
+      "query": "How does the ORM Unit of Work subsystem coordinate the order in which pending inserts, updates, and deletes are flushed?",
+      "target_names": [
+        "UOWTransaction"
+      ],
+      "resolve_latency_ms": 0.567,
+      "package_latency_ms": 6.365,
+      "candidate_file_count": 1,
+      "ranked_files": [
+        "lib/sqlalchemy/orm/unitofwork.py"
+      ],
+      "packaged_files": [
+        "lib/sqlalchemy/orm/unitofwork.py"
+      ],
+      "confidence": 1.0,
+      "confidence_source": "classic",
+      "ambiguous_targets": [],
+      "unresolved_symbols": [],
+      "evidence_task_type": null,
+      "evidence_categories_satisfied": [],
+      "evidence_categories_missing": [],
+      "evidence_completeness": null,
+      "case_b_triggered": false,
+      "unresolved_query": false,
+      "unresolved_ground_truth_files": [
+        "lib/sqlalchemy/orm/session.py"
+      ],
+      "packaging_failures": [],
+      "false_positive": null,
+      "recall_at_1": 0.5,
+      "recall_at_5": 0.5,
+      "recall_at_10": 0.5,
+      "mrr": 1.0,
+      "precision_at_k": 1.0
+    },
+    {
+      "task_id": "sqla_task7_session_commit_call_chain",
+      "category": "F",
+      "negative": false,
+      "query": "What does Session.commit() call internally, step by step, to actually persist pending changes to the database?",
+      "target_names": [
+        "commit",
+        "UOWTransaction"
+      ],
+      "resolve_latency_ms": 364.944,
+      "package_latency_ms": 56.174,
+      "candidate_file_count": 41,
+      "ranked_files": [
+        "lib/sqlalchemy/orm/unitofwork.py",
+        "lib/sqlalchemy/engine/result.py",
+        "lib/sqlalchemy/orm/attributes.py",
+        "lib/sqlalchemy/orm/collections.py",
+        "lib/sqlalchemy/orm/events.py",
+        "lib/sqlalchemy/orm/identity.py",
+        "lib/sqlalchemy/orm/state.py",
+        "lib/sqlalchemy/orm/writeonly.py",
+        "test/engine/test_execute.py",
+        "test/engine/test_transaction.py",
+        "lib/sqlalchemy/engine/cursor.py",
+        "lib/sqlalchemy/engine/default.py",
+        "lib/sqlalchemy/orm/mapped_collection.py",
+        "lib/sqlalchemy/orm/path_registry.py",
+        "lib/sqlalchemy/orm/query.py",
+        "lib/sqlalchemy/orm/strategies.py",
+        "lib/sqlalchemy/sql/schema.py",
+        "lib/sqlalchemy/engine/_result_cy.py",
+        "lib/sqlalchemy/ext/asyncio/result.py",
+        "lib/sqlalchemy/orm/base.py",
+        "lib/sqlalchemy/orm/state_changes.py",
+        "lib/sqlalchemy/util/concurrency.py",
+        "test/engine/test_pool.py",
+        "test/engine/test_ddlevents.py",
+        "test/engine/test_logging.py",
+        "lib/sqlalchemy/testing/config.py",
+        "lib/sqlalchemy/connectors/aioodbc.py",
+        "lib/sqlalchemy/connectors/asyncio.py",
+        "lib/sqlalchemy/dialects/postgresql/asyncpg.py",
+        "lib/sqlalchemy/dialects/sqlite/aiosqlite.py",
+        "lib/sqlalchemy/engine/base.py",
+        "lib/sqlalchemy/engine/interfaces.py",
+        "lib/sqlalchemy/engine/util.py",
+        "lib/sqlalchemy/ext/asyncio/engine.py",
+        "lib/sqlalchemy/ext/asyncio/scoping.py",
+        "lib/sqlalchemy/ext/asyncio/session.py",
+        "lib/sqlalchemy/orm/scoping.py",
+        "lib/sqlalchemy/orm/session.py",
+        "lib/sqlalchemy/pool/base.py",
+        "test/engine/test_reconnect.py",
+        "lib/sqlalchemy/engine/events.py"
+      ],
+      "packaged_files": [
+        "lib/sqlalchemy/orm/unitofwork.py",
+        "lib/sqlalchemy/engine/result.py",
+        "lib/sqlalchemy/engine/_result_cy.py"
+      ],
+      "confidence": 1.0,
+      "confidence_source": "classic",
+      "ambiguous_targets": [
+        "commit"
+      ],
+      "unresolved_symbols": [],
+      "evidence_task_type": "authentication",
+      "evidence_categories_satisfied": [
+        "session persistence",
+        "configuration"
+      ],
+      "evidence_categories_missing": [
+        "credential source",
+        "login implementation",
+        "authentication middleware"
+      ],
+      "evidence_completeness": 0.4,
+      "case_b_triggered": true,
+      "unresolved_query": false,
+      "unresolved_ground_truth_files": [
+        "lib/sqlalchemy/orm/persistence.py"
+      ],
+      "packaging_failures": [
+        {
+          "file": "lib/sqlalchemy/orm/session.py",
+          "category": "ambiguity_decay_dropped"
+        }
+      ],
+      "false_positive": null,
+      "recall_at_1": 0.3333333333333333,
+      "recall_at_5": 0.3333333333333333,
+      "recall_at_10": 0.3333333333333333,
+      "mrr": 1.0,
+      "precision_at_k": 0.3333333333333333
+    },
+    {
+      "task_id": "sqla_task8_ambiguous_process",
+      "category": "B",
+      "negative": false,
+      "query": "What does the process function do in SQLAlchemy?",
+      "target_names": [
+        "process"
+      ],
+      "resolve_latency_ms": 564.339,
+      "package_latency_ms": 10.775,
+      "candidate_file_count": 36,
+      "ranked_files": [
+        "lib/sqlalchemy/dialects/mysql/base.py",
+        "lib/sqlalchemy/dialects/oracle/base.py",
+        "lib/sqlalchemy/dialects/mysql/_mariadb_shim.py",
+        "lib/sqlalchemy/dialects/postgresql/base.py",
+        "lib/sqlalchemy/orm/context.py",
+        "lib/sqlalchemy/sql/crud.py",
+        "lib/sqlalchemy/dialects/mssql/base.py",
+        "lib/sqlalchemy/dialects/mssql/json.py",
+        "lib/sqlalchemy/dialects/mssql/pyodbc.py",
+        "lib/sqlalchemy/dialects/mysql/cymysql.py",
+        "lib/sqlalchemy/dialects/mysql/enumerated.py",
+        "lib/sqlalchemy/dialects/mysql/json.py",
+        "lib/sqlalchemy/dialects/mysql/mariadbconnector.py",
+        "lib/sqlalchemy/dialects/mysql/pyodbc.py",
+        "lib/sqlalchemy/dialects/mysql/types.py",
+        "lib/sqlalchemy/dialects/oracle/cx_oracle.py",
+        "lib/sqlalchemy/dialects/oracle/json.py",
+        "lib/sqlalchemy/dialects/oracle/types.py",
+        "lib/sqlalchemy/dialects/oracle/vector.py",
+        "lib/sqlalchemy/dialects/postgresql/array.py",
+        "lib/sqlalchemy/dialects/postgresql/asyncpg.py",
+        "lib/sqlalchemy/dialects/postgresql/hstore.py",
+        "lib/sqlalchemy/dialects/postgresql/json.py",
+        "lib/sqlalchemy/dialects/postgresql/pg_catalog.py",
+        "lib/sqlalchemy/dialects/postgresql/types.py",
+        "lib/sqlalchemy/dialects/sqlite/base.py",
+        "lib/sqlalchemy/dialects/sqlite/json.py",
+        "lib/sqlalchemy/engine/processors.py",
+        "lib/sqlalchemy/orm/evaluator.py",
+        "lib/sqlalchemy/orm/strategy_options.py",
+        "lib/sqlalchemy/sql/compiler.py",
+        "lib/sqlalchemy/sql/sqltypes.py",
+        "lib/sqlalchemy/sql/type_api.py",
+        "test/dialect/postgresql/test_types.py",
+        "test/sql/test_labels.py",
+        "test/sql/test_types.py"
+      ],
+      "packaged_files": [
+        "lib/sqlalchemy/dialects/mysql/base.py",
+        "lib/sqlalchemy/dialects/oracle/base.py"
+      ],
+      "confidence": 1.0,
+      "confidence_source": "classic",
+      "ambiguous_targets": [
+        "process"
+      ],
+      "unresolved_symbols": [],
+      "evidence_task_type": null,
+      "evidence_categories_satisfied": [],
+      "evidence_categories_missing": [],
+      "evidence_completeness": null,
+      "case_b_triggered": false,
+      "unresolved_query": false,
+      "unresolved_ground_truth_files": [],
+      "packaging_failures": [
+        {
+          "file": "lib/sqlalchemy/sql/sqltypes.py",
+          "category": "ambiguity_decay_dropped"
+        },
+        {
+          "file": "lib/sqlalchemy/engine/processors.py",
+          "category": "ambiguity_decay_dropped"
+        }
+      ],
+      "false_positive": null,
+      "recall_at_1": 0.0,
+      "recall_at_5": 0.0,
+      "recall_at_10": 0.0,
+      "mrr": 0.03571428571428571,
+      "precision_at_k": 0.0
+    },
+    {
+      "task_id": "sqla_task9_mapped_column_wraps_column",
+      "category": "E",
+      "negative": false,
+      "query": "How does the ORM's mapped_column / MappedColumn construct relate to the Core Column type used to define a table's schema?",
+      "target_names": [
+        "MappedColumn",
+        "Column"
+      ],
+      "resolve_latency_ms": 0.73,
+      "package_latency_ms": 20.172,
+      "candidate_file_count": 6,
+      "ranked_files": [
+        "lib/sqlalchemy/orm/properties.py",
+        "test/sql/test_metadata.py",
+        "test/sql/test_selectable.py",
+        "lib/sqlalchemy/sql/schema.py",
+        "test/orm/inheritance/test_assorted_poly.py",
+        "test/sql/test_external_traversal.py"
+      ],
+      "packaged_files": [
+        "lib/sqlalchemy/orm/properties.py",
+        "test/sql/test_metadata.py",
+        "test/sql/test_selectable.py",
+        "test/orm/inheritance/test_assorted_poly.py",
+        "test/sql/test_external_traversal.py"
+      ],
+      "confidence": 1.0,
+      "confidence_source": "classic",
+      "ambiguous_targets": [],
+      "unresolved_symbols": [],
+      "evidence_task_type": null,
+      "evidence_categories_satisfied": [],
+      "evidence_categories_missing": [],
+      "evidence_completeness": null,
+      "case_b_triggered": false,
+      "unresolved_query": false,
+      "unresolved_ground_truth_files": [],
+      "packaging_failures": [
+        {
+          "file": "lib/sqlalchemy/sql/schema.py",
+          "category": "oversized_file_excluded"
+        }
+      ],
+      "false_positive": null,
+      "recall_at_1": 0.5,
+      "recall_at_5": 1.0,
+      "recall_at_10": 1.0,
+      "mrr": 1.0,
+      "precision_at_k": 0.2
+    },
+    {
+      "task_id": "sqla_task10_negative_graphql",
+      "category": "L",
+      "negative": true,
+      "query": "How does SQLAlchemy implement GraphQL query resolution and schema stitching?",
+      "target_names": [
+        "GraphQLResolver"
+      ],
+      "resolve_latency_ms": 0.105,
+      "package_latency_ms": 1.026,
+      "candidate_file_count": 0,
+      "ranked_files": [],
+      "packaged_files": [],
+      "confidence": 0.0,
+      "confidence_source": "classic",
+      "ambiguous_targets": [],
+      "unresolved_symbols": [
+        "GraphQLResolver"
+      ],
+      "evidence_task_type": null,
+      "evidence_categories_satisfied": [],
+      "evidence_categories_missing": [],
+      "evidence_completeness": null,
+      "case_b_triggered": false,
+      "unresolved_query": true,
+      "unresolved_ground_truth_files": [],
+      "packaging_failures": [],
+      "false_positive": false,
+      "recall_at_1": null,
+      "recall_at_5": null,
+      "recall_at_10": null,
+      "mrr": null,
+      "precision_at_k": null
+    }
+  ],
+  "determinism_check": {
+    "task_id": "sqla_task1_engine_connect",
+    "run1_candidate_files": [
+      "lib/sqlalchemy/connectors/aioodbc.py",
+      "lib/sqlalchemy/dialects/mysql/aiomysql.py",
+      "lib/sqlalchemy/dialects/mysql/asyncmy.py",
+      "lib/sqlalchemy/dialects/oracle/oracledb.py",
+      "lib/sqlalchemy/dialects/postgresql/asyncpg.py",
+      "lib/sqlalchemy/dialects/postgresql/psycopg.py",
+      "lib/sqlalchemy/dialects/sqlite/aiosqlite.py",
+      "lib/sqlalchemy/dialects/sqlite/provision.py",
+      "lib/sqlalchemy/dialects/sqlite/pysqlite.py",
+      "lib/sqlalchemy/engine/base.py",
+      "lib/sqlalchemy/engine/create.py",
+      "lib/sqlalchemy/engine/default.py",
+      "lib/sqlalchemy/engine/interfaces.py",
+      "lib/sqlalchemy/engine/mock.py",
+      "lib/sqlalchemy/ext/asyncio/engine.py",
+      "lib/sqlalchemy/pool/base.py",
+      "lib/sqlalchemy/pool/events.py",
+      "lib/sqlalchemy/pool/impl.py",
+      "lib/sqlalchemy/testing/engines.py",
+      "test/dialect/mysql/test_dialect.py",
+      "test/dialect/postgresql/test_dialect.py",
+      "test/dialect/postgresql/test_query.py",
+      "test/engine/test_deprecations.py",
+      "test/engine/test_execute.py",
+      "test/engine/test_parseconnect.py",
+      "test/engine/test_pool.py",
+      "test/engine/test_reconnect.py"
+    ],
+    "run2_candidate_files": [
+      "lib/sqlalchemy/connectors/aioodbc.py",
+      "lib/sqlalchemy/dialects/mysql/aiomysql.py",
+      "lib/sqlalchemy/dialects/mysql/asyncmy.py",
+      "lib/sqlalchemy/dialects/oracle/oracledb.py",
+      "lib/sqlalchemy/dialects/postgresql/asyncpg.py",
+      "lib/sqlalchemy/dialects/postgresql/psycopg.py",
+      "lib/sqlalchemy/dialects/sqlite/aiosqlite.py",
+      "lib/sqlalchemy/dialects/sqlite/provision.py",
+      "lib/sqlalchemy/dialects/sqlite/pysqlite.py",
+      "lib/sqlalchemy/engine/base.py",
+      "lib/sqlalchemy/engine/create.py",
+      "lib/sqlalchemy/engine/default.py",
+      "lib/sqlalchemy/engine/interfaces.py",
+      "lib/sqlalchemy/engine/mock.py",
+      "lib/sqlalchemy/ext/asyncio/engine.py",
+      "lib/sqlalchemy/pool/base.py",
+      "lib/sqlalchemy/pool/events.py",
+      "lib/sqlalchemy/pool/impl.py",
+      "lib/sqlalchemy/testing/engines.py",
+      "test/dialect/mysql/test_dialect.py",
+      "test/dialect/postgresql/test_dialect.py",
+      "test/dialect/postgresql/test_query.py",
+      "test/engine/test_deprecations.py",
+      "test/engine/test_execute.py",
+      "test/engine/test_parseconnect.py",
+      "test/engine/test_pool.py",
+      "test/engine/test_reconnect.py"
+    ],
+    "byte_identical": true
+  },
+  "aggregate": {
+    "n_tasks": 10,
+    "n_ok": 10,
+    "n_failed": 0,
+    "mean_recall_at_1": 0.3704,
+    "mean_recall_at_5": 0.4259,
+    "mean_recall_at_10": 0.537,
+    "mean_mrr": 0.6903,
+    "mean_precision_at_k": 0.4111,
+    "mean_evidence_completeness": 0.4,
+    "unresolved_query_rate": 0.1,
+    "case_b_trigger_rate": 0.1,
+    "false_positive_rate_negative_tasks": 0.0,
+    "n_negative_tasks": 1,
+    "resolve_latency_ms_percentiles": {
+      "p50": 0.73,
+      "p95": 564.34,
+      "p99": 564.34
+    },
+    "package_latency_ms_percentiles": {
+      "p50": 10.78,
+      "p95": 63.44,
+      "p99": 63.44
+    },
+    "mean_confidence_classic": 0.9
+  },
+  "status": "OK"
+}
